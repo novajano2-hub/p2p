@@ -9,7 +9,7 @@ import {
   RoundedBox,
 } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import * as THREE from "three";
 
 /*
@@ -44,7 +44,7 @@ export default function EscrowScene({ reduced, lowPower }: EscrowSceneProps) {
   return (
     <Canvas
       dpr={lowPower ? 1 : [1, 1.75]}
-      camera={{ position: [0, 0.6, 7.4], fov: 30 }}
+      camera={{ position: [0, 0.5, 9.6], fov: 30 }}
       frameloop={reduced ? "demand" : "always"}
       // No tone mapping: the kit's exact colours, and a background identical to the page.
       flat
@@ -58,7 +58,7 @@ export default function EscrowScene({ reduced, lowPower }: EscrowSceneProps) {
       <Rig reduced={reduced}>
         <Vault reduced={reduced} lowPower={lowPower} />
         <UsdtCoin reduced={reduced} />
-        <BirrCoin reduced={reduced} />
+        <TradeCoin reduced={reduced} />
       </Rig>
 
       <ContactShadows
@@ -154,30 +154,91 @@ function UsdtCoin({ reduced }: { reduced: boolean }) {
   );
 }
 
-/** The birr, outside the vault, circling. */
-function BirrCoin({ reduced }: { reduced: boolean }) {
+/*
+  Orbit geometry.
+
+  The vault turns, so its silhouette is widest across the diagonal:
+  half-extent = 1.1 * sqrt(2) = 1.56, not 1.1. The coin's near edge must clear
+  that at every point of the orbit, or it passes through the glass and the part
+  inside is swallowed by the refraction buffer, which reads as the coin being
+  cropped. So: ORBIT_X - COIN_RADIUS > 1.56, with room to spare.
+*/
+const VAULT_SILHOUETTE = 1.56;
+const COIN_RADIUS = 0.36;
+const COIN_THICKNESS = 0.09;
+const ORBIT_X = VAULT_SILHOUETTE + COIN_RADIUS + 0.16; // 2.08
+const ORBIT_Z = 2.4;
+
+/**
+ * A face of the coin, drawn on a 2D canvas rather than loaded as a font atlas,
+ * so the scene still fetches nothing from a third-party CDN.
+ */
+function useCoinFace(text: string, background: string, ink: string) {
+  const texture = useMemo(() => {
+    const size = 256;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = ink;
+    ctx.font = `600 ${text.length > 3 ? 56 : 72}px "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, size / 2, size / 2 + 2);
+
+    const map = new THREE.CanvasTexture(canvas);
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.anisotropy = 4;
+    return map;
+  }, [text, background, ink]);
+
+  useEffect(() => () => texture?.dispose(), [texture]);
+  return texture;
+}
+
+/** The trade itself, circling the vault: birr on one face, USDT on the other. */
+function TradeCoin({ reduced }: { reduced: boolean }) {
   const group = useRef<THREE.Group>(null);
   const start = 1.1;
+  const etb = useCoinFace("ETB", SAGE, "#1d3b31");
+  const usdt = useCoinFace("USDT", "#1f5346", CANVAS);
+  const faceOffset = COIN_THICKNESS / 2 + 0.002;
 
   useFrame((state) => {
     if (!group.current) return;
     const t = reduced ? start : start + state.clock.elapsedTime * 0.32;
-    // An orbit deeper than it is wide: the coin passes in front of and behind
-    // the vault instead of swinging out past the edges of the canvas.
     group.current.position.set(
-      Math.cos(t) * 1.45,
-      Math.sin(t * 1.3) * 0.2 + 0.05,
-      Math.sin(t) * 2.35,
+      Math.cos(t) * ORBIT_X,
+      Math.sin(t * 1.3) * 0.16 + 0.05,
+      Math.sin(t) * ORBIT_Z,
     );
+    // Turning with the orbit, so each face comes round in turn.
     group.current.rotation.y = -t;
   });
 
   return (
-    <group ref={group} position={[Math.cos(start) * 1.45, 0.05, Math.sin(start) * 2.35]}>
-      <mesh rotation={[Math.PI / 2 - 0.5, 0, 0.3]}>
-        <cylinderGeometry args={[0.42, 0.42, 0.1, 64]} />
-        <meshStandardMaterial color={BIRR} metalness={0.3} roughness={0.45} />
+    <group ref={group} position={[Math.cos(start) * ORBIT_X, 0.05, Math.sin(start) * ORBIT_Z]}>
+      {/* Milled edge. The cylinder axis is laid along Z so the faces look outward. */}
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[COIN_RADIUS, COIN_RADIUS, COIN_THICKNESS, 64]} />
+        <meshStandardMaterial color={BIRR} metalness={0.35} roughness={0.4} />
       </mesh>
+      {etb ? (
+        <mesh position={[0, 0, faceOffset]}>
+          <circleGeometry args={[COIN_RADIUS * 0.985, 64]} />
+          <meshStandardMaterial map={etb} metalness={0.12} roughness={0.52} />
+        </mesh>
+      ) : null}
+      {usdt ? (
+        <mesh position={[0, 0, -faceOffset]} rotation={[0, Math.PI, 0]}>
+          <circleGeometry args={[COIN_RADIUS * 0.985, 64]} />
+          <meshStandardMaterial map={usdt} metalness={0.12} roughness={0.52} />
+        </mesh>
+      ) : null}
     </group>
   );
 }
