@@ -1,7 +1,7 @@
-import { ArrowRight } from "@phosphor-icons/react/dist/ssr";
-import { AppLink } from "@/components/ui/app-link";
+import { ArrowRight, CircleNotch } from "@phosphor-icons/react/dist/ssr";
 import type { ComponentPropsWithoutRef } from "react";
 
+import { AppLink } from "@/components/ui/app-link";
 import { cn } from "@/lib/cn";
 
 type Variant = "primary" | "secondary" | "ghost" | "inverse" | "destructive";
@@ -12,12 +12,16 @@ type Size = "sm" | "md" | "lg";
   a 1px lift and a deeper shadow on hover, and a pressed inset on click. The
   whole cycle is 140ms, and motion-reduce keeps the colour change but drops the
   movement.
+
+  Loading keeps the button at full colour with a spinner in front of the label
+  (the kit's "Saving..."), and blocks a second press without dimming.
 */
 const base =
   "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-control font-medium " +
   "transition-[background-color,color,border-color,box-shadow,translate] duration-150 ease-out " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring " +
-  "disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-[background-color,color,border-color]";
+  "disabled:pointer-events-none disabled:opacity-50 aria-busy:disabled:opacity-100 " +
+  "motion-reduce:transition-[background-color,color,border-color]";
 
 const lift = "hover:-translate-y-px active:translate-y-0 motion-reduce:hover:translate-y-0";
 
@@ -60,10 +64,38 @@ export function buttonClasses(
   return cn(base, variants[variant], variant === "ghost" ? "h-auto" : sizes[size], className);
 }
 
-export type ButtonProps = ComponentPropsWithoutRef<"button"> & StyleProps;
+export type ButtonProps = ComponentPropsWithoutRef<"button"> &
+  StyleProps & { loading?: boolean | undefined };
 
-export function Button({ variant, size, className, type = "button", ...props }: ButtonProps) {
-  return <button type={type} className={buttonClasses({ variant, size }, className)} {...props} />;
+export function Button({
+  variant,
+  size,
+  className,
+  type = "button",
+  loading = false,
+  disabled,
+  children,
+  ...props
+}: ButtonProps) {
+  return (
+    <button
+      type={type}
+      aria-busy={loading || undefined}
+      disabled={disabled || loading}
+      className={buttonClasses({ variant, size }, className)}
+      {...props}
+    >
+      {loading ? (
+        <CircleNotch
+          size={17}
+          weight="bold"
+          aria-hidden="true"
+          className="animate-spin motion-reduce:animate-none"
+        />
+      ) : null}
+      {children}
+    </button>
+  );
 }
 
 export type ButtonLinkProps = ComponentPropsWithoutRef<typeof AppLink> &
