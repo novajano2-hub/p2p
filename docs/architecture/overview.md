@@ -73,16 +73,16 @@
 Workers run the same codebase as the API but with a different entrypoint, so domain rules
 cannot drift between them:
 
-| Worker | Responsibility | Idempotency strategy |
-|---|---|---|
-| `chain-observer` | Poll/subscribe for incoming transfers to attribution addresses | Unique `(network, tx_hash, log_index)` |
-| `deposit-crediter` | Advance confirmations, credit at finality | Unique `(deposit_id, 'CREDIT')` ledger idempotency key |
-| `sweeper` | Move attribution-address balances to treasury | Unique sweep batch key |
-| `withdrawal-builder` | Build unsigned transactions | Unique `(withdrawal_id, attempt)` |
-| `withdrawal-broadcaster` | Sign via custody, broadcast, track | Provider-side client reference = `withdrawal_id` |
-| `trade-expirer` | Expire unpaid trades, refund escrow | Unique `(trade_id, 'EXPIRE')` |
-| `outbox-publisher` | Emit notifications and events | Row-level claim + delivery marker |
-| `reconciler` | Compare on-chain totals to ledger totals, raise breaks | Read-only; never posts |
+| Worker                   | Responsibility                                                 | Idempotency strategy                                   |
+| ------------------------ | -------------------------------------------------------------- | ------------------------------------------------------ |
+| `chain-observer`         | Poll/subscribe for incoming transfers to attribution addresses | Unique `(network, tx_hash, log_index)`                 |
+| `deposit-crediter`       | Advance confirmations, credit at finality                      | Unique `(deposit_id, 'CREDIT')` ledger idempotency key |
+| `sweeper`                | Move attribution-address balances to treasury                  | Unique sweep batch key                                 |
+| `withdrawal-builder`     | Build unsigned transactions                                    | Unique `(withdrawal_id, attempt)`                      |
+| `withdrawal-broadcaster` | Sign via custody, broadcast, track                             | Provider-side client reference = `withdrawal_id`       |
+| `trade-expirer`          | Expire unpaid trades, refund escrow                            | Unique `(trade_id, 'EXPIRE')`                          |
+| `outbox-publisher`       | Emit notifications and events                                  | Row-level claim + delivery marker                      |
+| `reconciler`             | Compare on-chain totals to ledger totals, raise breaks         | Read-only; never posts                                 |
 
 Note that `reconciler` is deliberately read-only. It raises exceptions for humans; it does
 not write correcting entries. See ADR-0009.
@@ -93,17 +93,17 @@ A trust boundary is a line across which you must stop believing what you are tol
 start verifying. Everything crossing one of these lines is validated, authorized, size-
 limited, rate-limited and logged.
 
-| ID | Boundary | What crosses it | What we must never assume |
-|---|---|---|---|
-| **B1** | Browser → API | Session cookie, CSRF token, JSON request bodies, uploads | That the client computed anything correctly, that the user owns the ID in the URL, that a role claim in the request is real |
-| **B2** | API → PostgreSQL | SQL, transactions, locks | That application-level checks are sufficient; constraints must exist in the database |
-| **B3** | API → Redis/BullMQ | Jobs, rate-limit counters, leases | That a job runs exactly once, or that a Redis lock protects financial correctness |
-| **B4** | API ↔ Custody provider | Address creation requests, sign requests, **inbound webhooks** | That a webhook is authentic without signature verification, or that "signed" means "broadcast", or that a timeout means "did not happen" |
-| **B5** | API ↔ Object storage | Dispute evidence uploads/downloads | That an uploaded file is the type or size it claims, or that it is safe to show staff unscanned |
-| **B6** | Custody → Blockchain | Broadcast transactions, chain state reads | That an RPC node is honest, current, or that a confirmed transaction is final before the policy threshold |
-| **B7** | Admin human → API | Privileged actions: dispute resolution, withdrawal approval, adjustments | That an admin account is not compromised, or that one admin should be able to move funds alone above a threshold |
-| **B8** | Users ↔ Ethiopian banks | ETB payment, entirely outside our systems | **That a payment happened.** We have no visibility, no proof and no ability to reverse. Everything here is claim, not fact |
-| **B9** | CI/CD → Production | Container images, migrations, secrets | That the build pipeline is trusted infrastructure by default |
+| ID     | Boundary                | What crosses it                                                          | What we must never assume                                                                                                                |
+| ------ | ----------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **B1** | Browser → API           | Session cookie, CSRF token, JSON request bodies, uploads                 | That the client computed anything correctly, that the user owns the ID in the URL, that a role claim in the request is real              |
+| **B2** | API → PostgreSQL        | SQL, transactions, locks                                                 | That application-level checks are sufficient; constraints must exist in the database                                                     |
+| **B3** | API → Redis/BullMQ      | Jobs, rate-limit counters, leases                                        | That a job runs exactly once, or that a Redis lock protects financial correctness                                                        |
+| **B4** | API ↔ Custody provider  | Address creation requests, sign requests, **inbound webhooks**           | That a webhook is authentic without signature verification, or that "signed" means "broadcast", or that a timeout means "did not happen" |
+| **B5** | API ↔ Object storage    | Dispute evidence uploads/downloads                                       | That an uploaded file is the type or size it claims, or that it is safe to show staff unscanned                                          |
+| **B6** | Custody → Blockchain    | Broadcast transactions, chain state reads                                | That an RPC node is honest, current, or that a confirmed transaction is final before the policy threshold                                |
+| **B7** | Admin human → API       | Privileged actions: dispute resolution, withdrawal approval, adjustments | That an admin account is not compromised, or that one admin should be able to move funds alone above a threshold                         |
+| **B8** | Users ↔ Ethiopian banks | ETB payment, entirely outside our systems                                | **That a payment happened.** We have no visibility, no proof and no ability to reverse. Everything here is claim, not fact               |
+| **B9** | CI/CD → Production      | Container images, migrations, secrets                                    | That the build pipeline is trusted infrastructure by default                                                                             |
 
 **B8 is the boundary that most shapes the product.** Every technical control we build for
 trades exists because the money we care most about moves where we cannot see it.
@@ -153,7 +153,7 @@ app · **no real private keys and no real money at any point in Phases 0–5**.
 
 ## 6. Honest statement of maturity
 
-Phases 0–5 produce a system that is *internally* correct: the ledger balances, escrow
+Phases 0–5 produce a system that is _internally_ correct: the ledger balances, escrow
 cannot be double-spent, authorization holds, and every external integration is a
 deterministic mock. That is a meaningful engineering result and it is **not** evidence
 that custody is safe.

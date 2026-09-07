@@ -3,7 +3,6 @@
 
 # dependencies / build
 node_modules/
-.pnpm-store/
 .turbo/
 .next/
 out/

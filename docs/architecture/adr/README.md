@@ -4,22 +4,22 @@ Ten decisions, recorded together for Phase 0 review. Each has a stable ID. When 
 is later amended or superseded it will be split into its own numbered file and this table
 will point there.
 
-| ID | Decision | Status |
-|---|---|---|
-| [ADR-0001](#adr-0001--modular-monolith-in-a-pnpmturborepo-monorepo) | Modular monolith in a pnpm/Turborepo monorepo | Accepted |
-| [ADR-0002](#adr-0002--custodial-pooled-wallets-with-per-user-attribution-addresses) | Custodial pooled wallets with per-user attribution addresses | Accepted |
-| [ADR-0003](#adr-0003--an-immutable-double-entry-ledger-is-the-sole-source-of-monetary-truth) | Immutable double-entry ledger is the sole source of monetary truth | Accepted |
-| [ADR-0004](#adr-0004--escrow-is-an-internal-ledger-hold-in-a-per-trade-account) | Escrow is an internal ledger hold in a per-trade account | Accepted |
-| [ADR-0005](#adr-0005--value-representation-money-time-and-identifiers) | Value representation: money, time and identifiers | Accepted |
-| [ADR-0006](#adr-0006--chain-and-custody-behind-adapters-plasma-is-a-hypothesis) | Chain and custody behind adapters; Plasma is a hypothesis | Accepted |
-| [ADR-0007](#adr-0007--idempotency-keys-and-a-transactional-outbox-for-every-external-effect) | Idempotency keys and a transactional outbox for every external effect | Accepted |
-| [ADR-0008](#adr-0008--zod-as-the-single-validation-and-contract-library) | Zod as the single validation and contract library | Accepted |
+| ID                                                                                                     | Decision                                                                         | Status   |
+| ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- | -------- |
+| [ADR-0001](#adr-0001--modular-monolith-in-an-npm-workspacesturborepo-monorepo)                         | Modular monolith in an npm workspaces/Turborepo monorepo                         | Accepted |
+| [ADR-0002](#adr-0002--custodial-pooled-wallets-with-per-user-attribution-addresses)                    | Custodial pooled wallets with per-user attribution addresses                     | Accepted |
+| [ADR-0003](#adr-0003--an-immutable-double-entry-ledger-is-the-sole-source-of-monetary-truth)           | Immutable double-entry ledger is the sole source of monetary truth               | Accepted |
+| [ADR-0004](#adr-0004--escrow-is-an-internal-ledger-hold-in-a-per-trade-account)                        | Escrow is an internal ledger hold in a per-trade account                         | Accepted |
+| [ADR-0005](#adr-0005--value-representation-money-time-and-identifiers)                                 | Value representation: money, time and identifiers                                | Accepted |
+| [ADR-0006](#adr-0006--chain-and-custody-behind-adapters-plasma-is-a-hypothesis)                        | Chain and custody behind adapters; Plasma is a hypothesis                        | Accepted |
+| [ADR-0007](#adr-0007--idempotency-keys-and-a-transactional-outbox-for-every-external-effect)           | Idempotency keys and a transactional outbox for every external effect            | Accepted |
+| [ADR-0008](#adr-0008--zod-as-the-single-validation-and-contract-library)                               | Zod as the single validation and contract library                                | Accepted |
 | [ADR-0009](#adr-0009--balances-are-a-transactional-projection-row-locks-are-the-concurrency-primitive) | Balances are a transactional projection; row locks are the concurrency primitive | Accepted |
-| [ADR-0010](#adr-0010--withdrawal-authorisation-is-separated-from-signing) | Withdrawal authorization is separated from signing | Accepted |
+| [ADR-0010](#adr-0010--withdrawal-authorisation-is-separated-from-signing)                              | Withdrawal authorization is separated from signing                               | Accepted |
 
 ---
 
-## ADR-0001 — Modular monolith in a pnpm/Turborepo monorepo
+## ADR-0001 — Modular monolith in an npm workspaces/Turborepo monorepo
 
 **Context.** The system has a dozen bounded contexts (auth, ledger, wallets, deposits,
 withdrawals, offers, trades, escrow, disputes, risk, admin, reconciliation) and a small
@@ -27,10 +27,12 @@ team. The most dangerous operations — escrow lock, escrow release, withdrawal 
 change domain state and post ledger entries **in a single database transaction**.
 
 **Decision.** One deployable NestJS/Fastify application containing all modules, plus
-worker entrypoints running the same codebase. One PostgreSQL database. Code lives in a
-pnpm workspace with Turborepo for task orchestration and caching.
+worker entrypoints running the same codebase. One PostgreSQL database. Code lives in an
+npm workspaces monorepo with Turborepo for task orchestration and caching. (The brief
+named pnpm; the owner chose npm on 2026-09-07. Nothing architectural depends on the choice.)
 
 Module boundaries are enforced socially and by lint rules, not by network calls:
+
 - Only `LedgerModule` may write to `ledger_transaction`, `ledger_entry`,
   `ledger_account`, `ledger_account_balance`. Other modules call its service.
 - An ESLint boundary rule forbids importing another module's internal directories;
@@ -61,6 +63,7 @@ and account references, status, and the owning user. **It never stores key mater
 seeds, derivation secrets, or anything from which a key could be reconstructed.**
 
 Treasury is split:
+
 - **Hot treasury** — reachable by automated signing, funds outgoing withdrawals, sized to
   a bounded operational float.
 - **Cold treasury** — the remainder, requiring stronger human authorization to move.
@@ -87,7 +90,7 @@ impossible for the system to create or destroy money without a detectable trace.
 - `ledger_transaction` — one row per business event, with reference, actor, reason code,
   correlation ID, idempotency key and timestamp.
 - `ledger_entry` — the posting lines. `(transaction_id, account_id, asset, direction,
-  amount)` where `amount` is a **positive** `BIGINT` and `direction` is `DEBIT`/`CREDIT`.
+amount)` where `amount` is a **positive** `BIGINT` and `direction` is `DEBIT`/`CREDIT`.
 
 A generated stored column `signed_amount = amount * CASE direction WHEN 'DEBIT' THEN 1
 ELSE -1 END` lets the balance invariant be checked in SQL. A deferred constraint trigger
@@ -126,7 +129,7 @@ available`. Refund is `DR trade escrow / CR seller available`. See
 [ledger-taxonomy.md](../ledger-taxonomy.md) for worked entries.
 
 **The escrow is always funded by whoever is giving up USDT**, regardless of who published
-the offer. On a *sell* offer the publisher funds it; on a *buy* offer the accepting user
+the offer. On a _sell_ offer the publisher funds it; on a _buy_ offer the accepting user
 funds it. This is stated explicitly because it is easy to get backwards.
 
 **Consequences.** A per-trade account gives a strong, cheap invariant: **a settled trade's
@@ -152,20 +155,20 @@ three of the most common sources of financial and security bugs.
 
 **Decision.**
 
-*Money.* Stored and computed as `BIGINT` atomic units. USDT = micro-USDT
+_Money._ Stored and computed as `BIGINT` atomic units. USDT = micro-USDT
 (1 USDT = 1,000,000). ETB = santim (1 ETB = 100). In TypeScript, amounts are carried as
 `bigint` behind a branded type (`type MicroUsdt = bigint & { readonly __brand: 'MicroUsdt' }`)
 so a raw number cannot be passed by accident. `number` is forbidden for money by lint rule.
 At the API boundary money is `{ "amount": "100.500000", "currency": "USDT", "decimals": 6 }`
-— a decimal *string* plus explicit metadata — parsed and validated at the edge. JSON
+— a decimal _string_ plus explicit metadata — parsed and validated at the edge. JSON
 numbers are never used for money in either direction.
 
-*Time.* All storage is `TIMESTAMPTZ` in UTC. APIs emit ISO 8601 with offset. Anywhere
+_Time._ All storage is `TIMESTAMPTZ` in UTC. APIs emit ISO 8601 with offset. Anywhere
 ordering or expiry affects money, the timestamp comes from `now()` **in the database**,
 not from an application clock, because application clocks drift and there are several of
 them.
 
-*Identifiers.* UUIDv7 — sortable by creation time (good index locality) and not guessable
+_Identifiers._ UUIDv7 — sortable by creation time (good index locality) and not guessable
 (unlike a sequence). Generated in the application so tests are deterministic and so we do
 not depend on a PostgreSQL 18 built-in; the column type is `UUID`.
 
@@ -200,17 +203,17 @@ never in code.
 [open-questions.md](../../open-questions.md). Specific claims that must not be made in
 code, copy or documentation until proven:
 
-- that withdrawals are free — user-facing copy says *"No platform fee. The network or a
-  third party may charge a fee."*
+- that withdrawals are free — user-facing copy says _"No platform fee. The network or a
+  third party may charge a fee."_
 - that a sweep transaction qualifies for sponsored gas (it may not; only direct eligible
   USDT transfers may)
-- that a user can easily *obtain* USDT on this network from the exchanges they actually
+- that a user can easily _obtain_ USDT on this network from the exchanges they actually
   use — if major exchanges do not support withdrawals to it, deposits are hard regardless
   of how good our code is. This is a product-viability risk, not merely a technical one.
 
 **Consequences.** We can build and fully test the entire product without a provider. If
 Plasma turns out to be unworkable, the change is one adapter and a config file, not a
-rewrite. The cost is that our mock's behavior is our *assumption* about the chain, so
+rewrite. The cost is that our mock's behavior is our _assumption_ about the chain, so
 Phase 6 must re-run the full acceptance suite against the sandbox.
 
 ---
@@ -222,21 +225,21 @@ out of order and more than once. None of these may result in money moving twice.
 
 **Decision.**
 
-*Inbound.* Every mutating financial endpoint requires an `Idempotency-Key` header. The key
+_Inbound._ Every mutating financial endpoint requires an `Idempotency-Key` header. The key
 is claimed by inserting into `idempotency_key (key, user_id, endpoint, request_hash,
 status, response_body, created_at)` with a unique constraint on `(user_id, endpoint, key)`
 **inside the same transaction as the work**. A replay with the same key and same request
-hash returns the stored response; the same key with a *different* body is a `409`, not a
+hash returns the stored response; the same key with a _different_ body is a `409`, not a
 silent overwrite.
 
 Chain events use a natural key instead: unique `(network, tx_hash, log_index)`. A webhook
 that duplicates one is acknowledged and dropped. AT-1.
 
-*Outbound.* Anything with an external side effect — notification, email, event publish —
+_Outbound._ Anything with an external side effect — notification, email, event publish —
 is written to `outbox_event` in the same transaction as the domain change, and delivered
 later by a worker. Nothing is sent from inside a request handler.
 
-*Workers.* Every job handler is idempotent by construction, because at-least-once delivery
+_Workers._ Every job handler is idempotent by construction, because at-least-once delivery
 is assumed rather than defended against.
 
 **Consequences.** One extra table and one extra insert per financial write. In exchange,
@@ -272,7 +275,7 @@ small custom `ZodValidationPipe` rather than the built-in `class-validator` pipe
 ## ADR-0009 — Balances are a transactional projection; row locks are the concurrency primitive
 
 **Context.** Invariant 5 says available funds cannot go negative. Invariant 6 says
-escrowed funds cannot simultaneously be available. Both are *concurrency* problems: two
+escrowed funds cannot simultaneously be available. Both are _concurrency_ problems: two
 requests read the same balance, both see enough money, both proceed.
 
 **Decision.** A `ledger_account_balance` table holds one row per `(account_id, asset)`

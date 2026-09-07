@@ -1,6 +1,6 @@
 # Proposed Repository Tree
 
-pnpm workspace + Turborepo, following the layout in the brief. Nothing below exists yet
+npm workspaces + Turborepo (the brief says pnpm; the owner chose npm). Nothing below exists yet
 except `docs/`.
 
 ```text
@@ -8,8 +8,8 @@ etb-usdt-p2p/
 ├── CLAUDE.md                        # the project brief (authoritative)
 ├── README.md                        # how to run it locally
 ├── package.json                     # workspace root; scripts delegate to turbo
-├── pnpm-workspace.yaml
-├── pnpm-lock.yaml                   # committed; CI uses --frozen-lockfile
+├── scripts/pin-versions.mjs          # rewrites ranges to installed exact versions
+├── package-lock.json                # committed; CI uses npm ci
 ├── turbo.json
 ├── docker-compose.yml               # postgres, redis, minio, mailpit
 ├── .env.example                     # names and dummy values only — never real secrets

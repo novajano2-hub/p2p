@@ -7,7 +7,7 @@ assume it.
 ## Money and accounting
 
 **Double-entry ledger.** A way of recording money where every event is written down
-twice: once as a *debit* and once as a *credit*, and the two sides must sum to the same
+twice: once as a _debit_ and once as a _credit_, and the two sides must sum to the same
 number. It is not a style preference; it is a redundancy check. If a bug drops half of a
 transaction, the totals stop matching and you find out. A single mutable
 `users.balance` column has no such check — a bug there silently creates or destroys money
@@ -15,20 +15,20 @@ and nothing tells you.
 
 **Debit and credit.** They do **not** mean "add" and "subtract". They mean "left column"
 and "right column". Whether a debit increases or decreases an account depends on the
-account's *type*:
+account's _type_:
 
-| Account type | Meaning | Increases with |
-|---|---|---|
-| **Asset** | Something the platform owns or controls | Debit |
-| **Liability** | Something the platform owes to someone else | Credit |
-| **Equity** | The owners' residual stake | Credit |
-| **Revenue** | Income earned | Credit |
-| **Expense** | Cost incurred | Debit |
+| Account type  | Meaning                                     | Increases with |
+| ------------- | ------------------------------------------- | -------------- |
+| **Asset**     | Something the platform owns or controls     | Debit          |
+| **Liability** | Something the platform owes to someone else | Credit         |
+| **Equity**    | The owners' residual stake                  | Credit         |
+| **Revenue**   | Income earned                               | Credit         |
+| **Expense**   | Cost incurred                               | Debit          |
 
 **The crucial mental flip.** A customer's balance is a **liability**, not an asset. When
 Sara deposits 100 USDT, the platform gains an asset (100 USDT it now controls on-chain)
-*and* takes on a liability (it owes Sara 100 USDT). Your intuition from a banking app —
-"balance = money I have" — is the *customer's* view. On the platform's books it is money
+_and_ takes on a liability (it owes Sara 100 USDT). Your intuition from a banking app —
+"balance = money I have" — is the _customer's_ view. On the platform's books it is money
 we owe. Most accounting mistakes in exchanges come from forgetting this.
 
 **Journal entry / ledger transaction.** One business event (a deposit, an escrow lock)
@@ -41,7 +41,7 @@ direction, an amount.
 entry. INVARIANT.
 
 **Immutable / append-only.** Once a journal entry is written it is never edited or
-deleted. To undo something you write a *new* entry that cancels it out.
+deleted. To undo something you write a _new_ entry that cancels it out.
 
 **Compensating transaction.** That cancelling entry. If you escrowed 100 USDT and the
 trade expired, you do not delete the escrow entry — you post a new entry moving the 100
@@ -81,15 +81,15 @@ domain code never imports a vendor SDK.
 
 **Pooled wallet.** All customer crypto physically sits together in a few platform
 wallets, rather than one wallet per customer. Cheaper and simpler to operate; it means
-ownership exists *only* in our ledger, which is precisely why the ledger must be correct.
+ownership exists _only_ in our ledger, which is precisely why the ledger must be correct.
 
 **Unique deposit address (attribution address).** Each user gets their own address so we
 know who sent an incoming payment. This is compatible with pooling: the address tells us
-*who*, the pool tells us *where*. Funds are later **swept** from attribution addresses
+_who_, the pool tells us _where_. Funds are later **swept** from attribution addresses
 into treasury.
 
 **Sweep.** Moving funds from many deposit addresses into a treasury wallet. It is an
-on-chain transaction that changes *where* assets sit but must not change *who owns them*
+on-chain transaction that changes _where_ assets sit but must not change _who owns them_
 in the ledger. INVARIANT.
 
 **Hot / cold wallet.** Hot = keys reachable by automated signing, used for outgoing
@@ -103,12 +103,12 @@ and a reorg lets an attacker deposit and withdraw the same money twice.
 UNVALIDATED for Plasma.
 
 **Gas.** The fee paid to get a transaction included on-chain. **Sponsored gas** (a
-*paymaster*) means a third party pays it so the user does not need to hold the network's
+_paymaster_) means a third party pays it so the user does not need to hold the network's
 native token. Plasma advertises sponsored USDT transfers under conditions we have not
 confirmed. UNVALIDATED.
 
 **Webhook.** An HTTP callback from the custody provider saying "a deposit arrived". It is
-an *untrusted hint*. We verify its signature, then verify the underlying fact
+an _untrusted hint_. We verify its signature, then verify the underlying fact
 independently against the chain. We never credit a customer because an HTTP request said
 so. INVARIANT.
 
@@ -123,7 +123,7 @@ payment methods, terms.
 
 **Escrow.** Holding the seller's USDT so they cannot spend it while the buyer pays. Here
 escrow is **an internal ledger hold**, not an on-chain smart contract — USDT moves from
-the seller's *available* account to a *trade escrow* account. No blockchain involvement,
+the seller's _available_ account to a _trade escrow_ account. No blockchain involvement,
 no gas, instant, reversible by policy.
 
 **Out-of-band settlement.** The ETB half of the trade happens in a real bank or mobile
@@ -148,13 +148,13 @@ once, and eventually will. There is no "exactly once" to design against; instead
 consumer is made idempotent.
 
 **Outbox pattern.** To avoid "database committed but the notification was lost" — or
-worse, "notification sent but the database rolled back" — you write the *intent* to send
+worse, "notification sent but the database rolled back" — you write the _intent_ to send
 into an `outbox` table inside the same database transaction as the business change. A
 separate worker reads the outbox and performs the sending.
 
 **Row lock (`SELECT ... FOR UPDATE`).** Telling PostgreSQL "nobody else may touch this row
 until my transaction ends". This is how two concurrent trades are prevented from spending
-the same USDT. A Redis lock is *not* sufficient — its lease can expire mid-transaction and
+the same USDT. A Redis lock is _not_ sufficient — its lease can expire mid-transaction and
 its expiry is not coordinated with the database. INVARIANT.
 
 **Projection.** A derived, cached view that can be rebuilt from the source of truth. Our

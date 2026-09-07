@@ -1,0 +1,160 @@
+@import "tailwindcss";
+
+/*
+  Design tokens. One theme, one accent, one radius system.
+
+  Accent:  deep emerald, used identically on every section. No second accent.
+  Radius:  interactive controls 10px, panels and cards 16px, status badges pill.
+  Fonts:   IBM Plex Sans for everything, IBM Plex Mono for amounts only.
+
+  Placeholder brand values live here and in lib/site.ts. Swapping the brand
+  means editing these two files.
+*/
+
+:root {
+  color-scheme: light dark;
+
+  --background: #f6f8f6;
+  --foreground: #0e1512;
+  --surface: #fcfdfc;
+  --muted: #e8ece9;
+  --muted-foreground: #556059;
+  --border: #d6dcd7;
+  --primary: #0f6e4f;
+  --primary-foreground: #f4fbf7;
+  --primary-soft: #e0efe7;
+  --primary-soft-foreground: #0b4a36;
+  --shadow-tint: 14 21 18;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0f0d;
+    --foreground: #e6ebe8;
+    --surface: #101613;
+    --muted: #161d19;
+    --muted-foreground: #97a39c;
+    --border: #232c27;
+    --primary: #34b283;
+    --primary-foreground: #06130d;
+    --primary-soft: #11291f;
+    --primary-soft-foreground: #9fdcc2;
+    --shadow-tint: 0 0 0;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-foreground: var(--primary-soft-foreground);
+  --color-ring: var(--primary);
+
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+@theme {
+  --radius-control: 10px;
+  --radius-panel: 16px;
+
+  /* Strong curves. The built-in ease-out is too weak to read as intentional. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  --shadow-panel:
+    0 1px 2px rgb(var(--shadow-tint) / 0.06), 0 12px 32px -12px rgb(var(--shadow-tint) / 0.18);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Anchored sections must clear the 64px sticky header when jumped to. */
+  [id] {
+    scroll-margin-top: 5.5rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--color-primary);
+    color: var(--color-primary-foreground);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+}
+
+/*
+  Native <details> accordion for the FAQ. Animates open/close height where the
+  browser supports interpolate-size; elsewhere it toggles instantly, which is
+  the correct reduced-motion behaviour anyway. No JavaScript, fully keyboard
+  accessible out of the box.
+*/
+@layer components {
+  .faq-item summary {
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .faq-item summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq-item .faq-chevron {
+    transition: rotate 200ms var(--ease-out);
+  }
+
+  .faq-item[open] .faq-chevron {
+    rotate: 180deg;
+  }
+
+  @supports (interpolate-size: allow-keywords) {
+    .faq-item {
+      interpolate-size: allow-keywords;
+    }
+
+    .faq-item::details-content {
+      block-size: 0;
+      overflow: hidden;
+      transition:
+        block-size 240ms var(--ease-out),
+        content-visibility 240ms allow-discrete;
+    }
+
+    .faq-item[open]::details-content {
+      block-size: auto;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .faq-item .faq-chevron,
+    .faq-item::details-content {
+      transition: none;
+    }
+  }
+}
