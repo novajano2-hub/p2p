@@ -5,7 +5,7 @@ import { Suspense } from "react";
 
 import { SceneErrorBoundary } from "@/components/three/scene-error-boundary";
 import { cn } from "@/lib/cn";
-import { useIsClient, useLowPower, useMediaQuery } from "@/lib/use-media-query";
+import { useDelayedTrue, useIsClient, useLowPower, useMediaQuery } from "@/lib/use-media-query";
 
 /*
   three.js is loaded only in the browser, only after first paint, and only
@@ -23,6 +23,8 @@ export function HeroVisual({ className }: { className?: string }) {
   const ready = useIsClient();
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
   const lowPower = useLowPower();
+  // Mount the scene after the headline entrance so the chunk parse never stutters it.
+  const settled = useDelayedTrue(reduced ? 0 : 1400);
 
   return (
     <div
@@ -32,8 +34,8 @@ export function HeroVisual({ className }: { className?: string }) {
       className={cn("relative aspect-square w-full", className)}
     >
       <Backdrop />
-      {ready ? (
-        <div className="absolute inset-0">
+      {ready && settled ? (
+        <div className="absolute inset-0 transition-opacity duration-700 ease-out motion-reduce:transition-none starting:opacity-0">
           <SceneErrorBoundary fallback={<StillCoin />}>
             <Suspense fallback={null}>
               <EscrowScene reduced={reduced} lowPower={lowPower} />

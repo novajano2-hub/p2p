@@ -35,6 +35,26 @@ export function useIsClient(): boolean {
   );
 }
 
+/**
+ * False until `ms` after mount, then true. Lets heavy work (a three.js chunk)
+ * start after the entrance animation has had the main thread to itself.
+ */
+export function useDelayedTrue(ms: number): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const id = window.setTimeout(() => {
+        delayedFlags.set(ms, true);
+        onChange();
+      }, ms);
+      return () => window.clearTimeout(id);
+    },
+    () => delayedFlags.get(ms) === true,
+    () => false,
+  );
+}
+
+const delayedFlags = new Map<number, boolean>();
+
 /** A rough "keep the GPU work light" signal: coarse pointer or few cores. */
 export function useLowPower(): boolean {
   const coarse = useMediaQuery("(pointer: coarse)");

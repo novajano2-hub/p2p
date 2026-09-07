@@ -9,7 +9,7 @@ import {
   RoundedBox,
 } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useRef, type ReactNode } from "react";
+import { useMemo, useRef, type ReactNode } from "react";
 import * as THREE from "three";
 
 /*
@@ -44,7 +44,7 @@ export default function EscrowScene({ reduced, lowPower }: EscrowSceneProps) {
   return (
     <Canvas
       dpr={lowPower ? 1 : [1, 1.75]}
-      camera={{ position: [0, 0.55, 6.6], fov: 30 }}
+      camera={{ position: [0, 0.6, 7.4], fov: 30 }}
       frameloop={reduced ? "demand" : "always"}
       // No tone mapping: the kit's exact colours, and a background identical to the page.
       flat
@@ -55,12 +55,6 @@ export default function EscrowScene({ reduced, lowPower }: EscrowSceneProps) {
       }}
       style={{ background: "transparent" }}
     >
-      {/*
-        The refraction buffer clears to this colour. Without it a transparent
-        canvas makes the glass render black. Matches the page, so it is seamless.
-      */}
-      <color attach="background" args={[CANVAS]} />
-
       <Rig reduced={reduced}>
         <Vault reduced={reduced} lowPower={lowPower} />
         <UsdtCoin reduced={reduced} />
@@ -76,12 +70,6 @@ export default function EscrowScene({ reduced, lowPower }: EscrowSceneProps) {
         color={INK}
         frames={reduced ? 1 : Infinity}
       />
-
-      {/* Sage plinth the vault stands on. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.83, 0]}>
-        <circleGeometry args={[3.4, 64]} />
-        <meshBasicMaterial color={SAGE} transparent opacity={0.3} />
-      </mesh>
 
       <Studio />
       <hemisphereLight args={[CANVAS, SAGE, 0.6]} />
@@ -107,6 +95,9 @@ function Rig({ reduced, children }: { reduced: boolean; children: ReactNode }) {
 
 function Vault({ reduced, lowPower }: EscrowSceneProps) {
   const mesh = useRef<THREE.Mesh>(null);
+  // The refraction buffer clears to this. On a transparent canvas it would
+  // otherwise clear to black and the glass would render dark.
+  const refractionBackground = useMemo(() => new THREE.Color(CANVAS), []);
 
   useFrame((state, delta) => {
     if (reduced || !mesh.current) return;
@@ -117,12 +108,13 @@ function Vault({ reduced, lowPower }: EscrowSceneProps) {
   return (
     <RoundedBox
       ref={mesh}
-      args={[2.35, 2.35, 2.35]}
-      radius={0.22}
+      args={[2.2, 2.2, 2.2]}
+      radius={0.2}
       smoothness={6}
       rotation={[0.22, 0.65, 0]}
     >
       <MeshTransmissionMaterial
+        background={refractionBackground}
         samples={lowPower ? 6 : 10}
         resolution={lowPower ? 256 : 512}
         thickness={1.1}
@@ -170,16 +162,18 @@ function BirrCoin({ reduced }: { reduced: boolean }) {
   useFrame((state) => {
     if (!group.current) return;
     const t = reduced ? start : start + state.clock.elapsedTime * 0.32;
+    // An orbit deeper than it is wide: the coin passes in front of and behind
+    // the vault instead of swinging out past the edges of the canvas.
     group.current.position.set(
-      Math.cos(t) * 2.3,
-      Math.sin(t * 1.3) * 0.22 + 0.1,
-      Math.sin(t) * 2.3,
+      Math.cos(t) * 1.45,
+      Math.sin(t * 1.3) * 0.2 + 0.05,
+      Math.sin(t) * 2.35,
     );
     group.current.rotation.y = -t;
   });
 
   return (
-    <group ref={group} position={[Math.cos(start) * 2.3, 0.1, Math.sin(start) * 2.3]}>
+    <group ref={group} position={[Math.cos(start) * 1.45, 0.05, Math.sin(start) * 2.35]}>
       <mesh rotation={[Math.PI / 2 - 0.5, 0, 0.3]}>
         <cylinderGeometry args={[0.42, 0.42, 0.1, 64]} />
         <meshStandardMaterial color={BIRR} metalness={0.3} roughness={0.45} />
