@@ -1,7 +1,7 @@
 "use client";
 
 import { List, X } from "@phosphor-icons/react";
-import Link from "next/link";
+import { AppLink } from "@/components/ui/app-link";
 import { useEffect, useId, useState } from "react";
 
 import { ButtonLink } from "@/components/ui/button";
@@ -49,14 +49,14 @@ export function MobileNav() {
       >
         <nav aria-label="Primary" className="flex flex-col">
           {nav.map((item) => (
-            <Link
+            <AppLink
               key={item.href}
               href={item.href}
               onClick={() => setOpen(false)}
               className="rounded-control text-foreground hover:bg-muted px-3 py-3 text-base transition-colors duration-150"
             >
               {item.label}
-            </Link>
+            </AppLink>
           ))}
         </nav>
         <div className="mt-4 grid grid-cols-2 gap-2">

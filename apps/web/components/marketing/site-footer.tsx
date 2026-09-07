@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AppLink } from "@/components/ui/app-link";
 
 import { Logo } from "@/components/brand/logo";
 import { Container } from "@/components/marketing/section";
@@ -52,12 +52,12 @@ function FooterGroup({ title, links, className }: FooterGroupProps) {
       <ul className="mt-4 flex flex-col gap-2.5">
         {links.map((link) => (
           <li key={link.href}>
-            <Link
+            <AppLink
               href={link.href}
               className="text-muted-foreground hover:text-foreground text-[15px] transition-colors duration-150"
             >
               {link.label}
-            </Link>
+            </AppLink>
           </li>
         ))}
       </ul>

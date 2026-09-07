@@ -1,5 +1,5 @@
 import { ArrowRight } from "@phosphor-icons/react/dist/ssr";
-import Link from "next/link";
+import { AppLink } from "@/components/ui/app-link";
 import type { ComponentPropsWithoutRef } from "react";
 
 import { cn } from "@/lib/cn";
@@ -66,7 +66,7 @@ export function Button({ variant, size, className, type = "button", ...props }: 
   return <button type={type} className={buttonClasses({ variant, size }, className)} {...props} />;
 }
 
-export type ButtonLinkProps = ComponentPropsWithoutRef<typeof Link> &
+export type ButtonLinkProps = ComponentPropsWithoutRef<typeof AppLink> &
   StyleProps & { arrow?: boolean };
 
 /** Anchor styled as a button. Use for navigation, never for actions. */
@@ -80,7 +80,7 @@ export function ButtonLink({
 }: ButtonLinkProps) {
   const showArrow = arrow ?? variant === "ghost";
   return (
-    <Link className={buttonClasses({ variant, size }, className)} {...props}>
+    <AppLink className={buttonClasses({ variant, size }, className)} {...props}>
       {children}
       {showArrow ? (
         <ArrowRight
@@ -90,6 +90,6 @@ export function ButtonLink({
           className="transition-transform duration-150 ease-out group-hover/btn:translate-x-0.5 motion-reduce:transition-none"
         />
       ) : null}
-    </Link>
+    </AppLink>
   );
 }

@@ -27,6 +27,29 @@ async function expectNoSeriousA11yViolations(page: Page, colorScheme: "light" | 
   expect(serious, JSON.stringify(serious, null, 2)).toEqual([]);
 }
 
+/** Waits for `scroll-behavior: smooth` to finish, so positions are measured at rest. */
+async function waitForScrollToSettle(page: Page) {
+  await page.waitForFunction(
+    () =>
+      new Promise<boolean>((resolve) => {
+        let last = window.scrollY;
+        let still = 0;
+        const tick = () => {
+          if (window.scrollY === last) {
+            if (++still >= 3) return resolve(true);
+          } else {
+            still = 0;
+            last = window.scrollY;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    undefined,
+    { timeout: 10_000 },
+  );
+}
+
 test.describe("landing page", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
@@ -112,7 +135,17 @@ test.describe("landing page", () => {
     await expect(visual.locator("canvas, .rounded-full").first()).toBeAttached({ timeout: 20_000 });
   });
 
+  test("the ledger card is shown only where it can sit beside the steps", async ({ page }) => {
+    const card = page.locator("[data-ledger-card]");
+    if ((page.viewportSize()?.width ?? 0) >= 1024) {
+      await expect(card).toBeVisible();
+    } else {
+      await expect(card).toBeHidden();
+    }
+  });
+
   test("ledger shows the finished trade statically under reduced motion", async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 1024, "the card is desktop-only");
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.reload();
     const buyer = page.locator('[data-ledger-row="buyer"] [data-amount]');
@@ -121,6 +154,7 @@ test.describe("landing page", () => {
   });
 
   test("scrolling the steps moves the USDT from seller to buyer", async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 1024, "the card is desktop-only");
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.reload();
 
@@ -149,6 +183,42 @@ test.describe("landing page", () => {
         .filter((p) => p === "fixed"),
     );
     expect(stagePositions).toEqual([]);
+  });
+
+  test("every nav anchor jumps to its section on the first click", async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 1024, "the desktop nav is hidden below lg");
+
+    // The first hash click on a freshly loaded page is the one that used to
+    // land at the top of the document instead of at the section.
+    for (const [label, id] of [
+      ["How it works", "how-it-works"],
+      ["Fees", "fees"],
+      ["Safety", "safety"],
+      ["FAQ", "faq"],
+    ] as const) {
+      await page.goto("/");
+      await page
+        .getByRole("navigation", { name: "Primary" })
+        .getByRole("link", { name: label, exact: true })
+        .click();
+
+      await expect(page).toHaveURL(new RegExp(`#${id}$`));
+      await waitForScrollToSettle(page);
+
+      const { top, atEnd } = await page.locator(`#${id}`).evaluate((el) => ({
+        top: el.getBoundingClientRect().top,
+        // A section near the document end cannot reach the top of the viewport,
+        // because there is nothing left to scroll past it.
+        atEnd: window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2,
+      }));
+
+      expect(
+        atEnd || Math.abs(top - 88) < 24,
+        `#${id} landed at ${Math.round(top)}px: the first click did not reach it`,
+      ).toBe(true);
+      // Either way it has to be on screen, which is exactly what the bug broke.
+      expect(top, `#${id} should be in view`).toBeLessThan(900);
+    }
   });
 
   test("uses exactly one label per call to action intent", async ({ page }) => {

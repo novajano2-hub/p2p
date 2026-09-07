@@ -144,11 +144,13 @@ export function HowItWorks() {
             ))}
           </ol>
 
-          <div className="lg:sticky lg:top-24 lg:col-span-5">
+          {/*
+            The card only earns its place when it can sit beside the steps it
+            annotates. Stacked under them on a narrow screen it is just a second
+            copy of the same story, so below lg it is not rendered at all.
+          */}
+          <div className="hidden lg:sticky lg:top-24 lg:col-span-5 lg:block">
             <LedgerCard mode={motionOk ? "live" : "final"} />
-            <p className="text-muted-foreground mt-3 text-[13px] leading-relaxed">
-              Every row is a real ledger account. None of this touches a blockchain.
-            </p>
             <p className="sr-only">{LEDGER_STATES.map((state) => state.label).join(". ")}.</p>
           </div>
         </div>
