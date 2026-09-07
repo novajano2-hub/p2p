@@ -1,7 +1,7 @@
 import { CaretDown } from "@phosphor-icons/react/dist/ssr";
 
 import { Reveal } from "@/components/motion/reveal";
-import { Section } from "@/components/marketing/section";
+import { Section, SectionHeading } from "@/components/marketing/section";
 import { site } from "@/lib/site";
 
 const items = [
@@ -29,40 +29,30 @@ const items = [
 
 export function Faq() {
   return (
-    <Section id="faq" aria-labelledby="faq-title">
-      <div className="grid gap-10 lg:grid-cols-12 lg:gap-16">
-        <Reveal className="lg:col-span-4">
-          <h2
-            id="faq-title"
-            className="text-3xl leading-[1.1] font-semibold tracking-tight sm:text-4xl lg:text-[2.75rem]"
-          >
-            Questions
-          </h2>
-          <p className="text-muted-foreground mt-4 text-lg leading-relaxed">
-            Short answers to the questions people ask first.
-          </p>
-        </Reveal>
+    <Section id="faq" aria-labelledby="faq-title" className="border-border border-t">
+      <Reveal>
+        <SectionHeading id="faq-title" title="Questions." />
+      </Reveal>
 
-        <Reveal delay={0.1} className="lg:col-span-8">
-          <div className="divide-border border-border divide-y border-t border-b">
-            {items.map((item) => (
-              <details key={item.q} className="faq-item group">
-                <summary className="flex items-center justify-between gap-6 py-5 text-left text-lg font-medium tracking-tight">
-                  <span>{item.q}</span>
-                  <CaretDown
-                    size={20}
-                    aria-hidden="true"
-                    className="faq-chevron text-muted-foreground shrink-0"
-                  />
-                </summary>
-                <p className="text-muted-foreground max-w-prose pb-6 text-[15px] leading-relaxed text-pretty">
-                  {item.a}
-                </p>
-              </details>
-            ))}
-          </div>
-        </Reveal>
-      </div>
+      <Reveal delay={0.08}>
+        <div className="divide-border border-border mt-12 divide-y border-t border-b lg:mt-14">
+          {items.map((item) => (
+            <details key={item.q} className="faq-item group">
+              <summary className="font-display text-foreground flex items-center justify-between gap-6 py-6 text-left text-2xl leading-tight">
+                <span>{item.q}</span>
+                <CaretDown
+                  size={20}
+                  aria-hidden="true"
+                  className="faq-chevron text-muted-foreground shrink-0"
+                />
+              </summary>
+              <p className="text-muted-foreground max-w-[64ch] pb-7 text-[15px] leading-relaxed text-pretty">
+                {item.a}
+              </p>
+            </details>
+          ))}
+        </div>
+      </Reveal>
     </Section>
   );
 }

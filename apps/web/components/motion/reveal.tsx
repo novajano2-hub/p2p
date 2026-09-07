@@ -1,32 +1,46 @@
 "use client";
 
-import { motion, useReducedMotion } from "motion/react";
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+
+import { MOTION_OK, ease, gsap, useGSAP } from "@/components/motion/gsap";
 
 type RevealProps = {
   children: ReactNode;
   className?: string;
-  /** Seconds. Use small multiples (0.06) to stagger siblings. */
+  /** Seconds. Small multiples (0.06) stagger siblings. */
   delay?: number;
 };
 
 /*
-  Scroll reveal: opacity + a 16px rise, once, strong ease-out. Purpose is
-  hierarchy (content arrives in reading order as the viewer reaches it).
-  Under reduced motion nothing moves; the element is simply visible.
+  Scroll reveal: a 22px rise and fade, once, as the element enters the lower
+  part of the viewport. Purpose: hierarchy, content arrives in reading order.
+  Under reduced motion the matchMedia block never runs and nothing moves.
 */
 export function Reveal({ children, className, delay = 0 }: RevealProps) {
-  const reduce = useReducedMotion();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useGSAP(
+    () => {
+      const mm = gsap.matchMedia();
+      mm.add(MOTION_OK, () => {
+        // opacity, never visibility: hidden elements leave the accessibility
+        // tree and cannot take keyboard focus before they scroll into view.
+        gsap.from(ref.current, {
+          y: 22,
+          opacity: 0,
+          duration: 0.9,
+          delay,
+          ease: ease.soft,
+          scrollTrigger: { trigger: ref.current, start: "top 88%", once: true },
+        });
+      });
+    },
+    { scope: ref },
+  );
 
   return (
-    <motion.div
-      className={className}
-      initial={reduce ? false : { opacity: 0, transform: "translateY(16px)" }}
-      whileInView={{ opacity: 1, transform: "translateY(0px)" }}
-      viewport={{ once: true, amount: 0.25 }}
-      transition={{ duration: 0.55, delay, ease: [0.23, 1, 0.32, 1] }}
-    >
+    <div ref={ref} className={className}>
       {children}
-    </motion.div>
+    </div>
   );
 }

@@ -10,8 +10,7 @@ import { cta, nav } from "@/lib/site";
 
 /*
   Disclosure menu for < lg. Opens tens of times a day at most, so it gets a
-  short fade only; the panel does not slide. Closes on Escape and on
-  navigation.
+  short fade only. Closes on Escape and on navigation.
 */
 export function MobileNav() {
   const [open, setOpen] = useState(false);

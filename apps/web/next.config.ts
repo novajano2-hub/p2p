@@ -15,10 +15,8 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  images: {
-    // Placeholder photography only. Replace with the real asset host before launch.
-    remotePatterns: [{ protocol: "https", hostname: "picsum.photos" }],
-  },
+  // three.js ships ESM; transpiling keeps tree-shaking effective through drei.
+  transpilePackages: ["three"],
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },

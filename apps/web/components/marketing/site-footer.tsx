@@ -19,8 +19,8 @@ export function SiteFooter() {
           <div className="lg:col-span-6">
             <Logo />
             <p className="text-muted-foreground mt-4 max-w-sm text-[15px] leading-relaxed">
-              A peer-to-peer marketplace for USDT and Ethiopian birr. Your USDT is held in escrow;
-              your birr goes straight to the other person.
+              A peer-to-peer marketplace for USDT and Ethiopian birr. The USDT is held in escrow;
+              the birr goes straight to the other person.
             </p>
           </div>
 

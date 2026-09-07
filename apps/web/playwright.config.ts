@@ -9,7 +9,11 @@ const baseURL = `http://localhost:${PORT}`;
 */
 export default defineConfig({
   testDir: "./e2e",
+  // axe scans of a page with a live WebGL canvas take 20-30s on their own.
+  timeout: 60_000,
   fullyParallel: true,
+  // Each worker drives a WebGL page; more than three contend for the GPU locally.
+  workers: process.env.CI ? 2 : 3,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",

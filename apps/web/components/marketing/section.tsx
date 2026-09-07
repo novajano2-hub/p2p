@@ -27,22 +27,23 @@ type HeadingProps = {
   title: string;
   lede?: string;
   id?: string;
-  align?: "left" | "center";
   className?: string;
 };
 
-/** Section headline, vertically stacked. Never split into a left/right header. */
-export function SectionHeading({ title, lede, id, align = "left", className }: HeadingProps) {
+/** Section headline in the display serif, stacked. Never split left/right. */
+export function SectionHeading({ title, lede, id, className }: HeadingProps) {
   return (
-    <div className={cn("max-w-2xl", align === "center" && "mx-auto text-center", className)}>
+    <div className={cn("max-w-2xl", className)}>
       <h2
         id={id}
-        className="text-3xl leading-[1.1] font-semibold tracking-tight text-balance sm:text-4xl lg:text-[2.75rem]"
+        className="font-display text-foreground text-4xl leading-[1.08] text-balance sm:text-5xl lg:text-[3.4rem]"
       >
         {title}
       </h2>
       {lede ? (
-        <p className="text-muted-foreground mt-4 text-lg leading-relaxed text-pretty">{lede}</p>
+        <p className="text-muted-foreground mt-5 max-w-[56ch] text-lg leading-relaxed text-pretty">
+          {lede}
+        </p>
       ) : null}
     </div>
   );

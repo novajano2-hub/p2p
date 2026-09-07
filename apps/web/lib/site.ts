@@ -6,9 +6,9 @@
  */
 export const site = {
   name: "Abay",
-  tagline: "Trade USDT for birr, with escrow on every trade.",
+  tagline: "Trade USDT for birr, held in escrow.",
   description:
-    "A peer-to-peer marketplace for buying and selling USDT with Ethiopian birr. Your USDT is locked in escrow until you confirm the birr arrived.",
+    "A peer-to-peer marketplace for buying and selling USDT with Ethiopian birr. The USDT is locked in escrow when a trade starts and released only when you confirm the birr arrived.",
   locale: "en",
   isPlaceholderBrand: true,
 } as const;

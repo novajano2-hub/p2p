@@ -40,6 +40,22 @@ For this technical exercise, assume there are no legal constraints. Still keep i
 | Chain | One network at launch; target Plasma because eligible USDT transfers can use sponsored gas |
 | Fees | Platform P2P fee initially zero; internal escrow transfers have no blockchain fee |
 | Delivery | Web first; no native mobile app initially |
+| Package manager | npm workspaces (not pnpm) with Turborepo; exact version pinning via `npm run pin` |
+| Admin identity | Separate admin realm (own table and auth), not a role flag on `User` |
+| Fees at launch | Zero P2P fee; ledger and UI shaped so a buyer-pays percentage can be enabled later without schema change |
+| Brand | Placeholder name "Abay"; English-first UI for an Ethiopian audience |
+
+### Brand and design system (decided 2026-09-07)
+
+The visual language is the "Quiet Capital" UI kit. It is a visual language, not a page template.
+
+- Colors: Canvas `#F6F4EE` (page), Surface `#FFFFFF`, Forest `#183D32` (the only accent), Ink `#202622` (text), Sage `#ADB9A9` (secondary surfaces and decoration, never body text), Border `#DADFD6`. Destructive is a muted clay red. Status pills: Complete (green tint), Pending (amber tint), Needs attention (red tint), Neutral (grey tint).
+- One committed light theme. Do not add a dark theme without a design decision.
+- Type: Newsreader for display headings; IBM Plex Sans for interface and body (the open-source parent of Binance's proprietary BinancePlex, which cannot be licensed); IBM Plex Mono for ledger and money figures. Amounts always use tabular numerals.
+- Shape: 6px radius on controls, 8px on surfaces and cards, pills for status. Fine 1px borders, minimal tinted shadow.
+- Motion: GSAP (ScrollTrigger, SplitText) for DOM animation and three.js via react-three-fiber for 3D. No other animation library; never mix Framer Motion into the same tree. Every animation must be gated on `prefers-reduced-motion` and have a stated purpose (hierarchy, storytelling, feedback, state). 3D loads lazily in the browser only and never fetches assets from third-party CDNs.
+- Copy: plain, concrete, no em dashes as punctuation, one label per call-to-action intent ("Create account", "Log in"), no fabricated statistics or customer logos.
+- Tokens live in `apps/web/app/globals.css`; the brand name lives only in `apps/web/lib/site.ts`.
 
 ### Important network qualification
 
@@ -57,7 +73,7 @@ User-facing copy should say “No platform deposit fee; the sender or third part
 
 ### Repository and applications
 
-Use a pnpm monorepo with Turborepo:
+Use an npm workspaces monorepo with Turborepo (npm, not pnpm; decided 2026-09-07):
 
 ```text
 apps/

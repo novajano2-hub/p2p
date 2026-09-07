@@ -7,25 +7,35 @@ The Next.js client. Currently only the marketing landing page (route group
 
 ```
 app/(marketing)/       landing page: layout, page
-components/brand/      logo (placeholder mark)
+components/brand/      wordmark (placeholder)
 components/marketing/  one component per section, plus header, footer, mobile nav
-components/motion/     Reveal: scroll-reveal wrapper (client)
-components/ui/         Button / ButtonLink
+components/motion/     gsap.ts (single plugin registration), Reveal (scroll reveal)
+components/three/      the escrow vault scene (react-three-fiber), lazy-loaded
+components/ui/         Button / ButtonLink, StatusPill
 lib/site.ts            brand name, nav, CTA labels. The ONLY place the brand name lives
 lib/cn.ts              class merge helper
-app/globals.css        design tokens (colours, radius, easing, fonts)
+app/globals.css        design tokens ("Quiet Capital" kit: colours, radius, easing, fonts)
 e2e/                   Playwright + axe (AT-22)
 scripts/               import-boundary check for the marketing route group
 ```
+
+## Design system
+
+- Palette: Canvas `#F6F4EE`, Surface `#FFFFFF`, Forest `#183D32`, Ink `#202622`, Sage `#ADB9A9`,
+  Border `#DADFD6`. Forest is the only accent. One light theme.
+- Type: Newsreader (display), IBM Plex Sans (interface and body), IBM Plex Mono (ledger figures).
+- Radius: 6px controls, 8px surfaces. Fine borders, minimal shadow.
+- Motion: GSAP (ScrollTrigger, SplitText) for the DOM, three.js via react-three-fiber for the
+  hero. No other animation library. Every animation is gated on `prefers-reduced-motion`.
 
 ## Rules for this app
 
 - The marketing route group imports nothing from the API client, money modules or the
   authenticated app. `npm run check:boundaries` enforces it.
 - The browser never computes an authoritative balance or trade state. Amounts shown on the
-  landing page are illustrative strings.
-- Motion is isolated in `"use client"` leaves and always honours `prefers-reduced-motion`.
-- One accent colour, one radius system, one font family. Tokens live in `globals.css`.
+  landing page are illustrative strings driven by GSAP.
+- three.js loads only in the browser, after first paint, and never fetches from a CDN (the
+  studio lighting is built from light panels, not a downloaded HDRI).
 
 ## Commands
 
@@ -50,7 +60,5 @@ PW_BROWSER_CHANNEL=chrome npm run test:e2e -w web
 
 ## Placeholders to replace before launch
 
-- Brand name and mark: `lib/site.ts`, `components/brand/logo.tsx`
-- Photograph in the Safety section (`components/marketing/safety.tsx`), currently a
-  grayscale picsum.photos placeholder; also remove that host from `next.config.ts`
+- Brand name and wordmark: `lib/site.ts`
 - `/terms`, `/privacy`, `/login`, `/register` routes do not exist yet

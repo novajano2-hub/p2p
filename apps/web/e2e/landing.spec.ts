@@ -7,9 +7,18 @@ import { expect, test, type Page } from "@playwright/test";
   test lives in scripts/check-boundaries.mjs.
 */
 
-async function expectNoSeriousA11yViolations(page: Page) {
+/*
+  Scans run under reduced motion: GSAP does nothing and the 3D scene renders a
+  single frame, so contrast is measured at rest and the scan is not competing
+  with a render loop. The canvas itself is decorative (aria-hidden) and excluded.
+*/
+async function expectNoSeriousA11yViolations(page: Page, colorScheme: "light" | "dark" = "light") {
+  await page.emulateMedia({ reducedMotion: "reduce", colorScheme });
+  await page.reload();
+  await page.locator("[data-hero-visual][data-state='ready']").waitFor();
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+    .exclude("canvas")
     .analyze();
   const serious = results.violations.filter(
     (v) => v.impact === "serious" || v.impact === "critical",
@@ -22,14 +31,16 @@ test.describe("landing page", () => {
     await page.goto("/");
   });
 
-  test("has no serious accessibility violations in light mode", async ({ page }) => {
+  test("has no serious accessibility violations", async ({ page }) => {
+    test.slow();
     await expectNoSeriousA11yViolations(page);
   });
 
-  test("has no serious accessibility violations in dark mode", async ({ page }) => {
-    await page.emulateMedia({ colorScheme: "dark" });
-    await page.reload();
-    await expectNoSeriousA11yViolations(page);
+  test("stays on its single light theme under a dark-mode preference", async ({ page }) => {
+    test.slow();
+    await expectNoSeriousA11yViolations(page, "dark");
+    const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    expect(bg).toBe("rgb(246, 244, 238)");
   });
 
   test("hero headline and primary action are visible without scrolling", async ({ page }) => {
@@ -47,6 +58,7 @@ test.describe("landing page", () => {
   });
 
   test("never scrolls horizontally", async ({ page }) => {
+    await page.waitForTimeout(1500);
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
@@ -61,7 +73,6 @@ test.describe("landing page", () => {
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/#main$/);
 
-    // Every interactive element must be reachable and named.
     const unnamed = await page.evaluate(() => {
       const nodes = Array.from(document.querySelectorAll<HTMLElement>("a, button, summary"));
       return nodes
@@ -75,30 +86,50 @@ test.describe("landing page", () => {
   test("FAQ items open and close from the keyboard", async ({ page }) => {
     const first = page.locator("details.faq-item").first();
     const summary = first.locator("summary");
+    await summary.scrollIntoViewIfNeeded();
     await summary.focus();
+    await expect(summary).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(first).toHaveAttribute("open", "");
     await page.keyboard.press("Enter");
     await expect(first).not.toHaveAttribute("open", "");
   });
 
-  test("trade preview renders the final state statically under reduced motion", async ({
-    page,
-  }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.reload();
-    const status = page.getByRole("status");
-    await expect(status).toHaveText("USDT released to buyer");
-    await page.waitForTimeout(3500);
-    await expect(status).toHaveText("USDT released to buyer");
+  test("the 3D hero mounts, or falls back, without breaking the page", async ({ page }) => {
+    const visual = page.locator("[data-hero-visual]");
+    await expect(visual).toHaveAttribute("data-state", "ready");
+    // Either a WebGL canvas or the static fallback must appear once the lazy chunk loads.
+    await expect(visual.locator("canvas, .rounded-full").first()).toBeAttached({ timeout: 20_000 });
   });
 
-  test("trade preview cycles through escrow states when motion is allowed", async ({ page }) => {
+  test("ledger shows the finished trade statically under reduced motion", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.reload();
+    const buyer = page.locator('[data-ledger-row="buyer"] [data-amount]');
+    await expect(buyer).toHaveText("250.00");
+    await expect(page.getByText("USDT released", { exact: true })).toBeVisible();
+  });
+
+  test("scrolling the narrative moves the USDT from seller to buyer", async ({ page }) => {
+    test.skip(
+      (page.viewportSize()?.width ?? 0) < 1024,
+      "the pinned narrative only runs on desktop widths",
+    );
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.reload();
-    const status = page.getByRole("status");
-    await expect(status).toHaveText("USDT locked in escrow");
-    await expect(status).toHaveText("Birr sent, marked paid", { timeout: 6000 });
+
+    const seller = page.locator('[data-ledger-row="seller"] [data-amount]');
+    const buyer = page.locator('[data-ledger-row="buyer"] [data-amount]');
+    await expect(seller).toHaveText("250.00");
+    await expect(buyer).toHaveText("0.00");
+
+    await page.locator("#how-it-works").scrollIntoViewIfNeeded();
+    for (let i = 0; i < 40; i++) {
+      await page.mouse.wheel(0, 400);
+      await page.waitForTimeout(60);
+    }
+    await expect(buyer).toHaveText("250.00", { timeout: 8000 });
+    await expect(seller).toHaveText("0.00");
   });
 
   test("uses exactly one label per call to action intent", async ({ page }) => {
