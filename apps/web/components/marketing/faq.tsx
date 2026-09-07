@@ -35,18 +35,18 @@ export function Faq() {
       </Reveal>
 
       <Reveal delay={0.08}>
-        <div className="divide-border border-border mt-12 divide-y border-t border-b lg:mt-14">
+        <div className="divide-border border-border mt-10 max-w-3xl divide-y border-t border-b lg:mt-12">
           {items.map((item) => (
             <details key={item.q} className="faq-item group">
-              <summary className="font-display text-foreground flex items-center justify-between gap-6 py-6 text-left text-2xl leading-tight">
+              <summary className="font-display text-foreground flex items-center justify-between gap-6 py-5 text-left text-base leading-snug sm:text-[17px]">
                 <span>{item.q}</span>
                 <CaretDown
-                  size={20}
+                  size={18}
                   aria-hidden="true"
                   className="faq-chevron text-muted-foreground shrink-0"
                 />
               </summary>
-              <p className="text-muted-foreground max-w-[64ch] pb-7 text-[15px] leading-relaxed text-pretty">
+              <p className="text-muted-foreground max-w-[64ch] pb-6 text-[15px] leading-relaxed text-pretty">
                 {item.a}
               </p>
             </details>

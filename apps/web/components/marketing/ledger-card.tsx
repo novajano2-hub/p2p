@@ -3,16 +3,16 @@ import { cn } from "@/lib/cn";
 
 /*
   A trade, as the ledger sees it: three accounts and where the USDT sits.
-  In the scroll narrative GSAP drives the amounts and the status pill by
-  targeting the data attributes below. This component itself holds no state,
-  so React never fights the animation for those nodes.
+  As the steps scroll past, GSAP drives the amounts and the status pill by
+  targeting the data attributes below. This component holds no state, so React
+  never fights the animation for those nodes.
 */
 
 export const LEDGER_STATES = [
   { key: "deposited", status: "neutral", label: "Awaiting an offer" },
-  { key: "locked", status: "pending", label: "USDT locked in escrow" },
-  { key: "paid", status: "pending", label: "Birr sent, marked paid" },
-  { key: "released", status: "complete", label: "USDT released" },
+  { key: "locked", status: "pending", label: "In escrow" },
+  { key: "paid", status: "pending", label: "Birr sent" },
+  { key: "released", status: "complete", label: "Released" },
 ] as const satisfies ReadonlyArray<{ key: string; status: StatusTone; label: string }>;
 
 export type LedgerStateKey = (typeof LEDGER_STATES)[number]["key"];
@@ -35,14 +35,11 @@ export function LedgerCard({ mode, className }: LedgerCardProps) {
   return (
     <div
       data-ledger-card
-      className={cn("rounded-surface border-border bg-surface shadow-panel border", className)}
+      className={cn("border-border bg-surface/70 rounded-surface border", className)}
     >
-      <div className="border-border flex items-center justify-between gap-4 border-b px-5 py-4">
-        <div>
-          <p className="font-display text-foreground text-xl leading-none">Trade</p>
-          <p className="text-muted-foreground mt-1 text-[13px]">250 USDT for 39,600 ETB</p>
-        </div>
-        <div className="relative h-7 min-w-[13.5rem]">
+      <div className="border-border flex items-center justify-between gap-4 border-b px-5 py-3.5">
+        <p className="text-muted-foreground text-[13px]">250 USDT for 39,600 ETB</p>
+        <div className="relative h-7 min-w-[8.5rem]">
           {LEDGER_STATES.map((state) =>
             mode === "final" && state.key !== "released" ? null : (
               <StatusPill
@@ -64,10 +61,6 @@ export function LedgerCard({ mode, className }: LedgerCardProps) {
         <Row account="escrow" label="Trade escrow" amount={amounts.escrow} emphasis />
         <Row account="buyer" label="Buyer, available" amount={amounts.buyer} />
       </dl>
-
-      <p className="border-border text-muted-foreground border-t px-5 py-3 text-xs">
-        Every row is a real ledger account. Nothing here moves on a blockchain.
-      </p>
     </div>
   );
 }
@@ -87,14 +80,14 @@ function Row({
     <div
       data-ledger-row={account}
       className={cn(
-        "flex items-baseline justify-between gap-6 px-5 py-4 transition-colors duration-300",
-        emphasis && "bg-primary-soft/40",
+        "flex items-baseline justify-between gap-6 px-5 py-4",
+        emphasis && "bg-primary-soft/35",
       )}
     >
-      <dt className="text-muted-foreground text-[15px]">{label}</dt>
-      <dd className="text-foreground font-mono text-lg tabular-nums">
+      <dt className="text-muted-foreground text-sm">{label}</dt>
+      <dd className="text-foreground font-mono text-base tabular-nums">
         <span data-amount>{amount}</span>
-        <span className="text-muted-foreground ml-1.5 text-sm">USDT</span>
+        <span className="text-muted-foreground ml-1.5 text-xs">USDT</span>
       </dd>
     </div>
   );

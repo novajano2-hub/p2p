@@ -5,36 +5,38 @@ import { Suspense } from "react";
 
 import { SceneErrorBoundary } from "@/components/three/scene-error-boundary";
 import { cn } from "@/lib/cn";
-import { useDelayedTrue, useIsClient, useLowPower, useMediaQuery } from "@/lib/use-media-query";
+import { useDelayedTrue, useLowPower, useMediaQuery } from "@/lib/use-media-query";
 
 /*
-  three.js is loaded only in the browser, only after first paint, and only
-  once we know the viewer's motion preference and rough device class. Until
-  then, and whenever WebGL is unavailable, the still backdrop stands in.
+  three.js is loaded only in the browser, only at desktop widths, only after
+  the hero entrance has had the main thread to itself, and only once the
+  viewer's motion preference is known. Everywhere else nothing is fetched.
 */
 const EscrowScene = dynamic(() => import("@/components/three/escrow-scene"), {
   ssr: false,
   loading: () => null,
 });
 
-// Motion preference and device class come from lib/use-media-query, hydration-safe.
+/** Below this width the scene is not rendered at all; the hero is text only. */
+const DESKTOP = "(min-width: 1024px)";
 
 export function HeroVisual({ className }: { className?: string }) {
-  const ready = useIsClient();
+  const desktop = useMediaQuery(DESKTOP);
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
   const lowPower = useLowPower();
   // Mount the scene after the headline entrance so the chunk parse never stutters it.
   const settled = useDelayedTrue(reduced ? 0 : 1400);
+  const mounted = desktop && settled;
 
   return (
     <div
       data-hero-visual
-      data-state={ready ? "ready" : "loading"}
+      data-state={desktop ? "ready" : "hidden"}
       aria-hidden="true"
       className={cn("relative aspect-square w-full", className)}
     >
       <Backdrop />
-      {ready && settled ? (
+      {mounted ? (
         <div className="absolute inset-0 transition-opacity duration-700 ease-out motion-reduce:transition-none starting:opacity-0">
           <SceneErrorBoundary fallback={<StillCoin />}>
             <Suspense fallback={null}>
@@ -50,7 +52,7 @@ export function HeroVisual({ className }: { className?: string }) {
 /** Soft sage floor the scene sits on. Always present, under the canvas. */
 function Backdrop() {
   return (
-    <div className="rounded-surface absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_62%,color-mix(in_oklab,var(--color-sage)_38%,transparent),transparent_72%)]" />
+    <div className="rounded-surface absolute inset-0 bg-[radial-gradient(58%_48%_at_50%_60%,color-mix(in_oklab,var(--color-sage)_32%,transparent),transparent_72%)]" />
   );
 }
 
@@ -58,7 +60,7 @@ function Backdrop() {
 function StillCoin() {
   return (
     <div className="absolute inset-0 flex items-center justify-center">
-      <div className="border-border bg-surface/70 shadow-panel flex size-[46%] items-center justify-center rounded-[22%] border">
+      <div className="rounded-surface border-border bg-surface/70 shadow-panel flex size-[46%] items-center justify-center border">
         <div className="bg-primary ring-sage/70 size-[42%] rounded-full ring-4" />
       </div>
     </div>

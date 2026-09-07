@@ -8,29 +8,47 @@ type Variant = "primary" | "secondary" | "ghost" | "inverse" | "destructive";
 type Size = "sm" | "md" | "lg";
 
 /*
-  The kit's actions. Primary is Forest on Canvas text; Secondary is an outlined
-  Forest; Ghost is a Forest text link with an arrow. 6px radius throughout.
-  Press feedback is a 1px nudge over 120ms; hover only changes colour.
+  Buttons sit on the page rather than being painted onto it: a resting shadow,
+  a 1px lift and a deeper shadow on hover, and a pressed inset on click. The
+  whole cycle is 140ms, and motion-reduce keeps the colour change but drops the
+  movement.
 */
 const base =
   "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-control font-medium " +
-  "transition-[background-color,color,border-color,transform] duration-150 ease-out " +
-  "active:translate-y-px motion-reduce:active:translate-y-0 " +
+  "transition-[background-color,color,border-color,box-shadow,translate] duration-150 ease-out " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring " +
-  "disabled:pointer-events-none disabled:opacity-50";
+  "disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-[background-color,color,border-color]";
+
+const lift = "hover:-translate-y-px active:translate-y-0 motion-reduce:hover:translate-y-0";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-primary text-primary-foreground hover:bg-primary-hover",
-  secondary: "border border-primary bg-surface text-primary hover:bg-primary-soft",
+  primary: cn(
+    "bg-primary text-primary-foreground shadow-raised",
+    "hover:bg-primary-hover hover:shadow-raised-hover active:shadow-pressed",
+    lift,
+  ),
+  secondary: cn(
+    "border border-border bg-surface text-foreground shadow-raised-soft",
+    "hover:border-primary/30 hover:text-primary hover:shadow-raised-soft-hover active:shadow-pressed",
+    lift,
+  ),
   ghost: "px-0 text-primary hover:text-primary-hover",
-  inverse: "bg-primary-foreground text-primary hover:bg-surface",
-  destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+  inverse: cn(
+    "bg-primary-foreground text-primary shadow-raised-soft",
+    "hover:bg-surface hover:shadow-raised-soft-hover active:shadow-pressed",
+    lift,
+  ),
+  destructive: cn(
+    "bg-destructive text-destructive-foreground shadow-raised",
+    "hover:bg-destructive/90 hover:shadow-raised-hover active:shadow-pressed",
+    lift,
+  ),
 };
 
 const sizes: Record<Size, string> = {
   sm: "h-9 px-3.5 text-sm",
-  md: "h-11 px-5 text-[15px]",
-  lg: "h-12 px-6 text-base",
+  md: "h-10 px-5 text-[15px]",
+  lg: "h-12 px-6 text-[15px]",
 };
 
 type StyleProps = { variant?: Variant | undefined; size?: Size | undefined };
@@ -64,7 +82,14 @@ export function ButtonLink({
   return (
     <Link className={buttonClasses({ variant, size }, className)} {...props}>
       {children}
-      {showArrow ? <ArrowRight size={18} weight="bold" aria-hidden="true" /> : null}
+      {showArrow ? (
+        <ArrowRight
+          size={17}
+          weight="bold"
+          aria-hidden="true"
+          className="transition-transform duration-150 ease-out group-hover/btn:translate-x-0.5 motion-reduce:transition-none"
+        />
+      ) : null}
     </Link>
   );
 }

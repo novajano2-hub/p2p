@@ -34,19 +34,19 @@ export function Fees() {
         />
       </Reveal>
 
-      <Reveal delay={0.1}>
-        <dl className="border-border mt-12 grid border-t lg:mt-16 lg:grid-cols-3">
+      <Reveal delay={0.08}>
+        <dl className="border-border mt-12 grid border-t lg:mt-14 lg:grid-cols-3">
           {rates.map((rate) => (
             <div
               key={rate.term}
-              className="border-border border-b py-8 lg:border-r lg:px-8 lg:py-10 lg:first:pl-0 lg:last:border-r-0"
+              className="border-border border-b py-7 lg:border-r lg:px-7 lg:py-8 lg:first:pl-0 lg:last:border-r-0"
             >
               <dt className="text-muted-foreground text-sm font-medium">{rate.term}</dt>
               <dd>
-                <p className="font-display text-foreground mt-3 text-6xl leading-none tabular-nums lg:text-7xl">
+                <p className="font-display text-foreground mt-2 text-4xl leading-none tabular-nums">
                   {rate.figure}
                 </p>
-                <p className="text-muted-foreground mt-4 max-w-[36ch] text-[15px] leading-relaxed text-pretty">
+                <p className="text-muted-foreground mt-3 max-w-[38ch] text-[15px] leading-relaxed text-pretty">
                   {rate.note}
                 </p>
               </dd>

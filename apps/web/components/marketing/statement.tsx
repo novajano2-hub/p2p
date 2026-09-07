@@ -1,12 +1,12 @@
 import { Reveal } from "@/components/motion/reveal";
 import { Section } from "@/components/marketing/section";
 
-/** One sentence, set large. The rule the whole product is built around. */
+/** One sentence. The rule the whole product is built around. */
 export function Statement() {
   return (
-    <Section bare className="border-border border-t py-20 sm:py-24 lg:py-28">
+    <Section bare className="border-border border-t py-16 sm:py-20">
       <Reveal>
-        <p className="font-display text-foreground max-w-4xl text-3xl leading-[1.18] text-balance sm:text-4xl lg:text-[3.25rem] lg:leading-[1.14]">
+        <p className="font-display text-foreground max-w-3xl text-xl leading-[1.35] text-balance sm:text-2xl lg:text-[1.75rem]">
           The USDT is locked before any birr moves, and it is released only by the person who was
           paid. Not by a timer, not by a screenshot, and never by the buyer.
         </p>

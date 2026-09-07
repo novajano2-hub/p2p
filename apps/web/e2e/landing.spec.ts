@@ -15,7 +15,8 @@ import { expect, test, type Page } from "@playwright/test";
 async function expectNoSeriousA11yViolations(page: Page, colorScheme: "light" | "dark" = "light") {
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme });
   await page.reload();
-  await page.locator("[data-hero-visual][data-state='ready']").waitFor();
+  // The hero visual is desktop-only, so wait on the headline, which exists at every width.
+  await page.getByRole("heading", { level: 1 }).waitFor();
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
     .exclude("canvas")
@@ -95,8 +96,17 @@ test.describe("landing page", () => {
     await expect(first).not.toHaveAttribute("open", "");
   });
 
-  test("the 3D hero mounts, or falls back, without breaking the page", async ({ page }) => {
+  test("the 3D hero mounts on desktop and is absent below it", async ({ page }) => {
     const visual = page.locator("[data-hero-visual]");
+    const desktop = (page.viewportSize()?.width ?? 0) >= 1024;
+
+    if (!desktop) {
+      // Below lg the scene must not render at all, and nothing 3D may be fetched.
+      await expect(visual).toBeHidden();
+      await expect(page.locator("canvas")).toHaveCount(0);
+      return;
+    }
+
     await expect(visual).toHaveAttribute("data-state", "ready");
     // Either a WebGL canvas or the static fallback must appear once the lazy chunk loads.
     await expect(visual.locator("canvas, .rounded-full").first()).toBeAttached({ timeout: 20_000 });
@@ -107,14 +117,10 @@ test.describe("landing page", () => {
     await page.reload();
     const buyer = page.locator('[data-ledger-row="buyer"] [data-amount]');
     await expect(buyer).toHaveText("250.00");
-    await expect(page.getByText("USDT released", { exact: true })).toBeVisible();
+    await expect(page.locator('[data-ledger-status="released"]')).toBeVisible();
   });
 
-  test("scrolling the narrative moves the USDT from seller to buyer", async ({ page }) => {
-    test.skip(
-      (page.viewportSize()?.width ?? 0) < 1024,
-      "the pinned narrative only runs on desktop widths",
-    );
+  test("scrolling the steps moves the USDT from seller to buyer", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.reload();
 
@@ -123,13 +129,26 @@ test.describe("landing page", () => {
     await expect(seller).toHaveText("250.00");
     await expect(buyer).toHaveText("0.00");
 
-    await page.locator("#how-it-works").scrollIntoViewIfNeeded();
-    for (let i = 0; i < 40; i++) {
-      await page.mouse.wheel(0, 400);
-      await page.waitForTimeout(60);
-    }
+    // Ordinary scrolling only: nothing is pinned and the scrollbar is never taken over.
+    await page.locator("#how-it-works [data-step]").last().scrollIntoViewIfNeeded();
     await expect(buyer).toHaveText("250.00", { timeout: 8000 });
     await expect(seller).toHaveText("0.00");
+  });
+
+  test("the how-it-works section never pins or hijacks the scroll", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.reload();
+    await page.locator("#how-it-works").scrollIntoViewIfNeeded();
+    await page.waitForTimeout(400);
+
+    // A pinned section leaves a pin-spacer and fixes its stage; neither may exist.
+    expect(await page.locator(".pin-spacer").count()).toBe(0);
+    const stagePositions = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("#how-it-works *"))
+        .map((el) => getComputedStyle(el).position)
+        .filter((p) => p === "fixed"),
+    );
+    expect(stagePositions).toEqual([]);
   });
 
   test("uses exactly one label per call to action intent", async ({ page }) => {

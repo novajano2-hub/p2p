@@ -9,8 +9,8 @@
   One light theme, committed to. Forest is the only accent. Controls are 6px,
   surfaces 8px, borders are fine, motion is restrained.
 
-  Type: Newsreader for display, IBM Plex Sans for interface and body (the
-  open-source parent of Binance's BinancePlex), IBM Plex Mono for ledger figures.
+  Type: IBM Plex Sans throughout, the open-source typeface Binance's
+  proprietary BinancePlex is derived from. Plex Mono for ledger figures.
 
   Placeholder brand values live here and in lib/site.ts.
 */
@@ -59,7 +59,7 @@
   --color-status-neutral: #ebeeeb;
   --color-status-neutral-fg: #4b544e;
 
-  --font-display: var(--font-newsreader), Georgia, "Times New Roman", serif;
+  --font-display: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
@@ -72,6 +72,13 @@
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
   --shadow-panel: 0 1px 2px rgb(32 38 34 / 0.04), 0 10px 28px -14px rgb(32 38 34 / 0.14);
+
+  /* Buttons sit on the page rather than being painted onto it. */
+  --shadow-raised: 0 1px 1px rgb(24 61 50 / 0.1), 0 2px 5px -1px rgb(24 61 50 / 0.16);
+  --shadow-raised-hover: 0 2px 3px rgb(24 61 50 / 0.13), 0 10px 20px -6px rgb(24 61 50 / 0.28);
+  --shadow-pressed: inset 0 1px 2px rgb(0 0 0 / 0.2);
+  --shadow-raised-soft: 0 1px 1px rgb(32 38 34 / 0.05), 0 2px 4px -1px rgb(32 38 34 / 0.08);
+  --shadow-raised-soft-hover: 0 2px 4px rgb(32 38 34 / 0.07), 0 8px 16px -6px rgb(32 38 34 / 0.16);
 }
 
 @layer base {
@@ -110,17 +117,46 @@
     outline-offset: 2px;
   }
 
+  /* Headings: same family as body, separated by weight and tracking. */
   .font-display {
-    font-optical-sizing: auto;
-    letter-spacing: -0.012em;
+    font-weight: 600;
+    letter-spacing: -0.024em;
   }
 }
 
-/*
-  Native <details> accordion for the FAQ. Animates open/close height where the
-  browser supports interpolate-size; elsewhere it toggles instantly.
-*/
 @layer components {
+  /*
+    Hero ground: a sage bloom top right, a forest tint top left, over a canvas
+    that warms slightly toward the top. Three stops only, all from the kit.
+  */
+  .hero-surface {
+    background:
+      radial-gradient(
+        72% 58% at 78% 6%,
+        color-mix(in oklab, var(--sage) 58%, transparent),
+        transparent 64%
+      ),
+      radial-gradient(
+        60% 50% at 4% 2%,
+        color-mix(in oklab, var(--forest-tint) 100%, transparent),
+        transparent 62%
+      ),
+      linear-gradient(180deg, #fcfbf7 0%, var(--canvas) 62%);
+  }
+
+  /* The closing band, lifted off the footer by the faintest forest tint. */
+  .cta-surface {
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--forest-tint) 62%, transparent),
+      transparent 88%
+    );
+  }
+
+  /*
+    Native <details> accordion for the FAQ. Animates open/close height where the
+    browser supports interpolate-size; elsewhere it toggles instantly.
+  */
   .faq-item summary {
     list-style: none;
     cursor: pointer;

@@ -4,19 +4,17 @@ import { useRef } from "react";
 
 import { LEDGER_STATES, LedgerCard } from "@/components/marketing/ledger-card";
 import { Container } from "@/components/marketing/section";
-import { MOTION_OK, ease, gsap, useGSAP } from "@/components/motion/gsap";
-import { cn } from "@/lib/cn";
+import { MOTION_OK, ScrollTrigger, ease, gsap, useGSAP } from "@/components/motion/gsap";
 import { useMediaQuery } from "@/lib/use-media-query";
 
 /*
-  The scroll narrative. On a desktop that allows motion, this section pins
-  and scrolling scrubs through the four steps of a trade while the ledger
-  card beside them moves the money for real: 250 USDT leaves the seller's
-  available balance, sits in escrow, and lands with the buyer. Purpose:
-  storytelling, in the sequence a trade actually happens.
+  Four steps, scrolled through at the reader's own pace. Nothing is pinned and
+  nothing is scrubbed: the page scrolls normally, the ledger card sits sticky
+  beside the steps on desktop, and each step lights up as it reaches the middle
+  of the viewport, moving the money in the card with it.
 
-  Everywhere else (small screens, reduced motion) the steps stack and the
-  ledger shows the finished trade. Same content, no pin, no scrub.
+  Purpose: storytelling in the sequence a trade actually happens, without
+  taking the scrollbar away from the reader.
 */
 
 const steps = [
@@ -38,113 +36,128 @@ const steps = [
   },
 ] as const;
 
-const NARRATIVE_QUERY = `${MOTION_OK} and (min-width: 1024px)`;
+/** Where the money sits at each step. */
+const balances = [
+  { seller: 250, escrow: 0, buyer: 0 },
+  { seller: 0, escrow: 250, buyer: 0 },
+  { seller: 0, escrow: 250, buyer: 0 },
+  { seller: 0, escrow: 0, buyer: 250 },
+] as const;
 
 export function HowItWorks() {
   const root = useRef<HTMLElement>(null);
-  const live = useMediaQuery(NARRATIVE_QUERY);
+  const motionOk = useMediaQuery(MOTION_OK);
 
   useGSAP(
     () => {
-      if (!live) return;
+      if (!motionOk) return;
       const scope = root.current;
       if (!scope) return;
 
-      const stage = scope.querySelector<HTMLElement>("[data-stage]");
       const items = gsap.utils.toArray<HTMLElement>("[data-step]", scope);
       const rules = gsap.utils.toArray<HTMLElement>("[data-step-rule]", scope);
       const pills = gsap.utils.toArray<HTMLElement>("[data-ledger-status]", scope);
-      const amountEl = (account: string) =>
-        scope.querySelector<HTMLElement>(`[data-ledger-row="${account}"] [data-amount]`);
-      if (!stage || items.length !== steps.length) return;
+      if (items.length !== steps.length) return;
 
-      const money = { seller: 250, escrow: 0, buyer: 0 };
+      const money = { ...balances[0] };
       const paint = () => {
         for (const [account, value] of Object.entries(money)) {
-          const el = amountEl(account);
+          const el = scope.querySelector<HTMLElement>(
+            `[data-ledger-row="${account}"] [data-amount]`,
+          );
           if (el) el.textContent = value.toFixed(2);
         }
       };
 
-      const tl = gsap.timeline({
-        defaults: { ease: ease.inOut },
-        scrollTrigger: {
-          trigger: scope,
-          start: "top top",
-          end: `+=${steps.length * 85}%`,
-          pin: stage,
-          scrub: 0.6,
-          snap: { snapTo: 1 / (steps.length - 1), duration: 0.35, ease: "power1.inOut" },
-        },
+      let current = -1;
+      const show = (index: number) => {
+        if (index === current) return;
+        current = index;
+        gsap.to(items, {
+          opacity: (i: number) => (i === index ? 1 : 0.45),
+          duration: 0.4,
+          ease: ease.soft,
+        });
+        gsap.to(rules, {
+          scaleY: (i: number) => (i === index ? 1 : 0),
+          duration: 0.4,
+          ease: ease.soft,
+        });
+        gsap.to(pills, {
+          autoAlpha: (i: number) => (i === index ? 1 : 0),
+          duration: 0.3,
+        });
+        gsap.to(money, {
+          ...balances[index],
+          duration: 0.55,
+          ease: ease.inOut,
+          onUpdate: paint,
+        });
+      };
+
+      items.forEach((item, index) => {
+        ScrollTrigger.create({
+          trigger: item,
+          start: "top 68%",
+          end: "bottom 42%",
+          onEnter: () => show(index),
+          onEnterBack: () => show(index),
+        });
       });
 
-      steps.forEach((_, i) => {
-        const at = i;
-        tl.to(items, { opacity: (index: number) => (index === i ? 1 : 0.38), duration: 0.6 }, at);
-        tl.to(rules, { scaleY: (index: number) => (index === i ? 1 : 0), duration: 0.6 }, at);
-        tl.to(pills, { autoAlpha: (index: number) => (index === i ? 1 : 0), duration: 0.4 }, at);
-
-        if (i === 1) {
-          tl.to(money, { seller: 0, escrow: 250, duration: 0.7, onUpdate: paint }, at + 0.15);
-        }
-        if (i === 3) {
-          tl.to(money, { escrow: 0, buyer: 250, duration: 0.7, onUpdate: paint }, at + 0.15);
-        }
-      });
+      show(0);
     },
-    { scope: root, dependencies: [live] },
+    { scope: root, dependencies: [motionOk] },
   );
 
   return (
     <section ref={root} id="how-it-works" aria-labelledby="how-it-works-title">
-      <div data-stage className={cn(live && "flex min-h-screen items-center")}>
-        {/* While pinned the stage must fit one viewport, so vertical padding shrinks. */}
-        <Container className={cn("py-20 sm:py-24", live ? "lg:py-10" : "lg:py-28")}>
-          <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
-            <div className="lg:col-span-6">
-              <h2
-                id="how-it-works-title"
-                className="font-display text-foreground text-4xl leading-[1.08] text-balance sm:text-5xl lg:text-[3.4rem]"
+      <Container className="py-18 sm:py-20 lg:py-24">
+        <h2
+          id="how-it-works-title"
+          className="font-display text-foreground text-2xl leading-[1.15] text-balance sm:text-3xl lg:text-[2.125rem]"
+        >
+          How a trade works.
+        </h2>
+
+        <div className="mt-10 grid items-start gap-10 lg:mt-14 lg:grid-cols-12 lg:gap-14">
+          <ol className="border-border border-t lg:col-span-7">
+            {steps.map((step) => (
+              <li
+                key={step.title}
+                data-step
+                className="border-border relative border-b py-6 pl-6 lg:py-7"
               >
-                How a trade works.
-              </h2>
+                <span
+                  data-step-rule
+                  aria-hidden="true"
+                  className="bg-primary absolute top-6 bottom-6 left-0 w-0.5 origin-top lg:top-7 lg:bottom-7"
+                  style={{ transform: motionOk ? "scaleY(0)" : "scaleY(1)" }}
+                />
+                <h3 className="font-display text-foreground text-lg leading-snug sm:text-xl">
+                  {step.title}
+                </h3>
+                <p className="text-muted-foreground mt-1.5 max-w-prose text-[15px] leading-relaxed text-pretty">
+                  {step.body}
+                </p>
+              </li>
+            ))}
+          </ol>
 
-              <ol className="border-border mt-12 border-t">
-                {steps.map((step) => (
-                  <li
-                    key={step.title}
-                    data-step
-                    className="border-border relative border-b py-6 pl-6 lg:py-7"
-                  >
-                    <span
-                      data-step-rule
-                      aria-hidden="true"
-                      className="bg-primary absolute top-6 bottom-6 left-0 w-0.5 origin-top lg:top-7 lg:bottom-7"
-                      style={{ transform: live ? "scaleY(0)" : "scaleY(1)" }}
-                    />
-                    <h3 className="font-display text-foreground text-2xl leading-tight sm:text-[1.75rem]">
-                      {step.title}
-                    </h3>
-                    <p className="text-muted-foreground mt-2 max-w-prose text-[15px] leading-relaxed text-pretty">
-                      {step.body}
-                    </p>
-                  </li>
-                ))}
-              </ol>
-
-              <p className="text-muted-foreground mt-8 max-w-prose text-[15px] leading-relaxed">
-                If the two of you disagree, either side can open a dispute. The USDT stays locked
-                while a reviewer looks at the evidence from both sides.
-              </p>
-            </div>
-
-            <div className="lg:col-span-6 lg:pt-14">
-              <LedgerCard mode={live ? "live" : "final"} />
-              <p className="sr-only">{LEDGER_STATES.map((state) => state.label).join(". ")}.</p>
-            </div>
+          <div className="lg:sticky lg:top-24 lg:col-span-5">
+            <LedgerCard mode={motionOk ? "live" : "final"} />
+            <p className="text-muted-foreground mt-3 text-[13px] leading-relaxed">
+              Every row is a real ledger account. None of this touches a blockchain.
+            </p>
+            <p className="sr-only">{LEDGER_STATES.map((state) => state.label).join(". ")}.</p>
           </div>
-        </Container>
-      </div>
+        </div>
+
+        <p className="text-muted-foreground mt-10 max-w-prose text-[15px] leading-relaxed">
+          If the two of you disagree, either side can open a dispute. The USDT stays locked while a
+          reviewer looks at the evidence from both sides.
+        </p>
+      </Container>
     </section>
   );
 }

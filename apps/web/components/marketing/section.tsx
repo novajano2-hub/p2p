@@ -13,7 +13,7 @@ type SectionProps = ComponentPropsWithoutRef<"section"> & {
  */
 export function Section({ bare = false, className, children, ...props }: SectionProps) {
   return (
-    <section className={cn(!bare && "py-20 sm:py-24 lg:py-32", className)} {...props}>
+    <section className={cn(!bare && "py-18 sm:py-20 lg:py-24", className)} {...props}>
       <Container>{children}</Container>
     </section>
   );
@@ -30,18 +30,18 @@ type HeadingProps = {
   className?: string;
 };
 
-/** Section headline in the display serif, stacked. Never split left/right. */
+/** Section headline, stacked. Never split into a left/right header. */
 export function SectionHeading({ title, lede, id, className }: HeadingProps) {
   return (
     <div className={cn("max-w-2xl", className)}>
       <h2
         id={id}
-        className="font-display text-foreground text-4xl leading-[1.08] text-balance sm:text-5xl lg:text-[3.4rem]"
+        className="font-display text-foreground text-2xl leading-[1.15] text-balance sm:text-3xl lg:text-[2.125rem]"
       >
         {title}
       </h2>
       {lede ? (
-        <p className="text-muted-foreground mt-5 max-w-[56ch] text-lg leading-relaxed text-pretty">
+        <p className="text-muted-foreground mt-4 max-w-[54ch] text-[15px] leading-relaxed text-pretty sm:text-base">
           {lede}
         </p>
       ) : null}
