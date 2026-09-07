@@ -23,10 +23,14 @@ scripts/               import-boundary check for the marketing route group
 
 - Palette: Canvas `#F6F4EE`, Surface `#FFFFFF`, Forest `#183D32`, Ink `#202622`, Sage `#ADB9A9`,
   Border `#DADFD6`. Forest is the only accent. One light theme.
-- Type: Newsreader (display), IBM Plex Sans (interface and body), IBM Plex Mono (ledger figures).
-- Radius: 6px controls, 8px surfaces. Fine borders, minimal shadow.
+- Type: IBM Plex Sans throughout (display and body, separated by weight and tracking, not by a
+  second family), IBM Plex Mono for ledger figures.
+- Radius: 6px controls, 8px surfaces. Fine borders, minimal shadow, except buttons, which carry a
+  resting shadow and lift on hover.
 - Motion: GSAP (ScrollTrigger, SplitText) for the DOM, three.js via react-three-fiber for the
-  hero. No other animation library. Every animation is gated on `prefers-reduced-motion`.
+  hero. No other animation library. Every animation is gated on `prefers-reduced-motion`, and
+  nothing pins, scrubs or snaps the scroll.
+- The 3D hero never mounts below 1024px, so mobile downloads no three.js at all.
 
 ## Rules for this app
 

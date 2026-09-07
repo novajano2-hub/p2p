@@ -51,9 +51,12 @@ The visual language is the "Quiet Capital" UI kit. It is a visual language, not 
 
 - Colors: Canvas `#F6F4EE` (page), Surface `#FFFFFF`, Forest `#183D32` (the only accent), Ink `#202622` (text), Sage `#ADB9A9` (secondary surfaces and decoration, never body text), Border `#DADFD6`. Destructive is a muted clay red. Status pills: Complete (green tint), Pending (amber tint), Needs attention (red tint), Neutral (grey tint).
 - One committed light theme. Do not add a dark theme without a design decision.
-- Type: Newsreader for display headings; IBM Plex Sans for interface and body (the open-source parent of Binance's proprietary BinancePlex, which cannot be licensed); IBM Plex Mono for ledger and money figures. Amounts always use tabular numerals.
+- Type: IBM Plex Sans throughout, for display headings as well as interface and body. It is the open-source parent of Binance's proprietary BinancePlex, which cannot be licensed. Headings are separated from body by weight (600) and tighter tracking, never by a second family. IBM Plex Mono for ledger and money figures; amounts always use tabular numerals.
+- Restraint in scale: hero headline caps around 3.25rem, section headings around 2.125rem. Large type is not how this brand signals quality.
 - Shape: 6px radius on controls, 8px on surfaces and cards, pills for status. Fine 1px borders, minimal tinted shadow.
-- Motion: GSAP (ScrollTrigger, SplitText) for DOM animation and three.js via react-three-fiber for 3D. No other animation library; never mix Framer Motion into the same tree. Every animation must be gated on `prefers-reduced-motion` and have a stated purpose (hierarchy, storytelling, feedback, state). 3D loads lazily in the browser only and never fetches assets from third-party CDNs.
+- Motion: GSAP (ScrollTrigger, SplitText) for DOM animation and three.js via react-three-fiber for 3D. No other animation library; never mix Framer Motion into the same tree. Every animation must be gated on `prefers-reduced-motion` and have a stated purpose (hierarchy, storytelling, feedback, state). **Never take the scrollbar away from the reader**: no pinning, no scrub, no scroll snapping. Reveals animate `opacity`, never `visibility`, so off-screen content stays focusable and in the accessibility tree.
+- 3D is a desktop flourish. It loads lazily in the browser only, never below 1024px, and never fetches assets from third-party CDNs.
+- Buttons are physical: a resting shadow, a 1px lift and deeper shadow on hover, a pressed inset on click, all dropped under reduced motion.
 - Copy: plain, concrete, no em dashes as punctuation, one label per call-to-action intent ("Create account", "Log in"), no fabricated statistics or customer logos.
 - Tokens live in `apps/web/app/globals.css`; the brand name lives only in `apps/web/lib/site.ts`.
 
