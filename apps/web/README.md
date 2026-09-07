@@ -21,8 +21,15 @@ scripts/               import-boundary check for the marketing route group
 
 ## Design system
 
-- Palette: Canvas `#F6F4EE`, Surface `#FFFFFF`, Forest `#183D32`, Ink `#202622`, Sage `#ADB9A9`,
-  Border `#DADFD6`. Forest is the only accent. One light theme.
+- Palette (light): Canvas `#F6F4EE`, Surface `#FFFFFF`, Forest `#183D32`, Ink `#202622`,
+  Sage `#ADB9A9`, Border `#DADFD6`. One accent.
+- Palette (dark): Canvas `#121614`, Surface `#1A201D`, foreground `#E9EDE8`, muted `#A3ADA6`,
+  Border `#2B332F`, accent `#6CC39C` on `#0D1411`.
+- Both themes are defined once, in `globals.css`, by redefining raw variables; every semantic
+  token indirects through them. Components carry no `dark:` variants. A component that seems to
+  need one is missing a token.
+- The page follows `prefers-color-scheme`. `data-theme="light" | "dark"` on `<html>` overrides it,
+  ready for the signed-in preference control.
 - Type: IBM Plex Sans throughout (display and body, separated by weight and tracking, not by a
   second family), IBM Plex Mono for ledger figures.
 - Radius: 6px controls, 8px surfaces. Fine borders, minimal shadow, except buttons, which carry a

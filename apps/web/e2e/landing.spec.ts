@@ -60,11 +60,55 @@ test.describe("landing page", () => {
     await expectNoSeriousA11yViolations(page);
   });
 
-  test("stays on its single light theme under a dark-mode preference", async ({ page }) => {
+  test("follows the system theme in both directions", async ({ page }) => {
     test.slow();
+
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.reload();
+    expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe(
+      "rgb(246, 244, 238)",
+    );
+
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.reload();
+    expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe(
+      "rgb(18, 22, 20)",
+    );
+
+    // Dark is a real theme, not a filter: it has to pass the same contrast bar.
     await expectNoSeriousA11yViolations(page, "dark");
-    const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-    expect(bg).toBe("rgb(246, 244, 238)");
+  });
+
+  test("every surface changes with the theme, so nothing is stranded light-on-light", async ({
+    page,
+  }) => {
+    const sample = () =>
+      page.evaluate(() => {
+        const read = (selector: string, prop: "backgroundColor" | "color") => {
+          const el = document.querySelector(selector);
+          return el ? getComputedStyle(el)[prop] : null;
+        };
+        return {
+          body: read("body", "backgroundColor"),
+          header: read("header", "backgroundColor"),
+          cta: read("[href='/register']", "backgroundColor"),
+          heading: read("h1", "color"),
+          footer: read("footer p", "color"),
+        };
+      });
+
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.reload();
+    const light = await sample();
+
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.reload();
+    const dark = await sample();
+
+    for (const key of Object.keys(light) as Array<keyof typeof light>) {
+      expect(light[key], `${key} should resolve in light mode`).not.toBeNull();
+      expect(dark[key], `${key} did not change between themes`).not.toBe(light[key]);
+    }
   });
 
   test("hero headline and primary action are visible without scrolling", async ({ page }) => {

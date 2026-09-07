@@ -32,9 +32,16 @@ export const metadata: Metadata = {
   description: site.description,
 };
 
+/*
+  The landing page follows the operating system. Signed-in customers will get an
+  explicit system / light / dark control, which sets `data-theme` on <html>.
+*/
 export const viewport: Viewport = {
-  themeColor: "#f6f4ee",
-  colorScheme: "light",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f6f4ee" },
+    { media: "(prefers-color-scheme: dark)", color: "#121614" },
+  ],
+  colorScheme: "light dark",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

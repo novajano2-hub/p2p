@@ -23,6 +23,8 @@ const DESKTOP = "(min-width: 1024px)";
 export function HeroVisual({ className }: { className?: string }) {
   const desktop = useMediaQuery(DESKTOP);
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
+  // Glass takes its colour from the room, so the scene follows the page theme.
+  const dark = useMediaQuery("(prefers-color-scheme: dark)");
   const lowPower = useLowPower();
   // Mount the scene after the headline entrance so the chunk parse never stutters it.
   const settled = useDelayedTrue(reduced ? 0 : 1400);
@@ -40,7 +42,7 @@ export function HeroVisual({ className }: { className?: string }) {
         <div className="absolute inset-0 transition-opacity duration-700 ease-out motion-reduce:transition-none starting:opacity-0">
           <SceneErrorBoundary fallback={<StillCoin />}>
             <Suspense fallback={null}>
-              <EscrowScene reduced={reduced} lowPower={lowPower} />
+              <EscrowScene reduced={reduced} lowPower={lowPower} dark={dark} />
             </Suspense>
           </SceneErrorBoundary>
         </div>

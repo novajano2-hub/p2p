@@ -25,22 +25,82 @@ import * as THREE from "three";
   every one of those stops and a single still frame is rendered.
 */
 
-const SAGE = "#ADB9A9";
-const CANVAS = "#F6F4EE";
-const INK = "#202622";
-/* A shade above Forest so the coin still reads as green through frosted glass. */
-const COIN = "#2a6b55";
-const COIN_RIM = "#c9d3c6";
-const BIRR = "#8fa394";
+/*
+  The scene has to be told the theme. Glass takes its colour from the room, and
+  the refraction buffer clears to an explicit colour because the canvas itself
+  is transparent, so on a dark page a light palette renders a block that glows.
+*/
+type Palette = {
+  /** What the glass refracts, and the buffer clear colour: the page behind it. */
+  room: string;
+  /** Studio panel brightness. Dark needs more, or the glass loses its edges. */
+  env: number;
+  glass: string;
+  attenuation: string;
+  coin: string;
+  coinRim: string;
+  edge: string;
+  shadow: string;
+  shadowOpacity: number;
+  keyLight: number;
+  fillLight: number;
+  ambient: number;
+};
+
+const PALETTES: Record<"light" | "dark", Palette> = {
+  light: {
+    room: "#F6F4EE",
+    env: 1,
+    glass: "#F6F4EE",
+    attenuation: "#ADB9A9",
+    /* A shade above Forest so the coin still reads as green through the glass. */
+    coin: "#2a6b55",
+    coinRim: "#c9d3c6",
+    edge: "#8fa394",
+    shadow: "#202622",
+    shadowOpacity: 0.3,
+    keyLight: 1.2,
+    fillLight: 0.6,
+    ambient: 0.6,
+  },
+  /*
+    Only the room goes dark. The glass, the coins and the rim are physical
+    objects lit by a studio: darkening them too turns the vault into a black
+    slab with nothing visible inside. Frosted glass in a dark room still
+    catches the light, so it stays pale, just a shade below its light value so
+    it does not glare against the page.
+  */
+  dark: {
+    room: "#1b2420",
+    env: 2.3,
+    glass: "#dbe5dc",
+    attenuation: "#93a89a",
+    coin: "#2f8060",
+    coinRim: "#cdd7ca",
+    edge: "#8fa394",
+    shadow: "#000000",
+    shadowOpacity: 0.5,
+    keyLight: 1.1,
+    fillLight: 0.5,
+    ambient: 0.5,
+  },
+};
+
+/* The coin is a physical object: it looks the same in either room. */
+const COIN_FACE_ETB = { background: "#ADB9A9", ink: "#1d3b31" } as const;
+const COIN_FACE_USDT = { background: "#1f5346", ink: "#F1F4EE" } as const;
 
 export type EscrowSceneProps = {
   /** prefers-reduced-motion: render one still frame, no loop. */
   reduced: boolean;
   /** Coarse pointer or few cores: lower sampling and resolution. */
   lowPower: boolean;
+  /** Follows the resolved page theme. */
+  dark: boolean;
 };
 
-export default function EscrowScene({ reduced, lowPower }: EscrowSceneProps) {
+export default function EscrowScene({ reduced, lowPower, dark }: EscrowSceneProps) {
+  const palette = PALETTES[dark ? "dark" : "light"];
   return (
     <Canvas
       dpr={lowPower ? 1 : [1, 1.75]}
@@ -56,25 +116,25 @@ export default function EscrowScene({ reduced, lowPower }: EscrowSceneProps) {
       style={{ background: "transparent" }}
     >
       <Rig reduced={reduced}>
-        <Vault reduced={reduced} lowPower={lowPower} />
-        <UsdtCoin reduced={reduced} />
-        <TradeCoin reduced={reduced} />
+        <Vault reduced={reduced} lowPower={lowPower} palette={palette} />
+        <UsdtCoin reduced={reduced} palette={palette} />
+        <TradeCoin reduced={reduced} palette={palette} />
       </Rig>
 
       <ContactShadows
         position={[0, -1.8, 0]}
-        opacity={0.3}
+        opacity={palette.shadowOpacity}
         scale={9}
         blur={2.6}
         far={3.2}
-        color={INK}
+        color={palette.shadow}
         frames={reduced ? 1 : Infinity}
       />
 
-      <Studio />
-      <hemisphereLight args={[CANVAS, SAGE, 0.6]} />
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[3, 5, 4]} intensity={1.2} />
+      <Studio palette={palette} />
+      <hemisphereLight args={[palette.room, palette.attenuation, palette.fillLight]} />
+      <ambientLight intensity={palette.ambient} />
+      <directionalLight position={[3, 5, 4]} intensity={palette.keyLight} />
     </Canvas>
   );
 }
@@ -93,11 +153,15 @@ function Rig({ reduced, children }: { reduced: boolean; children: ReactNode }) {
   return <group ref={group}>{children}</group>;
 }
 
-function Vault({ reduced, lowPower }: EscrowSceneProps) {
+function Vault({
+  reduced,
+  lowPower,
+  palette,
+}: Omit<EscrowSceneProps, "dark"> & { palette: Palette }) {
   const mesh = useRef<THREE.Mesh>(null);
   // The refraction buffer clears to this. On a transparent canvas it would
   // otherwise clear to black and the glass would render dark.
-  const refractionBackground = useMemo(() => new THREE.Color(CANVAS), []);
+  const refractionBackground = useMemo(() => new THREE.Color(palette.room), [palette.room]);
 
   useFrame((state, delta) => {
     if (reduced || !mesh.current) return;
@@ -123,8 +187,8 @@ function Vault({ reduced, lowPower }: EscrowSceneProps) {
         ior={1.36}
         chromaticAberration={0}
         anisotropy={0.08}
-        color={CANVAS}
-        attenuationColor={SAGE}
+        color={palette.glass}
+        attenuationColor={palette.attenuation}
         attenuationDistance={2.4}
       />
     </RoundedBox>
@@ -132,7 +196,7 @@ function Vault({ reduced, lowPower }: EscrowSceneProps) {
 }
 
 /** The USDT, held. Sits at the centre of the vault. */
-function UsdtCoin({ reduced }: { reduced: boolean }) {
+function UsdtCoin({ reduced, palette }: { reduced: boolean; palette: Palette }) {
   return (
     <Float
       speed={reduced ? 0 : 1.3}
@@ -143,11 +207,11 @@ function UsdtCoin({ reduced }: { reduced: boolean }) {
       <group rotation={[Math.PI / 2 - 0.22, 0.12, 0]}>
         <mesh>
           <cylinderGeometry args={[0.76, 0.76, 0.16, 80]} />
-          <meshStandardMaterial color={COIN} metalness={0.15} roughness={0.45} />
+          <meshStandardMaterial color={palette.coin} metalness={0.15} roughness={0.45} />
         </mesh>
         <mesh rotation={[Math.PI / 2, 0, 0]}>
           <torusGeometry args={[0.76, 0.035, 16, 120]} />
-          <meshStandardMaterial color={COIN_RIM} metalness={0.4} roughness={0.35} />
+          <meshStandardMaterial color={palette.coinRim} metalness={0.4} roughness={0.35} />
         </mesh>
       </group>
     </Float>
@@ -201,11 +265,11 @@ function useCoinFace(text: string, background: string, ink: string) {
 }
 
 /** The trade itself, circling the vault: birr on one face, USDT on the other. */
-function TradeCoin({ reduced }: { reduced: boolean }) {
+function TradeCoin({ reduced, palette }: { reduced: boolean; palette: Palette }) {
   const group = useRef<THREE.Group>(null);
   const start = 1.1;
-  const etb = useCoinFace("ETB", SAGE, "#1d3b31");
-  const usdt = useCoinFace("USDT", "#1f5346", CANVAS);
+  const etb = useCoinFace("ETB", COIN_FACE_ETB.background, COIN_FACE_ETB.ink);
+  const usdt = useCoinFace("USDT", COIN_FACE_USDT.background, COIN_FACE_USDT.ink);
   const faceOffset = COIN_THICKNESS / 2 + 0.002;
 
   useFrame((state) => {
@@ -225,7 +289,7 @@ function TradeCoin({ reduced }: { reduced: boolean }) {
       {/* Milled edge. The cylinder axis is laid along Z so the faces look outward. */}
       <mesh rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[COIN_RADIUS, COIN_RADIUS, COIN_THICKNESS, 64]} />
-        <meshStandardMaterial color={BIRR} metalness={0.35} roughness={0.4} />
+        <meshStandardMaterial color={palette.edge} metalness={0.35} roughness={0.4} />
       </mesh>
       {etb ? (
         <mesh position={[0, 0, faceOffset]}>
@@ -247,33 +311,38 @@ function TradeCoin({ reduced }: { reduced: boolean }) {
  * A studio built from light panels instead of a downloaded HDRI, so the scene
  * never fetches anything from a third-party CDN. Rendered once.
  */
-function Studio() {
+function Studio({ palette }: { palette: Palette }) {
   return (
     <Environment resolution={128} frames={1}>
-      <Lightformer intensity={2.2} position={[0, 5, -5]} scale={[8, 3, 1]} form="rect" />
       <Lightformer
-        intensity={1.4}
+        intensity={2.2 * palette.env}
+        position={[0, 5, -5]}
+        scale={[8, 3, 1]}
+        form="rect"
+      />
+      <Lightformer
+        intensity={1.4 * palette.env}
         position={[-5, 2, 3]}
         rotation={[0, Math.PI / 2, 0]}
         scale={[3, 5, 1]}
         form="rect"
-        color={CANVAS}
+        color={palette.room}
       />
       <Lightformer
-        intensity={0.9}
+        intensity={0.9 * palette.env}
         position={[5, 0, 3]}
         rotation={[0, -Math.PI / 2, 0]}
         scale={[3, 3, 1]}
         form="circle"
-        color={SAGE}
+        color={palette.attenuation}
       />
       <Lightformer
-        intensity={0.6}
+        intensity={0.6 * palette.env}
         position={[0, -4, 0]}
         rotation={[Math.PI / 2, 0, 0]}
         scale={[8, 8, 1]}
         form="rect"
-        color="#DADFD6"
+        color={palette.coinRim}
       />
     </Environment>
   );
