@@ -1,0 +1,26 @@
+# harness worktrees belong to other repositories
+.claude/worktrees/
+
+# dependencies / build
+node_modules/
+.pnpm-store/
+.turbo/
+.next/
+out/
+dist/
+coverage/
+playwright-report/
+test-results/
+
+# environment — only .env.example is committed
+.env
+.env.*
+!.env.example
+
+# editor / os
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log
