@@ -28,7 +28,18 @@
 
 :root,
 :root[data-theme="light"] {
-  color-scheme: light;
+  /*
+    "light dark" declares that BOTH themes are supported and the page paints
+    them itself. This is not cosmetic: a single value here reads as "this page
+    has no dark theme", and Samsung Internet and Chrome's Auto Dark Theme
+    respond by algorithmically inverting the page for the user, flipping some
+    colours and leaving others, which looks broken. The CSS property overrides
+    the <meta name="color-scheme"> tag, so it has to be right here.
+
+    The forced-theme selectors below pin a single value, because at that point
+    the viewer has chosen and there is nothing for the browser to guess.
+  */
+  color-scheme: light dark;
 
   --canvas: #f6f4ee;
   --surface: #ffffff;
@@ -70,6 +81,23 @@
   --pressed-shadow: inset 0 1px 2px rgb(0 0 0 / 0.2);
   --raised-soft-shadow: 0 1px 1px rgb(32 38 34 / 0.05), 0 2px 4px -1px rgb(32 38 34 / 0.08);
   --raised-soft-shadow-hover: 0 2px 4px rgb(32 38 34 / 0.07), 0 8px 16px -6px rgb(32 38 34 / 0.16);
+}
+
+/*
+  An explicit choice pins the scheme: the browser has nothing left to infer.
+  Only forced-LIGHT is complete today, because the light tokens above are the
+  default and the dark block below already excludes [data-theme="light"].
+
+  Forced-DARK is deliberately absent. Adding `:root[data-theme="dark"] {
+  color-scheme: dark }` here without also binding the dark tokens to that
+  selector would give dark scrollbars and form controls on a light page: the
+  exact half-themed result this file exists to prevent. When the signed-in
+  preference control is built, the dark tokens must move to a selector both
+  the media query and [data-theme="dark"] can share, rather than being
+  duplicated and left to drift.
+*/
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {

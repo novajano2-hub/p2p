@@ -33,7 +33,10 @@ scripts/               import-boundary check for the marketing route group
 - Both themes are defined once, in `globals.css`, by redefining raw variables; every semantic
   token indirects through them. Components carry no `dark:` variants. A component that seems to
   need one is missing a token.
-- The page follows `prefers-color-scheme`. `data-theme="light" | "dark"` on `<html>` overrides it,
+- `:root` declares `color-scheme: light dark` so mobile browsers do not algorithmically
+  force-dark the page on top of our own theme. Do not narrow it to a single value.
+- The page follows `prefers-color-scheme`. `data-theme="light"` on `<html>` overrides it today;
+  `data-theme="dark"` still needs its token block (see the comment in `globals.css`),
   ready for the signed-in preference control.
 - Type: IBM Plex Sans throughout (display and body, separated by weight and tracking, not by a
   second family), IBM Plex Mono for ledger figures.
