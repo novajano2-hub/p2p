@@ -1,0 +1,22 @@
+{
+  "name": "@abay/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The API's public shapes: Zod schemas and their inferred types. Nothing else.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@abay/config": "0.0.0",
+    "typescript": "5.9.3"
+  }
+}

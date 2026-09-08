@@ -1,7 +1,9 @@
 # Proposed Repository Tree
 
-npm workspaces + Turborepo (the brief says pnpm; the owner chose npm). Nothing below exists yet
-except `docs/`.
+npm workspaces + Turborepo (the brief says pnpm; the owner chose npm). This is the target
+layout; `docs/`, `apps/web` (landing and auth pages), `apps/api` (Phase 1 scaffold),
+`packages/contracts`, `packages/database` and `packages/config` exist. Everything else
+arrives with the phase that needs it.
 
 ```text
 etb-usdt-p2p/
