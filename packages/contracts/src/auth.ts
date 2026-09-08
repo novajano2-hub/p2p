@@ -5,9 +5,15 @@ import { z } from "zod";
   Prisma model, so a password hash cannot reach a browser because someone
   reused a type.
 
-  Registration is three steps because the address is proved before an account
-  exists. Nothing is written to `users` until the password step succeeds, so an
-  abandoned sign-up leaves no row and no way to ask "is this address taken".
+  Every flow has the same shape. Something is proved (an inbox, a password),
+  the server hands back a short-lived single-use ticket, and the next step
+  spends the ticket. Nothing is written to `users` until a sign-up's password
+  step succeeds, so an abandoned sign-up leaves no row and no way to ask "is
+  this address taken".
+
+    sign-up:   start(email) -> code -> verify -> ticket -> complete(password)
+    log-in:    login(email, password) -> code -> ticket -> verify(code)
+    reset:     start(email) -> code -> verify -> ticket -> complete(password)
 */
 
 /** Addresses are compared lower-cased and trimmed, here and in the database. */
@@ -34,26 +40,24 @@ export const verificationCode = z
   .trim()
   .regex(/^\d{6}$/, { error: "Enter the 6-digit code" });
 
+/** Proof that a step was passed. Single use, short lived, server-issued, opaque. */
+export const ticket = z.string().min(20).max(200);
+
+export const ticketResponse = z.object({ ticket });
+export type TicketResponse = z.infer<typeof ticketResponse>;
+
+/* Sign-up */
+
 export const registerStartRequest = z.object({ email: emailAddress });
 export type RegisterStartRequest = z.infer<typeof registerStartRequest>;
 
-export const registerVerifyRequest = z.object({
-  email: emailAddress,
-  code: verificationCode,
-});
+export const registerVerifyRequest = z.object({ email: emailAddress, code: verificationCode });
 export type RegisterVerifyRequest = z.infer<typeof registerVerifyRequest>;
 
-/** Proof that the address was verified. Single use, short lived, server-issued. */
-export const registrationTicket = z.string().min(20).max(200);
-
-export const registerVerifyResponse = z.object({ ticket: registrationTicket });
-export type RegisterVerifyResponse = z.infer<typeof registerVerifyResponse>;
-
-export const registerCompleteRequest = z.object({
-  ticket: registrationTicket,
-  password,
-});
+export const registerCompleteRequest = z.object({ ticket, password });
 export type RegisterCompleteRequest = z.infer<typeof registerCompleteRequest>;
+
+/* Log-in */
 
 export const loginRequest = z.object({
   email: emailAddress,
@@ -62,8 +66,28 @@ export const loginRequest = z.object({
 });
 export type LoginRequest = z.infer<typeof loginRequest>;
 
+export const loginVerifyRequest = z.object({ ticket, code: verificationCode });
+export type LoginVerifyRequest = z.infer<typeof loginVerifyRequest>;
+
+/** Re-send the code for an in-progress log-in. The ticket is the only handle. */
+export const loginResendRequest = z.object({ ticket });
+export type LoginResendRequest = z.infer<typeof loginResendRequest>;
+
+/* Password reset */
+
 export const passwordResetRequest = z.object({ email: emailAddress });
 export type PasswordResetRequest = z.infer<typeof passwordResetRequest>;
+
+export const passwordResetVerifyRequest = z.object({
+  email: emailAddress,
+  code: verificationCode,
+});
+export type PasswordResetVerifyRequest = z.infer<typeof passwordResetVerifyRequest>;
+
+export const passwordResetCompleteRequest = z.object({ ticket, password });
+export type PasswordResetCompleteRequest = z.infer<typeof passwordResetCompleteRequest>;
+
+/* Session */
 
 export const userStatus = z.enum(["ACTIVE", "SUSPENDED", "CLOSED"]);
 export type UserStatus = z.infer<typeof userStatus>;
@@ -87,3 +111,21 @@ export type SessionResponse = z.infer<typeof sessionResponse>;
  */
 export const acceptedResponse = z.object({ status: z.literal("accepted") });
 export type AcceptedResponse = z.infer<typeof acceptedResponse>;
+
+/** A step that finished and left nothing for the client to hold on to. */
+export const completedResponse = z.object({ status: z.literal("completed") });
+export type CompletedResponse = z.infer<typeof completedResponse>;
+
+/**
+ * Why a Google sign-in bounced back to the log-in page. Carried in the URL,
+ * so short, fixed, and never anything about the account.
+ */
+export const googleFailure = z.enum([
+  "unavailable",
+  "denied",
+  "expired",
+  "failed",
+  "unverified_email",
+  "closed",
+]);
+export type GoogleFailure = z.infer<typeof googleFailure>;

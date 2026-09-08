@@ -1,20 +1,19 @@
 "use client";
 
-import { CheckCircle, SignOut } from "@phosphor-icons/react";
+import { SignOut } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 import { AuthCard, AuthFootnote, AuthLink } from "@/components/auth/auth-card";
 import { FormError } from "@/components/auth/notices";
 import { Button, ButtonLink } from "@/components/ui/button";
-import { StatusPill } from "@/components/ui/status-pill";
 import { authClient, type SessionUser } from "@/lib/auth/client";
 import { cta } from "@/lib/site";
 
 /*
-  The first authenticated screen. It exists to make the session visible and
-  endable: it asks the API who the cookie belongs to, shows the answer, and
-  signs out. The real account area (balances, trades, settings) is Phase 2.
+  The screen a person lands on once signed in. For now it is a placeholder
+  that proves the session exists and lets it be ended; the real home
+  (balances, offers, trades) is Phase 2.
 
   It resolves the session on the client rather than on the server because the
   session cookie belongs to the API's host, not to this app's server. A server
@@ -52,7 +51,7 @@ export function SessionPanel() {
 
   if (state.status === "loading") {
     return (
-      <AuthCard title="Your account">
+      <AuthCard title="Home">
         <p className="text-muted-foreground text-sm" role="status">
           Checking your session…
         </p>
@@ -65,9 +64,7 @@ export function SessionPanel() {
       <>
         <AuthCard title="You are signed out">
           {state.status === "error" ? <FormError message={state.message} /> : null}
-          <p className="text-muted-foreground text-sm leading-relaxed">
-            Log in to see your account.
-          </p>
+          <p className="text-muted-foreground text-sm leading-relaxed">Log in to continue.</p>
           <div className="mt-6">
             <ButtonLink href={cta.login.href} size="lg" className="w-full" arrow={false}>
               {cta.login.label}
@@ -81,82 +78,34 @@ export function SessionPanel() {
     );
   }
 
-  const { user } = state;
-
   return (
-    <>
-      <AuthCard title="Your account" description="Signed in. Nothing to trade with yet.">
-        <dl className="divide-border border-border divide-y border-y text-sm">
-          <Row label="Email">
-            <span className="text-foreground break-all">{user.email}</span>
-          </Row>
-          <Row label="Email verified">
-            {user.emailVerified ? (
-              <StatusPill status="complete">Verified</StatusPill>
-            ) : (
-              <StatusPill status="pending">Not verified</StatusPill>
-            )}
-          </Row>
-          <Row label="Status">
-            <StatusPill status={user.status === "ACTIVE" ? "complete" : "attention"}>
-              {user.status.charAt(0) + user.status.slice(1).toLowerCase()}
-            </StatusPill>
-          </Row>
-          <Row label="Account ID">
-            {/* Mono, because it is an identifier a support ticket may quote. */}
-            <span className="text-muted-foreground font-mono text-xs break-all">{user.id}</span>
-          </Row>
-        </dl>
-
-        <p className="text-muted-foreground mt-6 flex items-start gap-2 text-[13px] leading-relaxed">
-          <CheckCircle size={16} weight="fill" className="text-primary mt-0.5 shrink-0" />
-          <span>
-            Your session lives in an HttpOnly cookie, so no script on this page can read it. Signing
-            out revokes it on the server, not just in this browser.
-          </span>
-        </p>
-
-        <div className="mt-6">
-          <FormError message={signOutError} />
-          <Button
-            type="button"
-            variant="secondary"
-            size="lg"
-            className="w-full"
-            loading={signingOut}
-            onClick={async () => {
-              setSigningOut(true);
-              const result = await authClient.logout();
-              setSigningOut(false);
-              if (!result.ok) {
-                // Never claim to have signed someone out when the server still
-                // holds a live session. On a shared computer that lie is the
-                // whole risk, so the screen says what is actually true.
-                setSignOutError(result.message);
-                return;
-              }
-              setSignOutError(null);
-              setState({ status: "signed-out" });
-              router.refresh();
-            }}
-          >
-            <SignOut size={18} weight="bold" aria-hidden="true" />
-            Log out
-          </Button>
-        </div>
-      </AuthCard>
-      <AuthFootnote>
-        <AuthLink href="/">Back to the home page</AuthLink>
-      </AuthFootnote>
-    </>
-  );
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-3.5">
-      <dt className="text-muted-foreground shrink-0">{label}</dt>
-      <dd className="text-right">{children}</dd>
-    </div>
+    <AuthCard title="Home">
+      <FormError message={signOutError} />
+      <Button
+        type="button"
+        variant="secondary"
+        size="lg"
+        className="w-full"
+        loading={signingOut}
+        onClick={async () => {
+          setSigningOut(true);
+          const result = await authClient.logout();
+          setSigningOut(false);
+          if (!result.ok) {
+            // Never claim to have signed someone out when the server still
+            // holds a live session. On a shared computer that lie is the
+            // whole risk, so the screen says what is actually true.
+            setSignOutError(result.message);
+            return;
+          }
+          setSignOutError(null);
+          setState({ status: "signed-out" });
+          router.refresh();
+        }}
+      >
+        <SignOut size={18} weight="bold" aria-hidden="true" />
+        Log out
+      </Button>
+    </AuthCard>
   );
 }

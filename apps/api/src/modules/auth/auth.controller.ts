@@ -1,35 +1,54 @@
 import {
   acceptedResponse,
+  completedResponse,
   loginRequest,
+  loginResendRequest,
+  loginVerifyRequest,
+  passwordResetCompleteRequest,
   passwordResetRequest,
+  passwordResetVerifyRequest,
   registerCompleteRequest,
   registerStartRequest,
   registerVerifyRequest,
   type AcceptedResponse,
+  type CompletedResponse,
   type LoginRequest,
+  type LoginResendRequest,
+  type LoginVerifyRequest,
+  type PasswordResetCompleteRequest,
   type PasswordResetRequest,
+  type PasswordResetVerifyRequest,
   type RegisterCompleteRequest,
   type RegisterStartRequest,
   type RegisterVerifyRequest,
-  type RegisterVerifyResponse,
   type SessionResponse,
+  type TicketResponse,
 } from "@abay/contracts";
-import { Body, Controller, Get, HttpCode, Post, Req, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
 import { type FastifyReply, type FastifyRequest } from "fastify";
+import { PinoLogger } from "nestjs-pino";
 
 import { zodBody } from "@/common/validation/zod-validation.pipe";
 import { AuthService, toSessionUser } from "@/modules/auth/auth.service";
+import { GoogleService, GoogleSignInError } from "@/modules/auth/google.service";
 import { CurrentSession, SessionGuard } from "@/modules/auth/session.guard";
 import { SessionService, type AuthenticatedSession } from "@/modules/auth/session.service";
 
 const ACCEPTED: AcceptedResponse = acceptedResponse.parse({ status: "accepted" });
+const COMPLETED: CompletedResponse = completedResponse.parse({ status: "completed" });
 
 @Controller("auth")
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
+    private readonly google: GoogleService,
     private readonly sessions: SessionService,
-  ) {}
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(AuthController.name);
+  }
+
+  /* ----------------------------------------------------------------- sign-up */
 
   /** Step 1 of sign-up. Always 202, so it cannot be used to probe for accounts. */
   @Post("register/start")
@@ -46,9 +65,8 @@ export class AuthController {
   @HttpCode(200)
   async registerVerify(
     @Body(zodBody(registerVerifyRequest)) body: RegisterVerifyRequest,
-  ): Promise<RegisterVerifyResponse> {
-    const ticket = await this.auth.verifyRegistration(body.email, body.code);
-    return { ticket };
+  ): Promise<TicketResponse> {
+    return { ticket: await this.auth.verifyRegistration(body.email, body.code) };
   }
 
   /** Step 3. Creates the account and signs it in. */
@@ -68,15 +86,34 @@ export class AuthController {
     return { user };
   }
 
+  /* ------------------------------------------------------------------ log-in */
+
+  /** Password step. A correct password gets a code in the inbox and a ticket back, not a session. */
   @Post("login")
   @HttpCode(200)
-  async login(
-    @Body(zodBody(loginRequest)) body: LoginRequest,
+  async login(@Body(zodBody(loginRequest)) body: LoginRequest): Promise<TicketResponse> {
+    return { ticket: await this.auth.login(body.email, body.password) };
+  }
+
+  /** Code step. Spends the ticket and issues the session. */
+  @Post("login/verify")
+  @HttpCode(200)
+  async loginVerify(
+    @Body(zodBody(loginVerifyRequest)) body: LoginVerifyRequest,
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<SessionResponse> {
-    const user = await this.auth.login(body.email, body.password, reply, contextOf(request));
+    const user = await this.auth.verifyLogin(body.ticket, body.code, reply, contextOf(request));
     return { user };
+  }
+
+  @Post("login/resend")
+  @HttpCode(202)
+  async loginResend(
+    @Body(zodBody(loginResendRequest)) body: LoginResendRequest,
+  ): Promise<AcceptedResponse> {
+    await this.auth.resendLoginCode(body.ticket);
+    return ACCEPTED;
   }
 
   /*
@@ -102,6 +139,8 @@ export class AuthController {
     return { user: toSessionUser(session.user) };
   }
 
+  /* -------------------------------------------------------- password reset */
+
   /** Start a password reset. Always 202, for the same reason as register/start. */
   @Post("password-reset")
   @HttpCode(202)
@@ -110,6 +149,61 @@ export class AuthController {
   ): Promise<AcceptedResponse> {
     await this.auth.startPasswordReset(body.email);
     return ACCEPTED;
+  }
+
+  @Post("password-reset/verify")
+  @HttpCode(200)
+  async passwordResetVerify(
+    @Body(zodBody(passwordResetVerifyRequest)) body: PasswordResetVerifyRequest,
+  ): Promise<TicketResponse> {
+    return { ticket: await this.auth.verifyPasswordReset(body.email, body.code) };
+  }
+
+  /** Sets the new password and signs the account out everywhere. No session: log in again. */
+  @Post("password-reset/complete")
+  @HttpCode(200)
+  async passwordResetComplete(
+    @Body(zodBody(passwordResetCompleteRequest)) body: PasswordResetCompleteRequest,
+  ): Promise<CompletedResponse> {
+    await this.auth.completePasswordReset(body.ticket, body.password);
+    return COMPLETED;
+  }
+
+  /* ------------------------------------------------------------------ google */
+
+  /*
+    Both Google routes answer with a redirect, never with JSON: the browser is
+    on a top-level navigation, and a person looking at a JSON error page has
+    nowhere to go. Failures become ?error=google_<reason> on the log-in page.
+  */
+  @Get("google/start")
+  async googleStart(@Res() reply: FastifyReply): Promise<void> {
+    try {
+      await reply.redirect(await this.google.start(), 302);
+    } catch (error) {
+      await reply.redirect(this.google.failureUrl(this.reasonOf(error)), 302);
+    }
+  }
+
+  @Get("google/callback")
+  async googleCallback(
+    @Query() query: Record<string, unknown>,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    try {
+      await this.google.complete(query, reply, contextOf(request));
+      await reply.redirect(this.google.successUrl(), 302);
+    } catch (error) {
+      await reply.redirect(this.google.failureUrl(this.reasonOf(error)), 302);
+    }
+  }
+
+  private reasonOf(error: unknown) {
+    if (error instanceof GoogleSignInError) return error.reason;
+    // Anything else is ours, not Google's, and needs a stack trace in the log.
+    this.logger.error({ err: error, event: "google.unexpected" }, "google sign-in failed");
+    return "failed" as const;
   }
 }
 

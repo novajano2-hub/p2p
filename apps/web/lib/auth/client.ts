@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /*
-  The auth client the sign-up, log-in and account screens talk to.
+  The auth client the sign-up, log-in, recovery and account screens talk to.
 
   It calls the API directly, not through a Next route handler, because the
   session is a cookie the API sets itself. That works in the browser only
@@ -19,7 +19,19 @@ import { z } from "zod";
   declared; anything else the API sends is ignored.
 */
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001").replace(/\/+$/, "");
+const API_URL = readApiUrl();
+
+function readApiUrl(): string {
+  // Inlined at build time. No fallback on purpose: a wrong guess here fails
+  // silently at the cookie layer, so a missing value fails loudly instead.
+  const value = process.env.NEXT_PUBLIC_API_URL;
+  if (!value) {
+    throw new Error(
+      "NEXT_PUBLIC_API_URL is not set. Copy apps/web/.env.example to apps/web/.env.local.",
+    );
+  }
+  return value.replace(/\/+$/, "");
+}
 
 /** A slow network should surface as an error, not a button that spins forever. */
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -47,15 +59,31 @@ export type SessionUser = {
 export type SessionResult =
   { ok: true; user: SessionUser } | { ok: false; code: AuthErrorCode; message: string };
 
+/*
+  Every flow is: prove something, get a ticket, spend the ticket. The tickets
+  never leave this module (see below), so the pages only ever pass along what
+  the person typed.
+*/
 export interface AuthClient {
   startRegistration(input: { email: string }): Promise<AuthResult>;
   verifyEmailCode(input: { email: string; code: string }): Promise<AuthResult>;
   resendEmailCode(input: { email: string }): Promise<AuthResult>;
   completeRegistration(input: { password: string }): Promise<SessionResult>;
+
   startLogin(input: { email: string }): Promise<AuthResult>;
-  login(input: { email: string; password: string }): Promise<SessionResult>;
+  /** A correct password sends a code to the inbox. The session comes with verifyLogin. */
+  login(input: { email: string; password: string }): Promise<AuthResult>;
+  verifyLogin(input: { code: string }): Promise<SessionResult>;
+  resendLoginCode(): Promise<AuthResult>;
+
   requestPasswordReset(input: { email: string }): Promise<AuthResult>;
+  verifyPasswordResetCode(input: { email: string; code: string }): Promise<AuthResult>;
+  /** Ends every session the account has. The person logs in again with the new password. */
+  completePasswordReset(input: { password: string }): Promise<AuthResult>;
+
+  /** Leaves the page for Google. A failure comes back as ?error= on /login. */
   continueWithGoogle(): Promise<AuthResult>;
+
   /** Who the session cookie belongs to, or a signed-out result. Never throws. */
   me(): Promise<SessionResult>;
   logout(): Promise<AuthResult>;
@@ -68,7 +96,7 @@ const sessionUserSchema = z.object({
   emailVerified: z.boolean(),
 });
 const sessionResponseSchema = z.object({ user: sessionUserSchema });
-const verifyResponseSchema = z.object({ ticket: z.string().min(1) });
+const ticketResponseSchema = z.object({ ticket: z.string().min(1) });
 
 /** The API's error envelope. Its `message` is written to be shown to a person. */
 const apiErrorSchema = z.object({
@@ -80,14 +108,18 @@ const apiErrorSchema = z.object({
 });
 
 /*
-  The registration ticket the server hands back at the code step, in exchange
-  for the code. It is held here, in the module, rather than in React state: it
-  is a credential for an in-progress sign-up, and keeping it out of component
-  state keeps it out of props, out of the React tree, and out of anything that
-  gets serialised into the page. It dies with the tab, and the server expires
-  it after fifteen minutes regardless.
+  The tickets the server hands back mid-flow. They are held here, in the
+  module, rather than in React state: each is a credential for an in-progress
+  sign-up, sign-in or reset, and keeping them out of component state keeps
+  them out of props, out of the React tree, and out of anything that gets
+  serialised into the page. They die with the tab, and the server expires them
+  in minutes regardless.
 */
-let registrationTicket: string | null = null;
+const tickets: { registration: string | null; login: string | null; reset: string | null } = {
+  registration: null,
+  login: null,
+  reset: null,
+};
 
 type Failure = { ok: false; code: AuthErrorCode; message: string };
 
@@ -99,6 +131,9 @@ const OFFLINE = failure(
 );
 
 const UNEXPECTED = failure("SERVER", "Something went wrong on our side. Please try again.");
+
+const EXPIRED = (what: string) =>
+  failure("INVALID_CODE", `Your ${what} has expired. Start again to get a new code.`);
 
 /*
   One request helper for the whole client. Returns the parsed body on success
@@ -178,10 +213,17 @@ async function toFailure(response: Response): Promise<Failure> {
       return failure("RATE_LIMITED", message);
     case "VALIDATION_FAILED":
       return failure("INVALID_CREDENTIALS", details?.[0]?.message ?? message);
+    case "NOT_READY":
+      // "We could not send the email": the server's sentence is the useful one.
+      return failure("SERVER", message);
     default:
       return UNEXPECTED;
   }
 }
+
+/** A code rejection, whatever the reason, is one message on the server; it stays one here. */
+const asCodeFailure = (result: Failure): Failure =>
+  result.code === "INVALID_CREDENTIALS" ? failure("INVALID_CODE", result.message) : result;
 
 /** 202 Accepted, with a body this client has no use for. */
 const ignored = z.unknown();
@@ -189,21 +231,17 @@ const ignored = z.unknown();
 const empty = z.undefined();
 
 export const apiAuthClient: AuthClient = {
+  /* ---------------------------------------------------------------- sign-up */
+
   async startRegistration({ email }) {
     const result = await post("/v1/auth/register/start", { email }, ignored);
     return result.ok ? { ok: true } : result;
   },
 
   async verifyEmailCode({ email, code }) {
-    const result = await post("/v1/auth/register/verify", { email, code }, verifyResponseSchema);
-    if (!result.ok) {
-      // A wrong code, an expired code and a burnt code are one message on the
-      // server by design; they stay one message here.
-      return result.code === "INVALID_CREDENTIALS"
-        ? failure("INVALID_CODE", result.message)
-        : result;
-    }
-    registrationTicket = result.data.ticket;
+    const result = await post("/v1/auth/register/verify", { email, code }, ticketResponseSchema);
+    if (!result.ok) return asCodeFailure(result);
+    tickets.registration = result.data.ticket;
     return { ok: true };
   },
 
@@ -214,20 +252,20 @@ export const apiAuthClient: AuthClient = {
   },
 
   async completeRegistration({ password }) {
-    if (!registrationTicket) {
-      return failure("INVALID_CODE", "Your sign-up has expired. Start again to get a new code.");
-    }
-
+    const ticket = tickets.registration;
+    if (!ticket) return EXPIRED("sign-up");
     const result = await post(
       "/v1/auth/register/complete",
-      { ticket: registrationTicket, password },
+      { ticket, password },
       sessionResponseSchema,
     );
     // Single use on the server, so single use here too: a retry has to start
     // from a fresh code rather than replay a ticket that is already spent.
-    registrationTicket = null;
+    tickets.registration = null;
     return result.ok ? { ok: true, user: result.data.user } : result;
   },
+
+  /* ----------------------------------------------------------------- log-in */
 
   /*
     Deliberately does not call the server. There is no "does this address
@@ -240,21 +278,67 @@ export const apiAuthClient: AuthClient = {
   },
 
   async login({ email, password }) {
-    const result = await post("/v1/auth/login", { email, password }, sessionResponseSchema);
-    return result.ok ? { ok: true, user: result.data.user } : result;
+    const result = await post("/v1/auth/login", { email, password }, ticketResponseSchema);
+    if (!result.ok) return result;
+    tickets.login = result.data.ticket;
+    return { ok: true };
   },
+
+  async verifyLogin({ code }) {
+    const ticket = tickets.login;
+    if (!ticket) return EXPIRED("sign-in");
+    const result = await post("/v1/auth/login/verify", { ticket, code }, sessionResponseSchema);
+    if (!result.ok) return asCodeFailure(result);
+    tickets.login = null;
+    return { ok: true, user: result.data.user };
+  },
+
+  async resendLoginCode() {
+    const ticket = tickets.login;
+    if (!ticket) return EXPIRED("sign-in");
+    const result = await post("/v1/auth/login/resend", { ticket }, ignored);
+    return result.ok ? { ok: true } : result;
+  },
+
+  /* ---------------------------------------------------------- password reset */
 
   async requestPasswordReset({ email }) {
     const result = await post("/v1/auth/password-reset", { email }, ignored);
     return result.ok ? { ok: true } : result;
   },
 
-  async continueWithGoogle() {
-    return failure(
-      "NOT_AVAILABLE",
-      "Google sign-in is not available yet. Use your email address for now.",
+  async verifyPasswordResetCode({ email, code }) {
+    const result = await post(
+      "/v1/auth/password-reset/verify",
+      { email, code },
+      ticketResponseSchema,
     );
+    if (!result.ok) return asCodeFailure(result);
+    tickets.reset = result.data.ticket;
+    return { ok: true };
   },
+
+  async completePasswordReset({ password }) {
+    const ticket = tickets.reset;
+    if (!ticket) return EXPIRED("reset");
+    const result = await post("/v1/auth/password-reset/complete", { ticket, password }, ignored);
+    tickets.reset = null;
+    return result.ok ? { ok: true } : result;
+  },
+
+  /* ----------------------------------------------------------------- google */
+
+  continueWithGoogle() {
+    // A top-level navigation, so the API can set the session cookie on the
+    // way back. No Google script runs in this page and no token ever reaches
+    // it. The promise never settles because the page is leaving: the button
+    // stays busy until it does, and a failure comes back as ?error= on /login.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- the API's origin, never a Next page
+    window.location.href = `${API_URL}/v1/auth/google/start`;
+    return new Promise<AuthResult>(() => {});
+  },
+
+  /* ---------------------------------------------------------------- session */
 
   async me() {
     const result = await send("/v1/auth/me", sessionResponseSchema, { method: "GET" });
@@ -268,3 +352,23 @@ export const apiAuthClient: AuthClient = {
 };
 
 export const authClient: AuthClient = apiAuthClient;
+
+/** The sentence for a ?error=google_<reason> on the log-in page, or null for anything else. */
+export function googleErrorMessage(error: string | null): string | null {
+  switch (error) {
+    case "google_denied":
+      return "Google sign-in was cancelled. Try again, or use your email address.";
+    case "google_unavailable":
+      return "Google sign-in is not available yet. Use your email address for now.";
+    case "google_unverified_email":
+      return "That Google account's email address is not verified, so it cannot be used here.";
+    case "google_closed":
+      return "That account is closed.";
+    case "google_expired":
+      return "That Google sign-in took too long. Try again.";
+    case "google_failed":
+      return "Google sign-in did not complete. Try again, or use your email address.";
+    default:
+      return null;
+  }
+}

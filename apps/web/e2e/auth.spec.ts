@@ -2,7 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 /*
-  The sign-up, log-in, account and legal pages.
+  The sign-up, log-in, recovery, account and legal pages.
 
   The API is stubbed at the network boundary rather than run alongside these
   tests. What is under test here is the browser half: that the flows can be
@@ -22,17 +22,38 @@ const USER = {
   emailVerified: true,
 };
 
-type Reply = { status: number; body?: unknown };
-type Endpoint = "start" | "verify" | "complete" | "login" | "logout" | "me" | "reset";
+const TICKET = { ticket: "ticket-issued-by-the-stubbed-api" };
+
+type Reply = { status: number; body?: unknown; headers?: Record<string, string> };
+type Endpoint =
+  | "start"
+  | "verify"
+  | "complete"
+  | "login"
+  | "loginVerify"
+  | "loginResend"
+  | "logout"
+  | "me"
+  | "reset"
+  | "resetVerify"
+  | "resetComplete"
+  | "googleStart";
 
 const DEFAULTS: Record<Endpoint, Reply> = {
   start: { status: 202, body: { status: "accepted" } },
-  verify: { status: 200, body: { ticket: "ticket-issued-by-the-stubbed-api" } },
+  verify: { status: 200, body: TICKET },
   complete: { status: 201, body: { user: USER } },
-  login: { status: 200, body: { user: USER } },
+  login: { status: 200, body: TICKET },
+  loginVerify: { status: 200, body: { user: USER } },
+  loginResend: { status: 202, body: { status: "accepted" } },
   logout: { status: 204 },
   me: { status: 200, body: { user: USER } },
   reset: { status: 202, body: { status: "accepted" } },
+  resetVerify: { status: 200, body: TICKET },
+  resetComplete: { status: 200, body: { status: "completed" } },
+  // The real route sends the browser to Google; the stub sends it straight to
+  // the outcome a cancelled sign-in produces.
+  googleStart: { status: 302, headers: { location: "/login?error=google_denied" } },
 };
 
 /** The API's error envelope, so the client parses a stubbed failure as a real one. */
@@ -43,14 +64,22 @@ const rejected = (code: string, message: string, status: number): Reply => ({
 
 function endpointOf(url: string): Endpoint | null {
   const { pathname } = new URL(url);
-  if (pathname.endsWith("/auth/register/start")) return "start";
-  if (pathname.endsWith("/auth/register/verify")) return "verify";
-  if (pathname.endsWith("/auth/register/complete")) return "complete";
-  if (pathname.endsWith("/auth/login")) return "login";
-  if (pathname.endsWith("/auth/logout")) return "logout";
-  if (pathname.endsWith("/auth/me")) return "me";
-  if (pathname.endsWith("/auth/password-reset")) return "reset";
-  return null;
+  const tail = pathname.slice(pathname.indexOf("/v1/auth/") + "/v1/auth/".length);
+  const table: Record<string, Endpoint> = {
+    "register/start": "start",
+    "register/verify": "verify",
+    "register/complete": "complete",
+    login: "login",
+    "login/verify": "loginVerify",
+    "login/resend": "loginResend",
+    logout: "logout",
+    me: "me",
+    "password-reset": "reset",
+    "password-reset/verify": "resetVerify",
+    "password-reset/complete": "resetComplete",
+    "google/start": "googleStart",
+  };
+  return table[tail] ?? null;
 }
 
 /*
@@ -85,27 +114,41 @@ async function mockApi(page: Page, overrides: Partial<Record<Endpoint, Reply>> =
 
     const reply = replies[endpoint];
     const hasBody = reply.body !== undefined;
+    // A redirect target is relative to the page's own origin, not the API's.
+    const location = reply.headers?.location;
     await route.fulfill({
       status: reply.status,
       headers: {
         ...corsHeaders(route),
         ...(hasBody ? { "content-type": "application/json" } : {}),
+        ...(location ? { location: new URL(location, page.url()).toString() } : {}),
       },
       ...(hasBody ? { body: JSON.stringify(reply.body) } : {}),
     });
   });
 }
 
+/** The first of the six boxes. Filling it with all six digits fills the rest. */
+const codeBox = (page: Page) => page.getByLabel(/digit 1 of 6/);
+
 /** Walks sign-up as far as the password step. */
 async function toPasswordStep(page: Page) {
   await page.goto("/register");
-  const next = page.getByRole("button", { name: "Continue", exact: true });
   await page.getByLabel("Email").fill(USER.email);
   await page.getByLabel(/By creating an account/).check();
-  await next.click();
-  await page.getByLabel("Verification code").fill("123456");
-  await next.click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await codeBox(page).fill("123456");
   await expect(page.getByRole("heading", { level: 1, name: "Create a password" })).toBeVisible();
+}
+
+/** Walks log-in as far as the code step. */
+async function toLoginCodeStep(page: Page) {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(USER.email);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByLabel("Password", { exact: true }).fill("Helloooo1");
+  await page.getByRole("button", { name: "Log in" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Verify it's you" })).toBeVisible();
 }
 
 async function expectNoSeriousA11yViolations(page: Page) {
@@ -165,13 +208,17 @@ test.describe("accessibility", () => {
     });
   }
 
-  test("the signed-in account page passes axe", async ({ page }) => {
+  test("the code step and the signed-in home pass axe", async ({ page }) => {
     test.skip(!desktop(page), "one viewport is enough for a single card");
     test.slow();
     await mockApi(page);
     await page.emulateMedia({ reducedMotion: "reduce" });
+
+    await toLoginCodeStep(page);
+    await expectNoSeriousA11yViolations(page);
+
     await page.goto("/account");
-    await expect(page.getByRole("heading", { level: 1, name: "Your account" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
     await expectNoSeriousA11yViolations(page);
   });
 
@@ -188,6 +235,51 @@ test.describe("accessibility", () => {
       if (await skip.evaluate((el) => el === document.activeElement)) break;
     }
     await expect(skip).toBeFocused();
+  });
+});
+
+test.describe("the code boxes", () => {
+  test("typing advances box by box and the sixth digit submits", async ({ page }) => {
+    await mockApi(page);
+    await toLoginCodeStep(page);
+
+    await expect(codeBox(page)).toBeFocused();
+    await page.keyboard.type("12345");
+    await expect(page.getByLabel(/digit 6 of 6/)).toBeFocused();
+    await expect(page.getByLabel(/digit 3 of 6/)).toHaveValue("3");
+    // Nothing submitted yet: still on the code step.
+    await expect(page.getByRole("heading", { level: 1, name: "Verify it's you" })).toBeVisible();
+
+    await page.keyboard.type("6");
+    await expect(page).toHaveURL(/\/account$/);
+  });
+
+  test("backspace clears and steps back", async ({ page }) => {
+    await mockApi(page);
+    await toLoginCodeStep(page);
+
+    await page.keyboard.type("123");
+    await page.keyboard.press("Backspace");
+    await expect(page.getByLabel(/digit 3 of 6/)).toHaveValue("");
+    await expect(page.getByLabel(/digit 3 of 6/)).toBeFocused();
+    await page.keyboard.press("Backspace");
+    await expect(page.getByLabel(/digit 2 of 6/)).toHaveValue("");
+    await expect(page.getByLabel(/digit 2 of 6/)).toBeFocused();
+  });
+
+  test("a pasted code fills every box from the first and submits", async ({ page }) => {
+    await mockApi(page);
+    await toLoginCodeStep(page);
+
+    // Paste into the third box: the whole code still lands from the first.
+    await page.getByLabel(/digit 3 of 6/).evaluate((element) => {
+      const data = new DataTransfer();
+      data.setData("text", "Your code is 654321");
+      element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+    });
+    await expect(page.getByLabel(/digit 1 of 6/)).toHaveValue("6");
+    await expect(page.getByLabel(/digit 6 of 6/)).toHaveValue("1");
+    await expect(page).toHaveURL(/\/account$/);
   });
 });
 
@@ -213,12 +305,11 @@ test.describe("sign up", () => {
     await expect(page.getByText("sam***@gmail.com")).toBeVisible();
     await expect(page.getByRole("button", { name: /Resend code in \d+s/ })).toBeDisabled();
 
-    // Wrong shape is rejected client-side; six digits go to the server.
-    await page.getByLabel("Verification code").fill("12");
+    // Two digits and Continue is rejected client-side; six go to the server.
+    await codeBox(page).fill("12");
     await next.click();
     await expect(page.getByText("Enter the 6-digit code")).toBeVisible();
-    await page.getByLabel("Verification code").fill("123456");
-    await next.click();
+    await codeBox(page).fill("123456");
     await expect(page.getByRole("heading", { level: 1, name: "Create a password" })).toBeVisible();
 
     // The checklist ticks as the rules are met.
@@ -232,7 +323,7 @@ test.describe("sign up", () => {
 
     await page.getByRole("button", { name: "Create account" }).click();
     await expect(page).toHaveURL(/\/account$/);
-    await expect(page.getByText(USER.email)).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
   });
 
   test("a rejected code is shown as an error and does not advance", async ({ page }) => {
@@ -243,8 +334,7 @@ test.describe("sign up", () => {
     await page.getByLabel("Email").fill(USER.email);
     await page.getByLabel(/By creating an account/).check();
     await page.getByRole("button", { name: "Continue", exact: true }).click();
-    await page.getByLabel("Verification code").fill("000000");
-    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await codeBox(page).fill("000000");
 
     await expect(
       page.getByRole("alert").filter({ hasText: "not valid or has expired" }),
@@ -288,17 +378,21 @@ test.describe("sign up", () => {
     await expect(password).toHaveAttribute("type", "password");
   });
 
-  test("Google is the only OAuth option and says it is not available yet", async ({ page }) => {
+  test("Google is the only OAuth option, and a cancelled sign-in reports back on /login", async ({
+    page,
+  }) => {
     await mockApi(page);
     await page.goto("/register");
     await expect(page.getByRole("button", { name: /Continue with/ })).toHaveCount(1);
+    // A top-level navigation to the API, which answers with a redirect back.
     await page.getByRole("button", { name: "Continue with Google" }).click();
-    await expect(page.getByRole("alert").filter({ hasText: "not available yet" })).toBeVisible();
+    await expect(page).toHaveURL(/\/login\?error=google_denied$/);
+    await expect(page.getByRole("alert").filter({ hasText: "cancelled" })).toBeVisible();
   });
 });
 
 test.describe("log in", () => {
-  test("asks for email first, then password, then signs in", async ({ page }) => {
+  test("asks for email, then password, then the emailed code, then signs in", async ({ page }) => {
     await mockApi(page);
     await page.goto("/login");
     await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
@@ -309,6 +403,11 @@ test.describe("log in", () => {
 
     await page.getByLabel("Password", { exact: true }).fill("Helloooo1");
     await page.getByRole("button", { name: "Log in" }).click();
+    // The password alone is not enough: no navigation, a code is asked for.
+    await expect(page.getByRole("heading", { level: 1, name: "Verify it's you" })).toBeVisible();
+    await expect(page.getByText("sam***@gmail.com")).toBeVisible();
+
+    await codeBox(page).fill("123456");
     await expect(page).toHaveURL(/\/account$/);
   });
 
@@ -330,7 +429,21 @@ test.describe("log in", () => {
     await expect(page.getByLabel("Email")).toBeVisible();
   });
 
-  test("forgot password leads to recovery, which never confirms an account", async ({ page }) => {
+  test("a wrong login code is shown as an error and stays on the code step", async ({ page }) => {
+    await mockApi(page, {
+      loginVerify: rejected("UNAUTHENTICATED", "That code is not valid or has expired.", 401),
+    });
+    await toLoginCodeStep(page);
+    await codeBox(page).fill("000000");
+    await expect(
+      page.getByRole("alert").filter({ hasText: "not valid or has expired" }),
+    ).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
+  });
+});
+
+test.describe("password reset", () => {
+  test("walks email, code and new password, then sends the person to log in", async ({ page }) => {
     await mockApi(page);
     await page.goto("/login");
     await page.getByLabel("Email").fill(USER.email);
@@ -340,23 +453,40 @@ test.describe("log in", () => {
 
     await page.getByLabel("Email").fill(USER.email);
     await page.getByRole("button", { name: "Send reset code" }).click();
-    // The same words whether or not the address has an account: the page never
-    // says "sent", only "if an account exists".
-    await expect(page.getByText("If an account exists for")).toBeVisible();
+    // The same words whether or not the address has an account.
+    await expect(page.getByText("If an account exists for that address")).toBeVisible();
+
+    await codeBox(page).fill("123456");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Choose a new password" }),
+    ).toBeVisible();
+
+    await page.getByLabel("New password").fill("Different2Horse");
+    await page.getByRole("button", { name: "Change password" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Password changed" })).toBeVisible();
+    await expect(page.getByText("signed out on every device")).toBeVisible();
+    await page.getByRole("link", { name: "Log in" }).click();
+    await expect(page).toHaveURL(/\/login$/);
   });
 });
 
 test.describe("account", () => {
-  test("shows who is signed in, and logging out ends the session", async ({ page }) => {
+  test("shows the home card, and logging out ends the session", async ({ page }) => {
     await mockApi(page);
     await page.goto("/account");
 
-    await expect(page.getByRole("heading", { level: 1, name: "Your account" })).toBeVisible();
-    await expect(page.getByText(USER.email)).toBeVisible();
-    await expect(page.getByText("Verified", { exact: true })).toBeVisible();
-
+    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
     await page.getByRole("button", { name: "Log out" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "You are signed out" })).toBeVisible();
+  });
+
+  test("a failed sign-out is reported, not pretended", async ({ page }) => {
+    await mockApi(page, { logout: rejected("INTERNAL", "Something broke.", 500) });
+    await page.goto("/account");
+    await page.getByRole("button", { name: "Log out" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: /went wrong/ })).toBeVisible();
+    // Still signed in, because the server still holds the session.
+    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
   });
 
   test("without a session it offers the way in rather than an error", async ({ page }) => {

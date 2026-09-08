@@ -30,38 +30,90 @@ const originList = z
   .transform((raw) =>
     raw
       .split(",")
-      .map((entry) => entry.trim())
+      .map((entry) => trim(entry))
       .filter(Boolean),
   )
   .pipe(z.array(origin).min(1, { error: "at least one origin is required" }));
 
-export const envSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  PORT: z.coerce.number().int().min(0).max(65535).default(3001),
-  HOST: z.string().min(1).default("127.0.0.1"),
-  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
-  /** Only true behind a proxy that sets X-Forwarded-*; otherwise clients spoof their IP. */
-  TRUST_PROXY: flag,
-  CORS_ORIGINS: originList,
-  DATABASE_URL: z.url({
-    protocol: /^postgres(ql)?$/,
-    error: "must be a postgresql:// URL",
-  }),
-  REDIS_URL: z.url({ protocol: /^rediss?$/, error: "must be a redis:// or rediss:// URL" }),
-  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(0).max(120_000).default(10_000),
+const trim = (value: string) => value.trim();
 
-  /* Sessions. Two independent limits: an absolute lifetime, and an idle window
-     after which an abandoned session is dead regardless of the absolute one. */
-  SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(8_760).default(720),
-  SESSION_IDLE_TTL_HOURS: z.coerce.number().int().min(1).max(8_760).default(168),
-  /* Defaults closed: a session cookie must not travel over plain HTTP. Local
-     development over http://localhost is the only reason to turn it off. */
-  COOKIE_SECURE: z
-    .enum(["true", "false"])
-    .default("true")
-    .transform((value) => value === "true"),
-  COOKIE_DOMAIN: z.string().min(1).optional(),
-});
+/** A value that may be left blank in a .env file: `KEY=` reads as absent, not as "". */
+const optionalSecret = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().min(1).optional(),
+);
+
+export const envSchema = z
+  .object({
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    PORT: z.coerce.number().int().min(0).max(65535).default(3001),
+    HOST: z.string().min(1).default("127.0.0.1"),
+    LOG_LEVEL: z
+      .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
+      .default("info"),
+    /** Only true behind a proxy that sets X-Forwarded-*; otherwise clients spoof their IP. */
+    TRUST_PROXY: flag,
+    CORS_ORIGINS: originList,
+
+    /* Where the browser lives, and where this API is reachable from it. A
+       finished Google sign-in sends the browser back to WEB_URL; API_URL is
+       what Google is told to redirect to, so it must be the public origin of
+       this process, not the bind address. */
+    WEB_URL: origin,
+    API_URL: origin,
+
+    /** Shown in emails. A placeholder brand, mirrored from apps/web/lib/site.ts. */
+    APP_NAME: z.string().min(1).default("Abay"),
+
+    DATABASE_URL: z.url({
+      protocol: /^postgres(ql)?$/,
+      error: "must be a postgresql:// URL",
+    }),
+    REDIS_URL: z.url({ protocol: /^rediss?$/, error: "must be a redis:// or rediss:// URL" }),
+    SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(0).max(120_000).default(10_000),
+
+    /* Email. EMAIL_FROM is the sender every verification code goes out as,
+       e.g. "Abay <no-reply@example.com>". Outside production the API key may
+       be left blank, in which case codes are written to the log instead of
+       sent; production refuses to start without it (see the check below). */
+    EMAIL_FROM: z
+      .string()
+      .min(3, { error: "the sender address, e.g. Abay <no-reply@example.com>" }),
+    RESEND_API_KEY: optionalSecret,
+
+    /* Google sign-in. Both or neither: with neither, the Google routes report
+       the option as unavailable instead of half-working. */
+    GOOGLE_CLIENT_ID: optionalSecret,
+    GOOGLE_CLIENT_SECRET: optionalSecret,
+
+    /* Sessions. Two independent limits: an absolute lifetime, and an idle window
+       after which an abandoned session is dead regardless of the absolute one. */
+    SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(8_760).default(720),
+    SESSION_IDLE_TTL_HOURS: z.coerce.number().int().min(1).max(8_760).default(168),
+    /* Defaults closed: a session cookie must not travel over plain HTTP. Local
+       development over http://localhost is the only reason to turn it off. */
+    COOKIE_SECURE: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((value) => value === "true"),
+    COOKIE_DOMAIN: z.string().min(1).optional(),
+  })
+  .superRefine((env, ctx) => {
+    if (env.NODE_ENV === "production" && !env.RESEND_API_KEY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["RESEND_API_KEY"],
+        message: "required in production: verification codes cannot be logged instead of sent",
+      });
+    }
+    if (Boolean(env.GOOGLE_CLIENT_ID) !== Boolean(env.GOOGLE_CLIENT_SECRET)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["GOOGLE_CLIENT_SECRET"],
+        message: "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together",
+      });
+    }
+  });
 
 export type Env = z.infer<typeof envSchema>;
 
