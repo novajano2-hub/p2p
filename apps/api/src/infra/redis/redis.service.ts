@@ -1,4 +1,4 @@
-import { Inject, Injectable, type OnModuleDestroy } from "@nestjs/common";
+import { Inject, Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import Redis from "ioredis";
 import { PinoLogger } from "nestjs-pino";
 
@@ -12,7 +12,7 @@ import { type Env } from "@/config/env";
   not to queue commands while the server is away and replay them later.
 */
 @Injectable()
-export class RedisService implements OnModuleDestroy {
+export class RedisService implements OnModuleInit, OnModuleDestroy {
   readonly client: Redis;
 
   constructor(
@@ -31,6 +31,24 @@ export class RedisService implements OnModuleDestroy {
     this.client.on("error", (error: Error) => {
       this.logger.warn({ reason: error.message }, "redis connection error");
     });
+  }
+
+  /*
+    Connect during startup rather than on the first command. With lazyConnect
+    and no offline queue, a command issued before the socket is up is rejected
+    outright, so without this the first request to touch Redis after a boot
+    fails. Failure here is logged, not thrown: Redis being down must leave the
+    app running and /ready honestly degraded, not prevent it from starting.
+  */
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.client.connect();
+    } catch (error) {
+      this.logger.warn(
+        { reason: error instanceof Error ? error.message : "unknown" },
+        "redis unavailable at startup; will keep retrying",
+      );
+    }
   }
 
   async onModuleDestroy(): Promise<void> {

@@ -49,6 +49,18 @@ export const envSchema = z.object({
   }),
   REDIS_URL: z.url({ protocol: /^rediss?$/, error: "must be a redis:// or rediss:// URL" }),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(0).max(120_000).default(10_000),
+
+  /* Sessions. Two independent limits: an absolute lifetime, and an idle window
+     after which an abandoned session is dead regardless of the absolute one. */
+  SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(8_760).default(720),
+  SESSION_IDLE_TTL_HOURS: z.coerce.number().int().min(1).max(8_760).default(168),
+  /* Defaults closed: a session cookie must not travel over plain HTTP. Local
+     development over http://localhost is the only reason to turn it off. */
+  COOKIE_SECURE: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  COOKIE_DOMAIN: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

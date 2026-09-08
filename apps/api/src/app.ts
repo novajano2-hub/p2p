@@ -1,5 +1,6 @@
 import { type IncomingMessage } from "node:http";
 
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import { NestFactory } from "@nestjs/core";
@@ -54,6 +55,11 @@ export async function createApp(env: Env): Promise<NestFastifyApplication> {
     exposedHeaders: ["x-request-id"],
     maxAge: 600,
   });
+
+  // Sessions are cookies, so the parser has to be registered before any route
+  // reads one. No secret: cookies here carry an opaque token that is looked up
+  // server-side, never signed application state.
+  await app.register(cookie);
 
   const fastify = app.getHttpAdapter().getInstance();
   fastify.addHook("onRequest", (request, reply, done) => {

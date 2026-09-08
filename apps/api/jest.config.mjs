@@ -43,7 +43,9 @@ export default {
       displayName: "api",
       testMatch: ["<rootDir>/test/api/**/*.spec.ts"],
       setupFiles: ["<rootDir>/test/setup-env.ts"],
-      testTimeout: 30_000,
+      // Jest ignores testTimeout inside a projects entry; setup-timeout.ts sets
+      // it after the framework is installed, where it is honoured.
+      setupFilesAfterEnv: ["<rootDir>/test/setup-timeout.ts"],
     },
   ],
 };

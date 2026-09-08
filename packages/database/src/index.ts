@@ -2,6 +2,18 @@ import { PrismaClient } from "@prisma/client";
 
 export { Prisma, PrismaClient } from "@prisma/client";
 
+// Row types, so services can be typed without importing @prisma/client directly.
+export type {
+  AuthIdentity,
+  AuthProvider,
+  Session,
+  SessionEndReason,
+  User,
+  UserStatus,
+  VerificationPurpose,
+  VerificationToken,
+} from "@prisma/client";
+
 export type PrismaLogLevel = "query" | "info" | "warn" | "error";
 
 /**

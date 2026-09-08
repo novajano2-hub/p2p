@@ -110,6 +110,9 @@ jobs:
       # resets whatever this points at, so it must never hold real rows.
       SHADOW_DATABASE_URL: postgresql://abay_migrator:migrator@localhost:5432/abay_shadow?schema=public
       REDIS_URL: redis://localhost:6379
+      # Tests drive the app over plain HTTP, so a Secure cookie would never
+      # be sent back. Production must leave this at its default of true.
+      COOKIE_SECURE: "false"
     steps:
       - uses: actions/checkout@v4
 

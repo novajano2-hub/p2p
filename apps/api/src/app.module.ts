@@ -6,6 +6,7 @@ import { ConfigModule } from "@/config/config.module";
 import { type Env } from "@/config/env";
 import { PrismaModule } from "@/infra/prisma/prisma.module";
 import { RedisModule } from "@/infra/redis/redis.module";
+import { AuthModule } from "@/modules/auth/auth.module";
 import { HealthModule } from "@/modules/health/health.module";
 
 /*
@@ -24,6 +25,7 @@ export class AppModule {
         PrismaModule,
         RedisModule,
         HealthModule,
+        AuthModule,
       ],
       providers: [AppExceptionFilter],
     };
