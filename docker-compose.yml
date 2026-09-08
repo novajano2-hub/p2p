@@ -1,0 +1,55 @@
+# Local infrastructure only. Nothing here is used in production, and the
+# passwords are deliberately trivial: they bind to 127.0.0.1 and exist so that
+# `npm run dev` works on a fresh clone. Production uses managed PostgreSQL and
+# Redis with credentials from a secrets manager (see docs/architecture).
+name: abay
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: abay
+    ports:
+      # Host port 5433, not 5432: plenty of dev machines (this one included)
+      # already run a native PostgreSQL on 5432, and this project should not
+      # need to stop someone else's database to start its own. The container
+      # still listens on its normal 5432 internally.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Creates the two least-privilege roles the API and the migrations use.
+      - ./packages/database/sql/roles.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d abay"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # No persistence locally. noeviction is not optional: BullMQ queues live
+    # here later, and an evicted job is a lost job.
+    command:
+      [
+        "redis-server",
+        "--save",
+        "",
+        "--appendonly",
+        "no",
+        "--maxmemory",
+        "256mb",
+        "--maxmemory-policy",
+        "noeviction",
+      ]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:

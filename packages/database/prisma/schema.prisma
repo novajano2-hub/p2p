@@ -1,0 +1,17 @@
+// The schema is empty on purpose at this checkpoint. Phase 1 step 2 adds User,
+// AuthIdentity and Session; Phase 2 adds the ledger. Each arrives with its own
+// migration and, where Prisma cannot express a rule (balanced entries,
+// immutability), a hand-written SQL file under ../sql applied by that migration.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Runtime connections use the least-privilege role.
+  url       = env("DATABASE_URL")
+  // Migrations use the role that owns the schema. Prisma Migrate reads this one.
+  directUrl = env("DIRECT_DATABASE_URL")
+}

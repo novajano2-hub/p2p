@@ -1,0 +1,19 @@
+# The API image is built from the repository root. Keep the context small and
+# keep anything that could carry a secret or a browser bundle out of it.
+.git
+.github
+.claude
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/playwright-report
+**/test-results
+apps/web
+docs
+*.md
+.env
+.env.*
+!.env.example
