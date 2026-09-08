@@ -18,6 +18,13 @@ CREATE ROLE abay_app LOGIN PASSWORD 'app';
 GRANT CONNECT ON DATABASE abay TO abay_migrator, abay_app;
 GRANT CREATE ON DATABASE abay TO abay_migrator;
 
+-- Prisma's `migrate dev` and `migrate diff` need a scratch database to replay
+-- migrations into. Given one explicitly, the migrator role does not need
+-- CREATEDB, which is the privilege we are trying not to hand out. Prisma resets
+-- this database freely, so it must never be one holding real rows. The app role
+-- is deliberately granted nothing here: it has no business in this one.
+CREATE DATABASE abay_shadow OWNER abay_migrator;
+
 \connect abay
 
 ALTER SCHEMA public OWNER TO abay_migrator;

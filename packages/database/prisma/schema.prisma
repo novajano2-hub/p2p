@@ -1,7 +1,7 @@
-// The schema is empty on purpose at this checkpoint. Phase 1 step 2 adds User,
-// AuthIdentity and Session; Phase 2 adds the ledger. Each arrives with its own
-// migration and, where Prisma cannot express a rule (balanced entries,
-// immutability), a hand-written SQL file under ../sql applied by that migration.
+// Phase 1 step 2: the identity tables. Phase 1 step 3 adds the separate admin
+// realm; Phase 2 adds the ledger. Each arrives with its own migration and,
+// where Prisma cannot express a rule (balanced entries, immutability), a
+// hand-written SQL file under ../sql applied by that migration.
 
 generator client {
   provider      = "prisma-client-js"
@@ -14,4 +14,187 @@ datasource db {
   url       = env("DATABASE_URL")
   // Migrations use the role that owns the schema. Prisma Migrate reads this one.
   directUrl = env("DIRECT_DATABASE_URL")
+  // A scratch database Prisma replays migrations into when authoring them.
+  // Named explicitly so the migrator role does not need CREATEDB. Never points
+  // at a database holding real rows: Prisma resets it.
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+// Identifiers are UUIDv7: sortable by creation time like an integer, but not
+// guessable and not a count of our customers (ADR-0005). Generated client-side
+// so tests and fixtures can mint them without a database round trip.
+
+/// A customer. Administrators are a separate realm with their own table and
+/// their own authentication, so a customer-account compromise is never also an
+/// administrator compromise (ADR: threat model R-08). Arriving in step 3.
+model User {
+  id String @id @default(uuid(7))
+
+  /// Stored lower-cased, and every lookup lower-cases first. A citext column
+  /// would enforce that in the database, but it needs an extension; a
+  /// normalising boundary plus this unique index is the portable equivalent.
+  email String @unique
+
+  /// Null until the address is proven. A user cannot reach any money-moving
+  /// route before this is set.
+  emailVerifiedAt DateTime?
+
+  status UserStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  identities AuthIdentity[]
+  sessions   Session[]
+
+  @@map("users")
+}
+
+enum UserStatus {
+  /// Normal. Can trade.
+  ACTIVE
+  /// Set by an administrator. Can log in and withdraw, cannot open new trades.
+  SUSPENDED
+  /// Closed by the customer or by us. Cannot log in. Rows are kept because
+  /// financial history must survive the account that created it.
+  CLOSED
+
+  @@map("user_status")
+}
+
+/// How a user proves who they are. One row per method, so adding Google to a
+/// password account (or the reverse) is an insert rather than a migration, and
+/// so a password hash is absent rather than null-and-meaningless for an account
+/// that only ever uses Google.
+model AuthIdentity {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider AuthProvider
+
+  /// The provider's own identifier for this account: the `sub` claim for
+  /// Google, null for a password identity (the address on User is the handle).
+  providerAccountId String? @map("provider_account_id")
+
+  /// Argon2id, and only ever for provider = PASSWORD. Never leaves the server,
+  /// never appears in a response type, and is redacted from logs by name.
+  passwordHash String? @map("password_hash")
+
+  /// Set when the password last changed. A session issued before this is
+  /// treated as stale, which is what makes "changing your password logs out
+  /// your other devices" true rather than aspirational.
+  passwordChangedAt DateTime? @map("password_changed_at")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One identity per provider per user: no two password rows to disagree.
+  @@unique([userId, provider])
+  /// A Google account can back exactly one user.
+  @@unique([provider, providerAccountId])
+  @@map("auth_identities")
+}
+
+enum AuthProvider {
+  PASSWORD
+  GOOGLE
+
+  @@map("auth_provider")
+}
+
+/// A logged-in session. Opaque and server-side rather than a JWT, because a
+/// custodial platform has to be able to end a session *now* - on password
+/// change, on a support call, on suspicion - and a self-contained token cannot
+/// be recalled before it expires (ADR-0011).
+model Session {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// SHA-256 of the opaque token, never the token itself. Read access to this
+  /// table must not be enough to impersonate anyone, which matters because
+  /// backups, replicas and support tooling all see it.
+  tokenHash String @unique @map("token_hash")
+
+  /// Absolute end of life, independent of activity.
+  expiresAt DateTime @map("expires_at")
+
+  /// Moved forward on use, so an abandoned session can be expired for idleness
+  /// long before its absolute expiry.
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
+
+  /// Revocation is a write, not a delete: "when was this session ended, and was
+  /// it ended deliberately" is a question incident review will ask.
+  revokedAt DateTime?      @map("revoked_at")
+  revokedReason SessionEndReason? @map("revoked_reason")
+
+  /// Personal data (docs/architecture/data-classification.md). Kept because
+  /// "sign out my other devices" and unfamiliar-login checks need it; shown to
+  /// the account owner, never to another customer.
+  createdIp String? @map("created_ip")
+  userAgent String? @map("user_agent")
+
+  createdAt DateTime @default(now())
+
+  /// Listing a user's active sessions, and the expiry sweep, are the two reads
+  /// that happen often enough to index.
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+enum SessionEndReason {
+  LOGOUT
+  PASSWORD_CHANGED
+  REVOKED_BY_USER
+  REVOKED_BY_ADMIN
+  EXPIRED
+
+  @@map("session_end_reason")
+}
+
+/// A single-use code or link: the six digits that prove an email address, and
+/// the token behind a password-reset link.
+///
+/// Keyed by address rather than by user, deliberately. Registration creates no
+/// User row until the password step succeeds, so an abandoned sign-up leaves
+/// nothing behind, and "is this address registered" cannot be answered by
+/// watching what the server creates.
+model VerificationToken {
+  id String @id @default(uuid(7))
+
+  purpose VerificationPurpose
+
+  /// Lower-cased, like User.email.
+  email String
+
+  /// Hashed, for the same reason session tokens are: the database should not
+  /// hold anything replayable.
+  tokenHash String @map("token_hash")
+
+  expiresAt DateTime @map("expires_at")
+
+  /// Set when redeemed. A redeemed row is kept rather than deleted so a replay
+  /// is distinguishable from a code that never existed.
+  consumedAt DateTime? @map("consumed_at")
+
+  /// Six digits is a million guesses, which is not many. Attempts are counted
+  /// here and the row is burned past the limit; rate limiting sits in front as
+  /// the second layer.
+  attempts Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  /// The lookup is always "the newest live token for this address and purpose".
+  @@index([email, purpose])
+  @@index([expiresAt])
+  @@map("verification_tokens")
+}
+
+enum VerificationPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+
+  @@map("verification_purpose")
 }
