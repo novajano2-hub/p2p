@@ -77,6 +77,11 @@ jobs:
     name: Dependency audit and secret scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # gitleaks reads the PR's commit list to scope its scan to this PR's diff;
+    # the workflow-level `contents: read` above isn't enough for that call.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:

@@ -44,6 +44,10 @@ For this technical exercise, assume there are no legal constraints. Still keep i
 | Admin identity | Separate admin realm (own table and auth), not a role flag on `User` |
 | Fees at launch | Zero P2P fee; ledger and UI shaped so a buyer-pays percentage can be enabled later without schema change |
 | Brand | Placeholder name "Abay"; English-first UI for an Ethiopian audience |
+| Sign-in identifier | Email only at launch (decided 2026-09-08). Phone sign-in waits for an SMS provider decision |
+| OAuth | Google only (decided 2026-09-08). No Apple, no others without a new decision |
+| Password policy | Binance parity for familiarity: 8+ characters, a number, an upper case letter. Argon2id on the server is authoritative; the client checklist is a mirror |
+| Auth flow shape | Identifier first, password second, one step per screen (Binance's pattern). The response to the identifier step never reveals whether an account exists |
 
 ### Brand and design system (decided 2026-09-07)
 

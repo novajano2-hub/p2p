@@ -6,12 +6,17 @@ The Next.js client. Currently only the marketing landing page (route group
 ## Structure
 
 ```
-app/(marketing)/       landing page: layout, page
+app/(marketing)/       landing page, plus /terms and /privacy (placeholder legal text)
+app/(auth)/            /register, /login, /recover: one card, one step per screen
+components/auth/       the three flows, the shared card, code step, password rules
+components/legal/      legal-page layout
+lib/auth/              zod schemas, email masking, and the auth client (a PREVIEW until
+                       Phase 1: steps can be walked, final actions fail with NOT_CONNECTED)
 components/brand/      wordmark (placeholder)
 components/marketing/  one component per section, plus header, footer, mobile nav
 components/motion/     gsap.ts (single plugin registration), Reveal (scroll reveal)
 components/three/      the escrow vault scene (react-three-fiber), lazy-loaded
-components/ui/         Button / ButtonLink, StatusPill
+components/ui/         Button / ButtonLink, StatusPill, Field / Input, Checkbox, PasswordInput
 lib/site.ts            brand name, nav, CTA labels. The ONLY place the brand name lives
 lib/cn.ts              class merge helper
 app/globals.css        design tokens ("Quiet Capital" kit: colours, radius, easing, fonts)
@@ -72,4 +77,8 @@ PW_BROWSER_CHANNEL=chrome npm run test:e2e -w web
 ## Placeholders to replace before launch
 
 - Brand name and wordmark: `lib/site.ts`
-- `/terms`, `/privacy`, `/login`, `/register` routes do not exist yet
+- `/terms` and `/privacy` carry labelled placeholder text (a "not yet in force" pill) until
+  real legal wording exists
+- `/register`, `/login` and `/recover` run against `lib/auth/client.ts` in preview mode: no
+  account service exists yet, so every final action fails with a visible NOT_CONNECTED
+  error and a preview notice sits in the card. Phase 1 swaps the client; the pages stay
