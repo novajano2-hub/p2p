@@ -106,6 +106,9 @@ jobs:
       CORS_ORIGINS: http://localhost:3000
       DATABASE_URL: postgresql://abay_app:app@localhost:5432/abay?schema=public
       DIRECT_DATABASE_URL: postgresql://abay_migrator:migrator@localhost:5432/abay?schema=public
+      # Scratch database for `prisma migrate diff`, created by roles.sql. Prisma
+      # resets whatever this points at, so it must never hold real rows.
+      SHADOW_DATABASE_URL: postgresql://abay_migrator:migrator@localhost:5432/abay_shadow?schema=public
       REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
@@ -128,6 +131,12 @@ jobs:
 
       - run: npm run lint -w api
       - run: npm run typecheck -w api
+
+      # Fails if someone edited schema.prisma without generating a migration, or
+      # edited a migration after it was applied. Cheaper to catch here than to
+      # discover as drift against a real database later.
+      - name: Check migrations match the schema
+        run: npm run migrate:check -w @abay/database
 
       - name: Apply migrations
         run: |
