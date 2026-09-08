@@ -19,7 +19,34 @@ import { z } from "zod";
   declared; anything else the API sends is ignored.
 */
 
-const API_URL = readApiUrl();
+const CONFIGURED_API_URL = readApiUrl();
+
+/*
+  Loopback names mean "this machine", so they are only correct for a page that
+  is itself being served from one. Open the dev server by its LAN address to
+  try something on a phone and a configured http://localhost:3001 becomes two
+  bugs at once: the browser looks for the API on the phone, and the session
+  cookie becomes cross-site (localhost vs 192.168.x.x are different sites) and
+  is dropped without an error anywhere. So when the API is configured under a
+  loopback name and the page is not on one, the page's own hostname wins.
+
+  A configured hostname that is not loopback is never touched: in production
+  the API deliberately lives on a different host from the page (api.abay.com
+  beside abay.com), which is same-site and works as intended.
+*/
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+function apiOrigin(): string {
+  if (typeof window === "undefined") return CONFIGURED_API_URL;
+  const configured = new URL(CONFIGURED_API_URL);
+  const pageHost = window.location.hostname;
+  if (pageHost === configured.hostname || !LOOPBACK_HOSTS.has(configured.hostname)) {
+    return configured.origin;
+  }
+  configured.protocol = window.location.protocol;
+  configured.hostname = pageHost;
+  return configured.origin;
+}
 
 function readApiUrl(): string {
   // Inlined at build time. No fallback on purpose: a wrong guess here fails
@@ -147,7 +174,7 @@ async function send<T>(
 ): Promise<{ ok: true; data: T } | Failure> {
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, {
+    response = await fetch(`${apiOrigin()}${path}`, {
       ...init,
       headers: {
         // Only when there is something to declare a type for. Fastify rejects a
@@ -334,7 +361,7 @@ export const apiAuthClient: AuthClient = {
     // it. The promise never settles because the page is leaving: the button
     // stays busy until it does, and a failure comes back as ?error= on /login.
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- the API's origin, never a Next page
-    window.location.href = `${API_URL}/v1/auth/google/start`;
+    window.location.href = `${apiOrigin()}/v1/auth/google/start`;
     return new Promise<AuthResult>(() => {});
   },
 

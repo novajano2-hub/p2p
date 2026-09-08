@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page, type Route } from "@playwright/test";
 
 /*
   The sign-up, log-in, recovery, account and legal pages.
@@ -24,7 +24,18 @@ const USER = {
 
 const TICKET = { ticket: "ticket-issued-by-the-stubbed-api" };
 
-type Reply = { status: number; body?: unknown; headers?: Record<string, string> };
+type Reply = {
+  status: number;
+  body?: unknown;
+  headers?: Record<string, string>;
+  /** The real API sets the session cookie here; middleware routes on it, so the stub must too. */
+  cookie?: "set" | "clear";
+};
+
+const SESSION_COOKIE = "abay_session";
+const SESSION_VALUE = "a-session-token";
+/** Matches playwright.config.ts. Cookies ignore the port, so this covers the API stub too. */
+const SITE = "http://localhost:3100";
 type Endpoint =
   | "start"
   | "verify"
@@ -42,11 +53,11 @@ type Endpoint =
 const DEFAULTS: Record<Endpoint, Reply> = {
   start: { status: 202, body: { status: "accepted" } },
   verify: { status: 200, body: TICKET },
-  complete: { status: 201, body: { user: USER } },
+  complete: { status: 201, body: { user: USER }, cookie: "set" },
   login: { status: 200, body: TICKET },
-  loginVerify: { status: 200, body: { user: USER } },
+  loginVerify: { status: 200, body: { user: USER }, cookie: "set" },
   loginResend: { status: 202, body: { status: "accepted" } },
-  logout: { status: 204 },
+  logout: { status: 204, cookie: "clear" },
   me: { status: 200, body: { user: USER } },
   reset: { status: 202, body: { status: "accepted" } },
   resetVerify: { status: 200, body: TICKET },
@@ -116,6 +127,15 @@ async function mockApi(page: Page, overrides: Partial<Record<Endpoint, Reply>> =
     const hasBody = reply.body !== undefined;
     // A redirect target is relative to the page's own origin, not the API's.
     const location = reply.headers?.location;
+    // What the real API's Set-Cookie does, done to the jar directly: Playwright
+    // does not apply a Set-Cookie from a fulfilled cross-origin response, and
+    // middleware routes on this cookie, so it has to actually be there (or not).
+    if (reply.cookie === "set") {
+      await page.context().addCookies([{ name: SESSION_COOKIE, value: SESSION_VALUE, url: SITE }]);
+    } else if (reply.cookie === "clear") {
+      await page.context().clearCookies({ name: SESSION_COOKIE });
+    }
+
     await route.fulfill({
       status: reply.status,
       headers: {
@@ -126,6 +146,15 @@ async function mockApi(page: Page, overrides: Partial<Record<Endpoint, Reply>> =
       ...(hasBody ? { body: JSON.stringify(reply.body) } : {}),
     });
   });
+}
+
+/*
+  Puts a session cookie in the jar, for tests that open /account directly
+  instead of arriving there by signing in. Without one, middleware turns the
+  request straight around to the landing page - which is the point of it.
+*/
+async function withSession(context: BrowserContext) {
+  await context.addCookies([{ name: SESSION_COOKIE, value: SESSION_VALUE, url: SITE }]);
 }
 
 /** The first of the six boxes. Filling it with all six digits fills the rest. */
@@ -208,7 +237,7 @@ test.describe("accessibility", () => {
     });
   }
 
-  test("the code step and the signed-in home pass axe", async ({ page }) => {
+  test("the code step and the signed-in home pass axe", async ({ page, context }) => {
     test.skip(!desktop(page), "one viewport is enough for a single card");
     test.slow();
     await mockApi(page);
@@ -217,6 +246,7 @@ test.describe("accessibility", () => {
     await toLoginCodeStep(page);
     await expectNoSeriousA11yViolations(page);
 
+    await withSession(context);
     await page.goto("/account");
     await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
     await expectNoSeriousA11yViolations(page);
@@ -267,18 +297,34 @@ test.describe("the code boxes", () => {
     await expect(page.getByLabel(/digit 2 of 6/)).toBeFocused();
   });
 
-  test("a pasted code fills every box from the first and submits", async ({ page }) => {
+  test("a pasted code fills the boxes from the first, wherever it is pasted", async ({ page }) => {
     await mockApi(page);
     await toLoginCodeStep(page);
 
-    // Paste into the third box: the whole code still lands from the first.
+    // Five digits, pasted into the third box: enough to show it fills from the
+    // first box rather than the one under the caret, and short of the six that
+    // would submit the form out from under these assertions.
+    await page.getByLabel(/digit 3 of 6/).evaluate((element) => {
+      const data = new DataTransfer();
+      data.setData("text", "Your code is 65432");
+      element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+    });
+
+    await expect(page.getByLabel(/digit 1 of 6/)).toHaveValue("6");
+    await expect(page.getByLabel(/digit 5 of 6/)).toHaveValue("2");
+    await expect(page.getByLabel(/digit 6 of 6/)).toHaveValue("");
+  });
+
+  test("a pasted full code submits on its own", async ({ page }) => {
+    await mockApi(page);
+    await toLoginCodeStep(page);
+
     await page.getByLabel(/digit 3 of 6/).evaluate((element) => {
       const data = new DataTransfer();
       data.setData("text", "Your code is 654321");
       element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
     });
-    await expect(page.getByLabel(/digit 1 of 6/)).toHaveValue("6");
-    await expect(page.getByLabel(/digit 6 of 6/)).toHaveValue("1");
+
     await expect(page).toHaveURL(/\/account$/);
   });
 });
@@ -324,6 +370,9 @@ test.describe("sign up", () => {
     await page.getByRole("button", { name: "Create account" }).click();
     await expect(page).toHaveURL(/\/account$/);
     await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+    // And the landing page now belongs to the signed-in app.
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/account$/);
   });
 
   test("a rejected code is shown as an error and does not advance", async ({ page }) => {
@@ -340,6 +389,21 @@ test.describe("sign up", () => {
       page.getByRole("alert").filter({ hasText: "not valid or has expired" }),
     ).toBeVisible();
     await expect(page.getByRole("heading", { level: 1, name: "Verify your email" })).toBeVisible();
+  });
+
+  test("an address that already has an account is sent to log in", async ({ page }) => {
+    await mockApi(page, {
+      start: rejected("CONFLICT", "An account already exists for this email address.", 409),
+    });
+    await page.goto("/register");
+    await page.getByLabel("Email").fill(USER.email);
+    await page.getByLabel(/By creating an account/).check();
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+
+    const notice = page.getByRole("alert").filter({ hasText: "already exists" });
+    await expect(notice).toBeVisible();
+    await notice.getByRole("link", { name: "Log in instead" }).click();
+    await expect(page).toHaveURL(/\/login$/);
   });
 
   test("an address that is already taken is shown as an error", async ({ page }) => {
@@ -471,17 +535,24 @@ test.describe("password reset", () => {
 });
 
 test.describe("account", () => {
-  test("shows the home card, and logging out ends the session", async ({ page }) => {
+  test("shows the home card, and logging out returns to the landing page", async ({
+    page,
+    context,
+  }) => {
     await mockApi(page);
+    await withSession(context);
     await page.goto("/account");
 
     await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
     await page.getByRole("button", { name: "Log out" }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "You are signed out" })).toBeVisible();
+    // Signed out is a reason to be somewhere else, not something to be told.
+    await expect(page).toHaveURL(/:\d+\/$/);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
-  test("a failed sign-out is reported, not pretended", async ({ page }) => {
+  test("a failed sign-out is reported, not pretended", async ({ page, context }) => {
     await mockApi(page, { logout: rejected("INTERNAL", "Something broke.", 500) });
+    await withSession(context);
     await page.goto("/account");
     await page.getByRole("button", { name: "Log out" }).click();
     await expect(page.getByRole("alert").filter({ hasText: /went wrong/ })).toBeVisible();
@@ -489,16 +560,54 @@ test.describe("account", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
   });
 
-  test("without a session it offers the way in rather than an error", async ({ page }) => {
+  test("without a session it goes to the landing page rather than saying so", async ({ page }) => {
     await mockApi(page, { me: rejected("UNAUTHENTICATED", "Sign in to continue.", 401) });
     await page.goto("/account");
 
-    await expect(page.getByRole("heading", { level: 1, name: "You are signed out" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Log in" })).toBeVisible();
-    // A missing session is normal, so it must not be dressed up as a failure.
+    await expect(page).toHaveURL(/:\d+\/$/);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    // Being signed out is normal, so nothing is dressed up as a failure.
     // Filtered on having any text: Next keeps an empty role="alert" route
     // announcer in the DOM at all times, and it is not an error message.
     await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
+  });
+});
+
+test.describe("the landing page and a session", () => {
+  test("a visitor with no session sees the landing page", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveURL(/:\d+\/$/);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  });
+
+  test("a signed-in visitor is taken from / to the account", async ({ page, context }) => {
+    await mockApi(page);
+    await context.addCookies([
+      { name: "abay_session", value: "a-session-token", url: "http://localhost:3100" },
+    ]);
+
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/account$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+  });
+
+  test("a stale cookie is cleared, so the landing page does not become unreachable", async ({
+    page,
+    context,
+  }) => {
+    // The cookie is still in the jar but the session behind it is gone.
+    await mockApi(page, { me: rejected("UNAUTHENTICATED", "Sign in to continue.", 401) });
+    await withSession(context);
+    const cleared = page.waitForRequest(
+      (request) => request.url().includes("/v1/auth/logout") && request.method() === "POST",
+    );
+
+    await page.goto("/");
+    // Bounced to /account, which finds the session dead, clears the cookie...
+    await cleared;
+    // ...and comes back here, where the cleared cookie lets the page through.
+    await expect(page).toHaveURL(/:\d+\/$/);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 });
 

@@ -62,21 +62,27 @@ export class AuthService {
   /* ----------------------------------------------------------------- sign-up */
 
   /*
-    Step 1. Always succeeds, whether or not the address is already registered.
-    The response cannot be used to discover who has an account, so the caller
-    is told nothing except that something was accepted.
+    Step 1. An address that already has an account is told so and sent to log
+    in, the way Binance does it (owner decision, 2026-09-09).
+
+    That is a deliberate trade, and worth naming: this endpoint now answers
+    "is this address registered", which is exactly the account-enumeration
+    oracle the rest of the flows are shaped to deny. It is confined to here.
+    Log-in still answers wrong-password, unknown-address and closed-account
+    identically, and password reset still replies the same way whether or not
+    the address is known.
+
+    Nothing is sent to the address either way: a returning customer gets the
+    answer in the response, not an unrequested code in their inbox.
   */
   async startRegistration(email: string): Promise<void> {
     const existing = await this.prisma.client.user.findUnique({ where: { email } });
     if (existing) {
-      // Nothing is sent and nothing is created: an attacker learns nothing, and
-      // the owner of a registered address is not mailed a code they did not ask
-      // for. A "you already have an account" email belongs here later.
       this.logger.info(
         { event: "register.start.existing" },
         "registration start for known address",
       );
-      return;
+      throw AppError.conflict("An account already exists for this email address.");
     }
     await this.issueCode(email, "EMAIL_VERIFICATION");
   }

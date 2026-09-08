@@ -112,18 +112,23 @@ describe("registration", () => {
     expect(stored?.tokenHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("answers identically for a known and an unknown address", async () => {
+  it("tells a returning customer to log in, and still sends them nothing", async () => {
     const taken = uniqueEmail();
     await registerFully(taken);
 
-    const known = await request(server()).post("/v1/auth/register/start").send({ email: taken });
-    const unknown = await request(server())
+    const known = await request(server())
       .post("/v1/auth/register/start")
-      .send({ email: uniqueEmail() });
+      .send({ email: taken })
+      .expect(409);
+    expect(known.body.error.code).toBe("CONFLICT");
 
-    expect(known.status).toBe(unknown.status);
-    expect(known.body).toEqual(unknown.body);
-    // And nothing was sent to the address that already has an account.
+    await request(server())
+      .post("/v1/auth/register/start")
+      .send({ email: uniqueEmail() })
+      .expect(202);
+
+    // The answer is in the response, so no unrequested code lands in the inbox
+    // of someone who already has an account.
     const issued = await db.verificationToken.count({
       where: { email: taken, purpose: "EMAIL_VERIFICATION", consumedAt: null },
     });

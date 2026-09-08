@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
-import { authClient } from "@/lib/auth/client";
+import { authClient, type AuthErrorCode } from "@/lib/auth/client";
 import {
   newPasswordForm,
   registerEmailForm,
@@ -29,8 +29,9 @@ import { afterAuth, cta, site } from "@/lib/site";
     2. six-digit code            -> proves the inbox
     3. password with live rules  -> creates the account
 
-  Identifier before password is the security shape the brief asks for: the
-  response to step 1 is the same whether or not the address exists.
+  Identifier before password is the security shape the brief asks for. Step 1
+  is the one place that admits an address is already registered, and it sends
+  that person to log in rather than leaving them stuck.
 */
 type Step = "email" | "code" | "password";
 
@@ -97,7 +98,9 @@ function EmailStep({
   initialEmail: string;
   onContinue: (email: string) => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
+  // The whole failure, not just its text: an address that is already taken is
+  // shown with a way out rather than as a dead end.
+  const [error, setError] = useState<{ code: AuthErrorCode; message: string } | null>(null);
   const {
     register,
     handleSubmit,
@@ -111,13 +114,19 @@ function EmailStep({
     setError(null);
     const result = await authClient.startRegistration({ email });
     if (result.ok) onContinue(email);
-    else setError(result.message);
+    else setError({ code: result.code, message: result.message });
   });
 
   return (
     <>
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
-        <FormError message={error} />
+        {error?.code === "CONFLICT" ? (
+          <FormError>
+            {error.message} <AuthLink href={cta.login.href}>Log in instead</AuthLink>.
+          </FormError>
+        ) : (
+          <FormError message={error?.message} />
+        )}
 
         <Field label="Email" error={errors.email?.message}>
           {(control) => (
@@ -151,7 +160,11 @@ function EmailStep({
       </form>
 
       <OrDivider />
-      <GoogleButton onResult={(result) => setError(result.ok ? null : result.message)} />
+      <GoogleButton
+        onResult={(result) =>
+          setError(result.ok ? null : { code: result.code, message: result.message })
+        }
+      />
     </>
   );
 }
