@@ -195,6 +195,9 @@ model VerificationToken {
 enum VerificationPurpose {
   EMAIL_VERIFICATION
   PASSWORD_RESET
+  /// The second factor on every password login: the password proves the
+  /// person knows the secret, the code proves they still hold the inbox.
+  LOGIN
 
   @@map("verification_purpose")
 }

@@ -1,26 +1,27 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import { AuthCard, AuthFootnote, AuthLink, OrDivider } from "@/components/auth/auth-card";
 import { CodeStep } from "@/components/auth/code-step";
 import { GoogleButton } from "@/components/auth/google-button";
-import { FormError, PreviewNotice } from "@/components/auth/notices";
+import { FormError } from "@/components/auth/notices";
 import { PasswordRules } from "@/components/auth/password-rules";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
-import { authClient } from "@/lib/auth/client";
+import { authClient, type AuthErrorCode } from "@/lib/auth/client";
 import {
   newPasswordForm,
   registerEmailForm,
   type NewPasswordForm,
   type RegisterEmailForm,
 } from "@/lib/auth/schemas";
-import { cta, site } from "@/lib/site";
+import { afterAuth, cta, site } from "@/lib/site";
 
 /*
   Sign-up in three steps, one card, one thing per step:
@@ -28,8 +29,9 @@ import { cta, site } from "@/lib/site";
     2. six-digit code            -> proves the inbox
     3. password with live rules  -> creates the account
 
-  Identifier before password is the security shape the brief asks for: the
-  response to step 1 is the same whether or not the address exists.
+  Identifier before password is the security shape the brief asks for. Step 1
+  is the one place that admits an address is already registered, and it sends
+  that person to log in rather than leaving them stuck.
 */
 type Step = "email" | "code" | "password";
 
@@ -41,7 +43,6 @@ export function RegisterFlow() {
     return (
       <>
         <AuthCard title="Verify your email">
-          <PreviewNotice />
           <CodeStep
             email={email}
             verify={(code) => authClient.verifyEmailCode({ email, code })}
@@ -59,8 +60,7 @@ export function RegisterFlow() {
     return (
       <>
         <AuthCard title="Create a password">
-          <PreviewNotice />
-          <PasswordStep email={email} />
+          <PasswordStep />
         </AuthCard>
         <Footnote />
       </>
@@ -70,7 +70,6 @@ export function RegisterFlow() {
   return (
     <>
       <AuthCard title={`Welcome to ${site.name}`}>
-        <PreviewNotice />
         <EmailStep
           initialEmail={email}
           onContinue={(value) => {
@@ -99,7 +98,9 @@ function EmailStep({
   initialEmail: string;
   onContinue: (email: string) => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
+  // The whole failure, not just its text: an address that is already taken is
+  // shown with a way out rather than as a dead end.
+  const [error, setError] = useState<{ code: AuthErrorCode; message: string } | null>(null);
   const {
     register,
     handleSubmit,
@@ -113,13 +114,19 @@ function EmailStep({
     setError(null);
     const result = await authClient.startRegistration({ email });
     if (result.ok) onContinue(email);
-    else setError(result.message);
+    else setError({ code: result.code, message: result.message });
   });
 
   return (
     <>
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
-        <FormError message={error} />
+        {error?.code === "CONFLICT" ? (
+          <FormError>
+            {error.message} <AuthLink href={cta.login.href}>Log in instead</AuthLink>.
+          </FormError>
+        ) : (
+          <FormError message={error?.message} />
+        )}
 
         <Field label="Email" error={errors.email?.message}>
           {(control) => (
@@ -153,12 +160,17 @@ function EmailStep({
       </form>
 
       <OrDivider />
-      <GoogleButton onResult={(result) => setError(result.ok ? null : result.message)} />
+      <GoogleButton
+        onResult={(result) =>
+          setError(result.ok ? null : { code: result.code, message: result.message })
+        }
+      />
     </>
   );
 }
 
-function PasswordStep({ email }: { email: string }) {
+function PasswordStep() {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const {
     register,
@@ -174,8 +186,14 @@ function PasswordStep({ email }: { email: string }) {
 
   const onSubmit = handleSubmit(async ({ password }) => {
     setError(null);
-    const result = await authClient.completeRegistration({ email, password });
-    if (!result.ok) setError(result.message);
+    const result = await authClient.completeRegistration({ password });
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    // replace, not push: once the account exists the sign-up form must not be
+    // one Back press away.
+    router.replace(afterAuth);
   });
 
   return (

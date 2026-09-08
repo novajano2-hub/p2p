@@ -17,6 +17,10 @@ jobs:
     name: Format, lint, typecheck, build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Inlined into the web bundle at build time. The e2e job stubs this host
+      # at the network boundary, so nothing needs to be listening on it.
+      NEXT_PUBLIC_API_URL: http://localhost:3001
     steps:
       - uses: actions/checkout@v4
 
@@ -104,6 +108,12 @@ jobs:
       NODE_ENV: test
       LOG_LEVEL: silent
       CORS_ORIGINS: http://localhost:3000
+      WEB_URL: http://localhost:3000
+      API_URL: http://localhost:3001
+      EMAIL_FROM: Abay <test@example.com>
+      # Dummies: the Google routes must exist to be tested; nothing reaches Google.
+      GOOGLE_CLIENT_ID: test-google-client-id
+      GOOGLE_CLIENT_SECRET: test-google-client-secret
       DATABASE_URL: postgresql://abay_app:app@localhost:5432/abay?schema=public
       DIRECT_DATABASE_URL: postgresql://abay_migrator:migrator@localhost:5432/abay?schema=public
       # Scratch database for `prisma migrate diff`, created by roles.sql. Prisma

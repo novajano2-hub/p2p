@@ -2,19 +2,21 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 
 import { FormError } from "@/components/auth/notices";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/field";
+import { CodeInput } from "@/components/ui/code-input";
+import { Field } from "@/components/ui/field";
 import type { AuthResult } from "@/lib/auth/client";
 import { maskEmail } from "@/lib/auth/mask-email";
 import { codeForm, type CodeForm } from "@/lib/auth/schemas";
 
 /*
-  "A 6-digit code has been sent to sam***@gmail.com." One field, one button,
-  a resend link that rests for a minute after each send, and a way back if the
-  address was wrong. Shared by sign-up now and by the step-up code screen later.
+  "A 6-digit code has been sent to sam***@gmail.com." Six boxes, a button for
+  anyone who wants one (the sixth digit submits on its own), a resend link
+  that rests for a minute after each send, and a way back if the address was
+  wrong. Shared by sign-up, sign-in and password reset.
 */
 
 const RESEND_REST_SECONDS = 60;
@@ -35,7 +37,7 @@ export function CodeStep({ email, verify, resend, onVerified, onChangeEmail }: C
   const [help, setHelp] = useState(false);
 
   const {
-    register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<CodeForm>({ resolver: zodResolver(codeForm), defaultValues: { code: "" } });
@@ -75,15 +77,22 @@ export function CodeStep({ email, verify, resend, onVerified, onChangeEmail }: C
         error={errors.code?.message}
         hint={`Sent to ${maskEmail(email)}. Enter it within the next ${CODE_VALID_MINUTES} minutes.`}
       >
-        {(control) => (
-          <Input
-            {...control}
-            {...register("code")}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={6}
-            placeholder="6-digit code"
-            autoFocus
+        {(a11y) => (
+          <Controller
+            control={control}
+            name="code"
+            render={({ field }) => (
+              <CodeInput
+                {...a11y}
+                value={field.value}
+                onChange={field.onChange}
+                // The sixth digit submits. The value is already in the form's
+                // store by the time this fires, so the submit reads the full code.
+                onComplete={() => void onSubmit()}
+                disabled={isSubmitting}
+                autoFocus
+              />
+            )}
           />
         )}
       </Field>

@@ -1,34 +1,59 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { AuthCard, AuthFootnote, AuthLink, OrDivider } from "@/components/auth/auth-card";
+import { CodeStep } from "@/components/auth/code-step";
 import { GoogleButton } from "@/components/auth/google-button";
-import { FormError, PreviewNotice } from "@/components/auth/notices";
+import { FormError } from "@/components/auth/notices";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
-import { authClient } from "@/lib/auth/client";
+import { authClient, googleErrorMessage } from "@/lib/auth/client";
 import {
   loginEmailForm,
   loginPasswordForm,
   type LoginEmailForm,
   type LoginPasswordForm,
 } from "@/lib/auth/schemas";
-import { cta, site } from "@/lib/site";
+import { afterAuth, cta, site } from "@/lib/site";
 
 /*
-  Log in: email, then password. The step-up code screen (email code or
-  authenticator) arrives with Phase 1 as a third step reusing CodeStep; the
-  shape here already leaves room for it.
+  Log in: email, then password, then the code that was just sent to that
+  email. The password proves the secret is known; the code proves the inbox is
+  still held. A stolen password alone gets nobody in.
 */
-type Step = "email" | "password";
+type Step = "email" | "password" | "code";
 
 export function LoginFlow() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
+  // How a Google sign-in that did not finish reports back: ?error=google_<reason>.
+  const [googleError, setGoogleError] = useState<string | null>(() =>
+    googleErrorMessage(searchParams.get("error")),
+  );
+
+  if (step === "code") {
+    return (
+      <>
+        <AuthCard title="Verify it's you">
+          <CodeStep
+            email={email}
+            verify={(code) => authClient.verifyLogin({ code })}
+            resend={() => authClient.resendLoginCode()}
+            onVerified={() => router.replace(afterAuth)}
+            onChangeEmail={() => setStep("email")}
+          />
+        </AuthCard>
+        <Footnote />
+      </>
+    );
+  }
 
   return (
     <>
@@ -49,34 +74,43 @@ export function LoginFlow() {
           ) : undefined
         }
       >
-        <PreviewNotice />
         {step === "email" ? (
           <EmailStep
             initialEmail={email}
+            notice={googleError}
             onContinue={(value) => {
+              setGoogleError(null);
               setEmail(value);
               setStep("password");
             }}
           />
         ) : (
-          <PasswordStep email={email} />
+          <PasswordStep email={email} onCodeSent={() => setStep("code")} />
         )}
       </AuthCard>
-      <AuthFootnote>
-        New to {site.name}? <AuthLink href={cta.signup.href}>{cta.signup.label}</AuthLink>
-      </AuthFootnote>
+      <Footnote />
     </>
+  );
+}
+
+function Footnote() {
+  return (
+    <AuthFootnote>
+      New to {site.name}? <AuthLink href={cta.signup.href}>{cta.signup.label}</AuthLink>
+    </AuthFootnote>
   );
 }
 
 function EmailStep({
   initialEmail,
+  notice,
   onContinue,
 }: {
   initialEmail: string;
+  notice: string | null;
   onContinue: (email: string) => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(notice);
   const {
     register,
     handleSubmit,
@@ -121,7 +155,7 @@ function EmailStep({
   );
 }
 
-function PasswordStep({ email }: { email: string }) {
+function PasswordStep({ email, onCodeSent }: { email: string; onCodeSent: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const {
     register,
@@ -135,7 +169,8 @@ function PasswordStep({ email }: { email: string }) {
   const onSubmit = handleSubmit(async ({ password }) => {
     setError(null);
     const result = await authClient.login({ email, password });
-    if (!result.ok) setError(result.message);
+    if (result.ok) onCodeSent();
+    else setError(result.message);
   });
 
   return (
