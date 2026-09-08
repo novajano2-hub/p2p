@@ -29,3 +29,9 @@ export const cta = {
   login: { label: "Log in", href: "/login" },
   learn: { label: "See how it works", href: "#how-it-works" },
 } as const;
+
+/**
+ * Where a successful sign-up or log-in lands. One constant, so the two flows
+ * cannot disagree about it.
+ */
+export const afterAuth = "/account";

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { AuthCard, AuthFootnote, AuthLink } from "@/components/auth/auth-card";
-import { FormError, PreviewNotice } from "@/components/auth/notices";
+import { FormError } from "@/components/auth/notices";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { authClient } from "@/lib/auth/client";
@@ -40,15 +40,23 @@ export function RecoverFlow() {
         description={
           sentTo
             ? undefined
-            : "Enter the email you signed up with. If it matches an account, you will get a link to choose a new password."
+            : "Enter the email you signed up with. If it matches an account, we will send a code to choose a new password."
         }
       >
-        <PreviewNotice />
         {sentTo ? (
-          <p className="text-muted-foreground text-sm leading-relaxed" role="status">
-            If an account exists for <span className="text-foreground font-medium">{sentTo}</span>,
-            a reset link is on its way. It expires in 30 minutes.
-          </p>
+          <div className="text-muted-foreground flex flex-col gap-3 text-sm leading-relaxed">
+            <p role="status">
+              If an account exists for <span className="text-foreground font-medium">{sentTo}</span>
+              , a reset code is on its way. It expires in 30 minutes.
+            </p>
+            {/*
+              Said plainly rather than left to be discovered: the reset code is
+              issued, but choosing the new password with it is not built yet, and
+              there is no mail provider to deliver it either. Unconditional, so it
+              still reveals nothing about whether the address has an account.
+            */}
+            <p>Choosing a new password is not available yet. Contact support for now.</p>
+          </div>
         ) : (
           <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
             <FormError message={error} />
@@ -66,7 +74,7 @@ export function RecoverFlow() {
               )}
             </Field>
             <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
-              Send reset link
+              Send reset code
             </Button>
           </form>
         )}

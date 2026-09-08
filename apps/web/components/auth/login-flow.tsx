@@ -1,12 +1,13 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { AuthCard, AuthFootnote, AuthLink, OrDivider } from "@/components/auth/auth-card";
 import { GoogleButton } from "@/components/auth/google-button";
-import { FormError, PreviewNotice } from "@/components/auth/notices";
+import { FormError } from "@/components/auth/notices";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -17,7 +18,7 @@ import {
   type LoginEmailForm,
   type LoginPasswordForm,
 } from "@/lib/auth/schemas";
-import { cta, site } from "@/lib/site";
+import { afterAuth, cta, site } from "@/lib/site";
 
 /*
   Log in: email, then password. The step-up code screen (email code or
@@ -49,7 +50,6 @@ export function LoginFlow() {
           ) : undefined
         }
       >
-        <PreviewNotice />
         {step === "email" ? (
           <EmailStep
             initialEmail={email}
@@ -122,6 +122,7 @@ function EmailStep({
 }
 
 function PasswordStep({ email }: { email: string }) {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const {
     register,
@@ -135,7 +136,12 @@ function PasswordStep({ email }: { email: string }) {
   const onSubmit = handleSubmit(async ({ password }) => {
     setError(null);
     const result = await authClient.login({ email, password });
-    if (!result.ok) setError(result.message);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    // replace, not push: Back from the app should not return to the log-in form.
+    router.replace(afterAuth);
   });
 
   return (

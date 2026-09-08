@@ -1,13 +1,14 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import { AuthCard, AuthFootnote, AuthLink, OrDivider } from "@/components/auth/auth-card";
 import { CodeStep } from "@/components/auth/code-step";
 import { GoogleButton } from "@/components/auth/google-button";
-import { FormError, PreviewNotice } from "@/components/auth/notices";
+import { FormError } from "@/components/auth/notices";
 import { PasswordRules } from "@/components/auth/password-rules";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,7 +21,7 @@ import {
   type NewPasswordForm,
   type RegisterEmailForm,
 } from "@/lib/auth/schemas";
-import { cta, site } from "@/lib/site";
+import { afterAuth, cta, site } from "@/lib/site";
 
 /*
   Sign-up in three steps, one card, one thing per step:
@@ -41,7 +42,6 @@ export function RegisterFlow() {
     return (
       <>
         <AuthCard title="Verify your email">
-          <PreviewNotice />
           <CodeStep
             email={email}
             verify={(code) => authClient.verifyEmailCode({ email, code })}
@@ -59,8 +59,7 @@ export function RegisterFlow() {
     return (
       <>
         <AuthCard title="Create a password">
-          <PreviewNotice />
-          <PasswordStep email={email} />
+          <PasswordStep />
         </AuthCard>
         <Footnote />
       </>
@@ -70,7 +69,6 @@ export function RegisterFlow() {
   return (
     <>
       <AuthCard title={`Welcome to ${site.name}`}>
-        <PreviewNotice />
         <EmailStep
           initialEmail={email}
           onContinue={(value) => {
@@ -158,7 +156,8 @@ function EmailStep({
   );
 }
 
-function PasswordStep({ email }: { email: string }) {
+function PasswordStep() {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const {
     register,
@@ -174,8 +173,14 @@ function PasswordStep({ email }: { email: string }) {
 
   const onSubmit = handleSubmit(async ({ password }) => {
     setError(null);
-    const result = await authClient.completeRegistration({ email, password });
-    if (!result.ok) setError(result.message);
+    const result = await authClient.completeRegistration({ password });
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    // replace, not push: once the account exists the sign-up form must not be
+    // one Back press away.
+    router.replace(afterAuth);
   });
 
   return (
