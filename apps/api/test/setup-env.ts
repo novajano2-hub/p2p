@@ -10,7 +10,7 @@ process.env.HOST ??= "127.0.0.1";
 process.env.CORS_ORIGINS ??= "http://localhost:3000";
 process.env.WEB_URL ??= "http://localhost:3000";
 process.env.API_URL ??= "http://127.0.0.1:3001";
-process.env.EMAIL_FROM ??= "Abay <test@example.com>";
+process.env.EMAIL_FROM ??= "BIRQ <test@example.com>";
 // No RESEND_API_KEY: codes go to the (silenced) log, and tests read them from
 // the database. Google credentials are dummies so the redirect routes exist;
 // nothing here ever reaches Google.

@@ -6,6 +6,7 @@ import { QuickActions } from "@/components/account/quick-actions";
 import { RecentActivity } from "@/components/account/recent-activity";
 import { SecurityChecklist } from "@/components/account/security-checklist";
 import { WalletCard } from "@/components/account/wallet-card";
+import { UidChip } from "@/components/app/copy-button";
 import { PageHeader } from "@/components/app/panel";
 import { useSession } from "@/components/app/session-provider";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -20,7 +21,8 @@ export function AccountHome() {
 
   return (
     <>
-      <PageHeader title="Home" description={`Signed in as ${user.email}`}>
+      <PageHeader title="Home" description={`${user.username} · ${user.email}`}>
+        <UidChip platformId={user.platformId} />
         <StatusPill status={user.status === "ACTIVE" ? "complete" : "attention"}>
           {user.status === "ACTIVE" ? "Account active" : "Account suspended"}
         </StatusPill>

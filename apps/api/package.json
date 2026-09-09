@@ -2,7 +2,7 @@
   "name": "api",
   "version": "0.0.0",
   "private": true,
-  "description": "Abay API. NestJS on Fastify; the HTTP server and the workers share one codebase.",
+  "description": "BIRQ API. NestJS on Fastify; the HTTP server and the workers share one codebase.",
   "scripts": {
     "dev": "nest start --watch",
     "build": "nest build",

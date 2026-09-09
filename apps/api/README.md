@@ -1,6 +1,6 @@
 # apps/api
 
-The Abay API: NestJS on the Fastify adapter. One codebase, two entrypoints:
+The BIRQ API: NestJS on the Fastify adapter. One codebase, two entrypoints:
 `main.ts` serves HTTP and `worker.ts` runs background jobs against the same modules.
 It deploys on its own, as a container built from [Dockerfile](Dockerfile), independently
 of the web app.
@@ -63,7 +63,7 @@ npm run typecheck -w api
 npm run test -w api              # unit only, no infrastructure
 npm run test:api -w api          # boots the app against PostgreSQL and Redis
 npm run build -w api
-docker build -f apps/api/Dockerfile -t abay-api .
+docker build -f apps/api/Dockerfile -t birq-api .
 ```
 
 CI runs all of the above with service containers on every pull request.

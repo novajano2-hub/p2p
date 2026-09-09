@@ -18,6 +18,8 @@ const mobile = (page: Page) => (page.viewportSize()?.width ?? 0) < 768;
 const USER = {
   id: "0199f0b1-2c3d-7e4f-8a9b-0c1d2e3f4a5b",
   email: "samlee@gmail.com",
+  platformId: "BQ-48213967",
+  username: "user_48213967",
   status: "ACTIVE",
   emailVerified: true,
 };
@@ -32,7 +34,7 @@ type Reply = {
   cookie?: "set" | "clear";
 };
 
-const SESSION_COOKIE = "abay_session";
+const SESSION_COOKIE = "birq_session";
 const SESSION_VALUE = "a-session-token";
 /** Matches playwright.config.ts. Cookies ignore the port, so this covers the API stub too. */
 const SITE = "http://localhost:3100";
@@ -585,7 +587,7 @@ test.describe("the landing page and a session", () => {
   test("a signed-in visitor is taken from / to the account", async ({ page, context }) => {
     await mockApi(page);
     await context.addCookies([
-      { name: "abay_session", value: "a-session-token", url: "http://localhost:3100" },
+      { name: "birq_session", value: "a-session-token", url: "http://localhost:3100" },
     ]);
 
     await page.goto("/");

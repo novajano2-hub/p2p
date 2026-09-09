@@ -49,6 +49,12 @@
   --border: #dadfd6;
   --mist: #ecefea;
 
+  /* The brand kit's palette for components/brand/logo.tsx: charcoal and lime
+     on a light ground, all lime with off-white lettering on a dark one. */
+  --brand-mark: #171b18;
+  --brand-leaf: #b9ed67;
+  --brand-wordmark: #171b18;
+
   --accent: #183d32;
   --accent-hover: #12302a;
   --accent-contrast: #f6f4ee;
@@ -105,6 +111,11 @@
     --border: #2b332f;
     --mist: #202724;
 
+    /* On a dark ground the whole mark is lime, per the brand kit. */
+    --brand-mark: #b9ed67;
+    --brand-leaf: #b9ed67;
+    --brand-wordmark: #f4f6f2;
+
     --accent: #6cc39c;
     --accent-hover: #86d2b0;
     --accent-contrast: #0d1411;
@@ -155,6 +166,9 @@
   --sage: #7d8c83;
   --border: #2b332f;
   --mist: #202724;
+  --brand-mark: #b9ed67;
+  --brand-leaf: #b9ed67;
+  --brand-wordmark: #f4f6f2;
   --accent: #6cc39c;
   --accent-hover: #86d2b0;
   --accent-contrast: #0d1411;

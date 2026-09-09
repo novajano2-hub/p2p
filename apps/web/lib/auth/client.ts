@@ -6,7 +6,7 @@ import { z } from "zod";
   It calls the API directly, not through a Next route handler, because the
   session is a cookie the API sets itself. That works in the browser only
   because the two are SAME-SITE: localhost:3000 and localhost:3001 in
-  development, abay.com and api.abay.com in production. Ports are not part of
+  development, birq.com and api.birq.com in production. Ports are not part of
   "site", so a different port is fine; a different host is not. Point
   NEXT_PUBLIC_API_URL at 127.0.0.1 while the page is on localhost and every
   request still succeeds, but the SameSite=Lax session cookie is silently
@@ -31,8 +31,8 @@ const CONFIGURED_API_URL = readApiUrl();
   loopback name and the page is not on one, the page's own hostname wins.
 
   A configured hostname that is not loopback is never touched: in production
-  the API deliberately lives on a different host from the page (api.abay.com
-  beside abay.com), which is same-site and works as intended.
+  the API deliberately lives on a different host from the page (api.birq.com
+  beside birq.com), which is same-site and works as intended.
 */
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
@@ -79,6 +79,9 @@ export type UserStatus = "ACTIVE" | "SUSPENDED" | "CLOSED";
 export type SessionUser = {
   id: string;
   email: string;
+  /** The customer-facing account number, "BQ-" and eight digits. Never changes. */
+  platformId: string;
+  username: string;
   status: UserStatus;
   emailVerified: boolean;
 };
@@ -114,11 +117,16 @@ export interface AuthClient {
   /** Who the session cookie belongs to, or a signed-out result. Never throws. */
   me(): Promise<SessionResult>;
   logout(): Promise<AuthResult>;
+
+  /** Changes the username. Resolves with the updated user. */
+  updateUsername(input: { username: string }): Promise<SessionResult>;
 }
 
 const sessionUserSchema = z.object({
   id: z.string(),
   email: z.string(),
+  platformId: z.string(),
+  username: z.string(),
   status: z.enum(["ACTIVE", "SUSPENDED", "CLOSED"]),
   emailVerified: z.boolean(),
 });
@@ -375,6 +383,16 @@ export const apiAuthClient: AuthClient = {
   async logout() {
     const result = await send("/v1/auth/logout", empty, { method: "POST" });
     return result.ok ? { ok: true } : result;
+  },
+
+  /* ---------------------------------------------------------------- profile */
+
+  async updateUsername({ username }) {
+    const result = await send("/v1/auth/me", sessionResponseSchema, {
+      method: "PATCH",
+      body: JSON.stringify({ username }),
+    });
+    return result.ok ? { ok: true, user: result.data.user } : result;
   },
 };
 

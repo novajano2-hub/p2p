@@ -42,7 +42,7 @@ export function AccountMenu() {
     };
   }, [open]);
 
-  const initial = user.email.charAt(0).toUpperCase();
+  const initial = user.username.charAt(0).toUpperCase();
 
   return (
     <div ref={container} className="relative">
@@ -61,7 +61,7 @@ export function AccountMenu() {
           {initial}
         </span>
         <span className="text-foreground hidden max-w-[12rem] truncate text-sm md:block">
-          {user.email}
+          {user.username}
         </span>
         <CaretDown
           size={14}
@@ -80,7 +80,11 @@ export function AccountMenu() {
         className="border-border bg-surface shadow-panel rounded-surface absolute top-full right-0 z-50 mt-2 w-72 border p-2"
       >
         <div className="px-2 pt-2 pb-3">
-          <p className="text-foreground text-sm font-medium break-all">{user.email}</p>
+          <p className="text-foreground text-sm font-medium break-all">{user.username}</p>
+          <p className="text-muted-foreground mt-0.5 text-[12px] break-all">{user.email}</p>
+          <p className="text-muted-foreground mt-1 text-[12px]">
+            UID <span className="text-foreground font-mono tabular-nums">{user.platformId}</span>
+          </p>
           <div className="mt-2">
             {user.emailVerified ? (
               <StatusPill status="complete">Email verified</StatusPill>

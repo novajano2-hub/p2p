@@ -30,7 +30,7 @@ export function SiteFooter() {
 
         <div className="border-border text-muted-foreground mt-12 flex flex-col gap-2 border-t pt-6 text-sm sm:flex-row sm:items-center sm:justify-between">
           <p>
-            &copy; {year} {site.name}.{site.isPlaceholderBrand ? " Placeholder brand name." : ""}
+            &copy; {year} {site.name}.
           </p>
           <p>USDT deposits and withdrawals use one network at launch. Check it before sending.</p>
         </div>

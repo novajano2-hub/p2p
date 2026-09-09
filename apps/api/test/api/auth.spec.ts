@@ -100,13 +100,17 @@ describe("registration", () => {
     // httpOnly is what stops a cross-site script reading the session.
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/SameSite=Lax/i);
-    expect(cookie).toMatch(/^abay_session=/);
+    expect(cookie).toMatch(/^birq_session=/);
 
     const me = await request(server()).get("/v1/auth/me").set("Cookie", cookie).expect(200);
     expect(me.body.user).toMatchObject({ email, status: "ACTIVE", emailVerified: true });
+    // Born with an account number and a placeholder username derived from it.
+    const profile = me.body.user as { platformId: string; username: string };
+    expect(profile.platformId).toMatch(/^BQ-\d{8}$/);
+    expect(profile.username).toBe(`user_${profile.platformId.slice(3)}`);
 
     // The stored token must not be the cookie value.
-    const raw = /abay_session=([^;]+)/.exec(cookie)?.[1] ?? "";
+    const raw = /birq_session=([^;]+)/.exec(cookie)?.[1] ?? "";
     const stored = await db.session.findFirst({ where: { userId } });
     expect(stored?.tokenHash).not.toBe(raw);
     expect(stored?.tokenHash).toMatch(/^[0-9a-f]{64}$/);
@@ -218,7 +222,7 @@ describe("login", () => {
       .send({ ticket: challenge.body.ticket, code })
       .expect(200);
     expect(verified.body.user.email).toBe(email);
-    expect(cookieOf(verified)).toMatch(/^abay_session=/);
+    expect(cookieOf(verified)).toMatch(/^birq_session=/);
 
     // The ticket is spent with the session.
     await request(server())
@@ -328,8 +332,41 @@ describe("session", () => {
   it("rejects a forged or tampered cookie", async () => {
     await request(server())
       .get("/v1/auth/me")
-      .set("Cookie", "abay_session=not-a-real-token")
+      .set("Cookie", "birq_session=not-a-real-token")
       .expect(401);
+  });
+});
+
+describe("profile", () => {
+  it("lets a customer choose a username, unique regardless of case", async () => {
+    const { cookie } = await registerFully(uniqueEmail());
+    const other = await registerFully(uniqueEmail());
+    const chosen = `Sam_${Date.now().toString(36)}`;
+
+    const updated = await request(server())
+      .patch("/v1/auth/me")
+      .set("Cookie", cookie)
+      .send({ username: chosen })
+      .expect(200);
+    expect(updated.body.user.username).toBe(chosen);
+
+    // Same name, different case: still taken.
+    const clash = await request(server())
+      .patch("/v1/auth/me")
+      .set("Cookie", other.cookie)
+      .send({ username: chosen.toUpperCase() })
+      .expect(409);
+    expect(clash.body.error.code).toBe("CONFLICT");
+
+    // The rules are the server's, not only the form's.
+    await request(server())
+      .patch("/v1/auth/me")
+      .set("Cookie", cookie)
+      .send({ username: "no spaces!" })
+      .expect(400);
+
+    // And nobody can rename an account they are not signed in to.
+    await request(server()).patch("/v1/auth/me").send({ username: "anyone" }).expect(401);
   });
 });
 

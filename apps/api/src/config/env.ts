@@ -63,7 +63,7 @@ export const envSchema = z
     API_URL: origin,
 
     /** Shown in emails. A placeholder brand, mirrored from apps/web/lib/site.ts. */
-    APP_NAME: z.string().min(1).default("Abay"),
+    APP_NAME: z.string().min(1).default("BIRQ"),
 
     DATABASE_URL: z.url({
       protocol: /^postgres(ql)?$/,
@@ -73,12 +73,12 @@ export const envSchema = z
     SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(0).max(120_000).default(10_000),
 
     /* Email. EMAIL_FROM is the sender every verification code goes out as,
-       e.g. "Abay <no-reply@example.com>". Outside production the API key may
+       e.g. "BIRQ <no-reply@example.com>". Outside production the API key may
        be left blank, in which case codes are written to the log instead of
        sent; production refuses to start without it (see the check below). */
     EMAIL_FROM: z
       .string()
-      .min(3, { error: "the sender address, e.g. Abay <no-reply@example.com>" }),
+      .min(3, { error: "the sender address, e.g. BIRQ <no-reply@example.com>" }),
     RESEND_API_KEY: optionalSecret,
 
     /* Google sign-in. Both or neither: with neither, the Google routes report

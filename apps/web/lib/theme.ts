@@ -11,7 +11,7 @@
 
 export type ThemeChoice = "system" | "light" | "dark";
 
-export const THEME_STORAGE_KEY = "abay.theme";
+export const THEME_STORAGE_KEY = "birq.theme";
 
 export function isThemeChoice(value: unknown): value is ThemeChoice {
   return value === "system" || value === "light" || value === "dark";

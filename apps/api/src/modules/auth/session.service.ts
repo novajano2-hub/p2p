@@ -14,7 +14,7 @@ import { generateToken, hashToken } from "@/modules/auth/tokens";
   database read per authenticated request, which is the right trade here.
 */
 
-export const SESSION_COOKIE = "abay_session";
+export const SESSION_COOKIE = "birq_session";
 
 export interface AuthenticatedSession {
   sessionId: string;

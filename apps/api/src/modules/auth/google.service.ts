@@ -11,6 +11,12 @@ import { ENV } from "@/config/config.module";
 import { type Env } from "@/config/env";
 import { PrismaService } from "@/infra/prisma/prisma.service";
 import { RedisService } from "@/infra/redis/redis.service";
+import {
+  generatePlatformId,
+  placeholderUsername,
+  uniqueViolationTargets,
+  usernameKey,
+} from "@/modules/auth/platform-id";
 import { SessionService } from "@/modules/auth/session.service";
 import { generateToken, hashToken } from "@/modules/auth/tokens";
 
@@ -33,6 +39,8 @@ const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const ISSUERS = new Set(["https://accounts.google.com", "accounts.google.com"]);
 const STATE_TTL_SECONDS = 10 * 60;
 const TIMEOUT_MS = 10_000;
+/** Draws of the eight-digit account number before giving up. */
+const ID_ATTEMPTS = 5;
 
 export class GoogleSignInError extends Error {
   constructor(readonly reason: GoogleFailure) {
@@ -147,7 +155,19 @@ export class GoogleService {
     // be linked to that person's account here.
     if (claims.email_verified !== true) throw new GoogleSignInError("unverified_email");
 
-    const user = await this.resolveUser(claims.sub, claims.email.trim().toLowerCase());
+    const email = claims.email.trim().toLowerCase();
+    let user: User | undefined;
+    for (let attempt = 1; user === undefined; attempt++) {
+      try {
+        user = await this.resolveUser(claims.sub, email);
+      } catch (error) {
+        // A new account drew a number someone already holds. Draw again.
+        if (uniqueViolationTargets(error, "platform", "username") && attempt < ID_ATTEMPTS) {
+          continue;
+        }
+        throw error;
+      }
+    }
     if (user.status === "CLOSED") throw new GoogleSignInError("closed");
 
     await this.sessions.issue(user.id, reply, context);
@@ -233,8 +253,17 @@ export class GoogleService {
         return existing;
       }
 
+      const platformId = generatePlatformId();
+      const username = placeholderUsername(platformId);
       const created = await tx.user.create({
-        data: { email, emailVerifiedAt: new Date(), status: "ACTIVE" },
+        data: {
+          email,
+          emailVerifiedAt: new Date(),
+          status: "ACTIVE",
+          platformId,
+          username,
+          usernameKey: usernameKey(username),
+        },
       });
       await tx.authIdentity.create({
         data: { userId: created.id, provider: "GOOGLE", providerAccountId: sub },

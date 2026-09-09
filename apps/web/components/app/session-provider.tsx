@@ -29,6 +29,8 @@ export interface Session {
   user: SessionUser;
   /** Ends the session and leaves for the landing page. Resolves with the failure if it could not. */
   signOut: () => Promise<AuthResult>;
+  /** Replaces the user after a profile change, so every screen shows the new value at once. */
+  updateUser: (user: SessionUser) => void;
 }
 
 const SessionContext = createContext<Session | null>(null);
@@ -149,6 +151,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const session: Session = {
     user: state.user,
+    updateUser: (user) => setState({ status: "signed-in", user }),
     signOut: async () => {
       const result = await authClient.logout();
       // Never claim to have signed someone out when the server still holds a

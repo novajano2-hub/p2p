@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="288" height="288" viewBox="0 0 288 288" fill="none" role="img" aria-label="BIRQ">
+  <title>BIRQ — Concept 02 exchange symbol (light)</title>
+  <g transform="translate(16 0)">
+    <path fill="#171B18" d="M12 10H54C84 10 108 33 108 64V160L52 144C25 136 12 116 12 88V10Z"/>
+    <path fill="#B9ED67" d="M128 10H162C196 10 224 36 224 68C224 100 198 128 166 128H161C140 128 128 115 128 94V10Z"/>
+    <path fill="#B9ED67" d="M12 160L72 176C96 182 108 199 108 223V278H57C31 278 12 258 12 230V160Z"/>
+    <path fill="#171B18" d="M128 139L187 152C222 158 248 181 248 214C248 249 222 278 184 278H128V139Z"/>
+  </g>
+</svg>
+

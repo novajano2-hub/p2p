@@ -22,7 +22,7 @@ import { NextResponse, type NextRequest } from "next/server";
 */
 
 /** Set by the API (apps/api/src/modules/auth/session.service.ts). */
-const SESSION_COOKIE = "abay_session";
+const SESSION_COOKIE = "birq_session";
 
 const LANDING = "/";
 /** Where an authenticated customer belongs. Mirrors `afterAuth` in lib/site.ts. */

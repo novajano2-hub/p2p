@@ -11,6 +11,12 @@ import { MAILER, type Mailer } from "@/infra/mail/mailer";
 import { PrismaService } from "@/infra/prisma/prisma.service";
 import { RedisService } from "@/infra/redis/redis.service";
 import { codeEmail } from "@/modules/auth/emails";
+import {
+  generatePlatformId,
+  placeholderUsername,
+  uniqueViolationTargets,
+  usernameKey,
+} from "@/modules/auth/platform-id";
 import { SessionService } from "@/modules/auth/session.service";
 import {
   burnTimeLikeAVerify,
@@ -21,6 +27,9 @@ import {
   tokenMatches,
   verifyPassword,
 } from "@/modules/auth/tokens";
+
+/** Draws of the eight-digit account number before giving up. One is nearly always enough. */
+const ID_ATTEMPTS = 5;
 
 /** A six-digit code is a million guesses. Burn the code well before that. */
 const MAX_CODE_ATTEMPTS = 5;
@@ -115,24 +124,39 @@ export class AuthService {
 
     const passwordHash = await hashPassword(plainPassword);
 
-    let user: User;
-    try {
-      user = await this.prisma.client.$transaction(async (tx) => {
-        const created = await tx.user.create({
-          data: { email: claim.email, emailVerifiedAt: new Date(), status: "ACTIVE" },
+    let user: User | undefined;
+    for (let attempt = 1; user === undefined; attempt++) {
+      const platformId = generatePlatformId();
+      const username = placeholderUsername(platformId);
+      try {
+        user = await this.prisma.client.$transaction(async (tx) => {
+          const created = await tx.user.create({
+            data: {
+              email: claim.email,
+              emailVerifiedAt: new Date(),
+              status: "ACTIVE",
+              platformId,
+              username,
+              usernameKey: usernameKey(username),
+            },
+          });
+          await tx.authIdentity.create({
+            data: { userId: created.id, provider: "PASSWORD", passwordHash },
+          });
+          return created;
         });
-        await tx.authIdentity.create({
-          data: { userId: created.id, provider: "PASSWORD", passwordHash },
-        });
-        return created;
-      });
-    } catch (error) {
-      // The unique index on email is the authority, not the check in step 1:
-      // two sign-ups for the same address can race between them.
-      if (isUniqueViolation(error)) {
-        throw AppError.conflict("An account already exists for that email address.");
+      } catch (error) {
+        // The unique index on email is the authority, not the check in step 1:
+        // two sign-ups for the same address can race between them.
+        if (uniqueViolationTargets(error, "email")) {
+          throw AppError.conflict("An account already exists for that email address.");
+        }
+        // Someone already holds the number just drawn. Draw again.
+        if (uniqueViolationTargets(error, "platform", "username") && attempt < ID_ATTEMPTS) {
+          continue;
+        }
+        throw error;
       }
-      throw error;
     }
 
     await this.sessions.issue(user.id, reply, context);
@@ -255,6 +279,24 @@ export class AuthService {
     });
 
     this.logger.info({ event: "reset.completed", userId: user.id }, "password reset completed");
+  }
+
+  /* ---------------------------------------------------------------- profile */
+
+  /** Changes the username. Unique case-insensitively: "Sam" and "sam" are one name. */
+  async updateUsername(userId: string, username: string): Promise<SessionUser> {
+    try {
+      const user = await this.prisma.client.user.update({
+        where: { id: userId },
+        data: { username, usernameKey: usernameKey(username) },
+      });
+      return toSessionUser(user);
+    } catch (error) {
+      if (uniqueViolationTargets(error, "username")) {
+        throw AppError.conflict("That username is taken. Try another.");
+      }
+      throw error;
+    }
   }
 
   /* ------------------------------------------------------------- internals */
@@ -381,16 +423,9 @@ export function toSessionUser(user: User): SessionUser {
   return {
     id: user.id,
     email: user.email,
+    platformId: user.platformId,
+    username: user.username,
     status: user.status,
     emailVerified: user.emailVerifiedAt !== null,
   };
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "P2002"
-  );
 }

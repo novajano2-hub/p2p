@@ -10,6 +10,7 @@ import {
   registerCompleteRequest,
   registerStartRequest,
   registerVerifyRequest,
+  updateProfileRequest,
   type AcceptedResponse,
   type CompletedResponse,
   type LoginRequest,
@@ -23,8 +24,20 @@ import {
   type RegisterVerifyRequest,
   type SessionResponse,
   type TicketResponse,
+  type UpdateProfileRequest,
 } from "@abay/contracts";
-import { Body, Controller, Get, HttpCode, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Patch,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
 import { type FastifyReply, type FastifyRequest } from "fastify";
 import { PinoLogger } from "nestjs-pino";
 
@@ -137,6 +150,16 @@ export class AuthController {
   @UseGuards(SessionGuard)
   me(@CurrentSession() session: AuthenticatedSession): SessionResponse {
     return { user: toSessionUser(session.user) };
+  }
+
+  /** The one editable part of the profile today: the username. */
+  @Patch("me")
+  @UseGuards(SessionGuard)
+  async updateMe(
+    @Body(zodBody(updateProfileRequest)) body: UpdateProfileRequest,
+    @CurrentSession() session: AuthenticatedSession,
+  ): Promise<SessionResponse> {
+    return { user: await this.auth.updateUsername(session.user.id, body.username) };
   }
 
   /* -------------------------------------------------------- password reset */
