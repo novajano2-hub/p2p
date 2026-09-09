@@ -544,6 +544,7 @@ test.describe("account", () => {
     await page.goto("/account");
 
     await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+    await page.getByRole("button", { name: "Account menu" }).click();
     await page.getByRole("button", { name: "Log out" }).click();
     // Signed out is a reason to be somewhere else, not something to be told.
     await expect(page).toHaveURL(/:\d+\/$/);
@@ -554,6 +555,7 @@ test.describe("account", () => {
     await mockApi(page, { logout: rejected("INTERNAL", "Something broke.", 500) });
     await withSession(context);
     await page.goto("/account");
+    await page.getByRole("button", { name: "Account menu" }).click();
     await page.getByRole("button", { name: "Log out" }).click();
     await expect(page.getByRole("alert").filter({ hasText: /went wrong/ })).toBeVisible();
     // Still signed in, because the server still holds the session.

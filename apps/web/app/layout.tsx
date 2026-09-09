@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 
 import { site } from "@/lib/site";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
 import "./globals.css";
 
@@ -33,8 +34,11 @@ export const metadata: Metadata = {
 };
 
 /*
-  The landing page follows the operating system. Signed-in customers will get an
-  explicit system / light / dark control, which sets `data-theme` on <html>.
+  With no saved preference the page follows the operating system. A signed-in
+  customer can pin light or dark (Settings, or the account menu); the choice
+  is saved in the browser and applied as `data-theme` on <html> by the boot
+  script below, before anything paints, so it holds on every page including
+  this landing page.
 */
 export const viewport: Viewport = {
   themeColor: [
@@ -49,8 +53,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang={site.locale}
       className={`${plexSans.variable} ${plexMono.variable} h-full antialiased`}
+      // The boot script sets data-theme before React hydrates; without this,
+      // React would report the attribute as a mismatch and re-render it away.
+      suppressHydrationWarning
     >
-      <body className="flex min-h-full flex-col font-sans">{children}</body>
+      <body className="flex min-h-full flex-col font-sans">
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+        {children}
+      </body>
     </html>
   );
 }
