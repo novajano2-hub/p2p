@@ -43,6 +43,9 @@ export default {
       displayName: "api",
       testMatch: ["<rootDir>/test/api/**/*.spec.ts"],
       setupFiles: ["<rootDir>/test/setup-env.ts"],
+      // Clears the rows and photographs these tests create, so a real
+      // PostgreSQL stays usable as a development database afterwards.
+      globalTeardown: "<rootDir>/test/global-teardown.js",
       // Jest ignores testTimeout inside a projects entry; setup-timeout.ts sets
       // it after the framework is installed, where it is honoured.
       setupFilesAfterEnv: ["<rootDir>/test/setup-timeout.ts"],
