@@ -15,10 +15,11 @@ import { generateToken, hashToken } from "@/modules/auth/tokens";
   session, and a mistake in it would cross the boundary the separate realm
   exists to create. The duplication is the control.
 
-  Two things differ on purpose. The cookie has its own name, so the two can
+  Three things differ on purpose. The cookie has its own name, so the two can
   never be mistaken for one another and holding one says nothing about the
-  other. And the lifetimes are hours rather than weeks: an administrator is at
-  a desk doing a task, not carrying a phone around for a month.
+  other. The lifetimes are hours rather than weeks: an administrator is at a
+  desk doing a task, not carrying a phone around for a month. And the cookie
+  is host-only, always - see below.
 */
 
 export const ADMIN_SESSION_COOKIE = "birq_admin_session";
@@ -63,7 +64,15 @@ export class AdminSessionService {
       secure: this.env.COOKIE_SECURE,
       path: "/",
       maxAge: maxAgeSeconds,
-      ...(this.env.COOKIE_DOMAIN ? { domain: this.env.COOKIE_DOMAIN } : {}),
+      /*
+        No domain, ever, and deliberately NOT COOKIE_DOMAIN.
+
+        The customer cookie is widened to the registrable domain in production
+        so the web server can see it and route on it. Doing the same here would
+        send an administrator's session to birq.com on every request for an
+        image or a script, which is exactly the reach this realm is separated
+        to avoid. Host-only keeps it on admin.birq.com and nowhere else.
+      */
     });
   }
 
@@ -122,9 +131,8 @@ export class AdminSessionService {
   }
 
   clearCookie(reply: FastifyReply): void {
-    void reply.clearCookie(ADMIN_SESSION_COOKIE, {
-      path: "/",
-      ...(this.env.COOKIE_DOMAIN ? { domain: this.env.COOKIE_DOMAIN } : {}),
-    });
+    // Host-only on the way out too: a clear that names a domain the cookie was
+    // never set on removes nothing, and the session would appear to survive.
+    void reply.clearCookie(ADMIN_SESSION_COOKIE, { path: "/" });
   }
 }

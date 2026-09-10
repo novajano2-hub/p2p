@@ -301,6 +301,37 @@ describe("the admin realm", () => {
       .expect(404);
   });
 
+  it("never widens the admin cookie to the parent domain, even when one is configured", async () => {
+    /*
+      In production COOKIE_DOMAIN is set so the web server can see the customer
+      cookie and route on it. If the admin cookie inherited that, an
+      administrator's session would be sent to birq.com with every request for
+      an image or a script - exactly the reach this realm is separated to
+      avoid. So a second app is booted the way production is, and both cookies
+      are read off it.
+    */
+    const widened = await createApp({ ...loadEnv(), COOKIE_DOMAIN: ".birq.com" });
+    await widened.init();
+    await widened.getHttpAdapter().getInstance().ready();
+    const wide = () => widened.getHttpServer() as Parameters<typeof request>[0];
+
+    try {
+      const admin = await makeAdmin();
+      const signIn = await request(wide())
+        .post("/v1/admin/auth/login")
+        .send({ email: admin.email, password: ADMIN_PASSWORD })
+        .expect(200);
+      expect(signIn.headers["set-cookie"]?.[0]).not.toMatch(/Domain=/i);
+
+      // And the setting is genuinely on: the customer cookie from the same app
+      // does widen, which is what makes the line above mean something.
+      const customer = await registerFully(wide(), db, uniqueEmail());
+      expect(customer.cookie).toMatch(/Domain=\.birq\.com/i);
+    } finally {
+      await widened.close();
+    }
+  });
+
   it("cannot rewrite its own audit trail", async () => {
     const admin = await makeAdmin();
     await signIn(admin.email);
