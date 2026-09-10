@@ -27,8 +27,16 @@ const SESSION_COOKIE = "birq_session";
 const LANDING = "/";
 /** Where an authenticated customer belongs. Mirrors `afterAuth` in lib/site.ts. */
 const APP_ENTRY = "/account";
-/** Every route behind a session. Mirrors `appRoutes` in lib/app-nav.ts. */
-const APP_ROUTES = new Set(["/account", "/trade", "/orders", "/wallet", "/settings", "/verify"]);
+/**
+ * Every route behind a session, as prefixes. Mirrors `appRoutes` in
+ * lib/app-nav.ts. Prefixes rather than exact paths because sections have
+ * pages under them - /wallet/deposit belongs to whoever /wallet belongs to,
+ * and a new one must not have to be added here to be protected.
+ */
+const APP_ROUTES = ["/account", "/trade", "/orders", "/wallet", "/settings", "/verify"];
+
+const isAppRoute = (pathname: string): boolean =>
+  APP_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 
 export function proxy(request: NextRequest): NextResponse {
   const signedIn = request.cookies.has(SESSION_COOKIE);
@@ -37,17 +45,28 @@ export function proxy(request: NextRequest): NextResponse {
   if (signedIn && pathname === LANDING) {
     return NextResponse.redirect(new URL(APP_ENTRY, request.url));
   }
-  if (!signedIn && APP_ROUTES.has(pathname)) {
+  if (!signedIn && isAppRoute(pathname)) {
     return NextResponse.redirect(new URL(LANDING, request.url));
   }
   return NextResponse.next();
 }
 
 /*
-  Only these two. Sign-up, log-in and recovery stay reachable with a session in
+  Only these. Sign-up, log-in and recovery stay reachable with a session in
   the jar: finishing a password reset, or signing in as someone else, both mean
   arriving at those pages while one is still there.
+
+  `:path*` matches zero or more further segments, so each entry covers the
+  section's own page and everything nested under it.
 */
 export const config = {
-  matcher: ["/", "/account", "/trade", "/orders", "/wallet", "/settings", "/verify"],
+  matcher: [
+    "/",
+    "/account/:path*",
+    "/trade/:path*",
+    "/orders/:path*",
+    "/wallet/:path*",
+    "/settings/:path*",
+    "/verify/:path*",
+  ],
 };

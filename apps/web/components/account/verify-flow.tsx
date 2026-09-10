@@ -12,6 +12,7 @@ import { FormError } from "@/components/auth/notices";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DateField } from "@/components/ui/date-field";
 import { Field, Input } from "@/components/ui/field";
+import { Radio, RadioGroup } from "@/components/ui/radio";
 import { authClient, type KycDocumentKind, type KycDocumentType } from "@/lib/auth/client";
 import {
   kycDetailsForm,
@@ -21,7 +22,6 @@ import {
   type KycDetailsForm,
   type KycDocumentForm,
 } from "@/lib/auth/schemas";
-import { cn } from "@/lib/cn";
 import { DOCUMENT_LABELS, DOCUMENT_OPTIONS, PHOTO_GUIDE, requiredKinds, UNLOCKS } from "@/lib/kyc";
 
 /*
@@ -297,40 +297,17 @@ function DocumentStep({
       noValidate
       className="flex flex-col gap-5"
     >
-      <fieldset className="flex flex-col gap-2.5">
-        <legend className="text-foreground mb-3 text-sm font-medium">
-          Which document will you photograph?
-        </legend>
+      <RadioGroup legend="Which document will you photograph?" error={errors.documentType?.message}>
         {DOCUMENT_OPTIONS.map((option) => (
-          <label
+          <Radio
             key={option.type}
-            className={cn(
-              "rounded-control border-border bg-surface flex cursor-pointer items-start gap-3 border px-4 py-3.5",
-              "transition-[border-color,background-color] duration-150 ease-out",
-              "hover:border-primary/40 has-checked:border-primary has-checked:bg-primary-soft",
-              "has-focus-visible:ring-primary/25 has-focus-visible:ring-2",
-            )}
-          >
-            <input
-              type="radio"
-              value={option.type}
-              {...register("documentType")}
-              className="accent-primary mt-1 size-4 shrink-0"
-            />
-            <span className="min-w-0">
-              <span className="text-foreground block text-[15px] font-medium">{option.label}</span>
-              <span className="text-muted-foreground block text-[13px] leading-relaxed">
-                {option.detail}
-              </span>
-            </span>
-          </label>
+            value={option.type}
+            label={option.label}
+            description={option.detail}
+            {...register("documentType")}
+          />
         ))}
-        {errors.documentType?.message ? (
-          <p role="alert" className="text-destructive text-[13px] leading-relaxed">
-            {errors.documentType.message}
-          </p>
-        ) : null}
-      </fieldset>
+      </RadioGroup>
 
       <Button type="submit" size="lg" className="w-full sm:w-auto sm:self-start">
         Continue
