@@ -172,13 +172,13 @@ any of them.
 
 ## 4. Decisions taken after Phase 0 review (2026-09-07)
 
-| Question          | Decision                                                                                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Q1 repository     | New git repository at `Desktop/p2p`; the `liwatch` repository is untouched. GitHub remote still to be created by the owner (no `gh` CLI on the machine)      |
-| Q2 admin identity | **Separate admin realm** (own table, own auth), not a role flag on `User`                                                                                    |
-| Q3 fees           | **No P2P fee at launch.** Ledger and UI are shaped so a buyer-pays percentage can be switched on later without a schema change (JE-4 keeps the zero fee leg) |
-| Q4 ETB balances   | Still open; Phase 0 assumption (never) stands until contradicted                                                                                             |
-| Q8 brand          | Placeholder **"BIRQ"**; English-first UI for an Ethiopian audience. Brand lives in one file (`apps/web/lib/site.ts`) and one token sheet                     |
+| Question          | Decision                                                                                                                                                        |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q1 repository     | New git repository at `Desktop/p2p`; the `liwatch` repository is untouched. GitHub remote still to be created by the owner (no `gh` CLI on the machine)         |
+| Q2 admin identity | **Separate admin realm** (own table, own auth), not a role flag on `User`. Built in Phase 1 step 3: `AdminUser`, `AdminSession`, `AuditEvent`, and `/v1/admin`. |
+| Q3 fees           | **No P2P fee at launch.** Ledger and UI are shaped so a buyer-pays percentage can be switched on later without a schema change (JE-4 keeps the zero fee leg)    |
+| Q4 ETB balances   | Still open; Phase 0 assumption (never) stands until contradicted                                                                                                |
+| Q8 brand          | Placeholder **"BIRQ"**; English-first UI for an Ethiopian audience. Brand lives in one file (`apps/web/lib/site.ts`) and one token sheet                        |
 
 ## 5. Deliberately deferred items (tracked here, not as code TODOs)
 

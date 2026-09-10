@@ -332,3 +332,148 @@ enum VerificationPurpose {
 
   @@map("verification_purpose")
 }
+
+// ---------------------------------------------------------------- admin realm
+//
+// A separate realm from `User`, decided in Phase 0 (open-questions Q2, and the
+// threat model's R-08/B7). The property being bought: no path that compromises
+// a customer account also compromises an administrator. There is deliberately
+// no role flag on `User` anywhere in this schema, and there must never be one -
+// the moment one exists, every customer-facing weakness becomes an admin
+// weakness too.
+//
+// Administrators cannot trade. They have no balance, no offers and no wallet,
+// because they are not users of the marketplace at all.
+
+/// Someone who can act on the platform rather than in it.
+model AdminUser {
+  id String @id @default(uuid(7))
+
+  /// Lower-cased, like User.email. Issued, never self-registered: there is no
+  /// sign-up route into this table, only `npm run admin:create`.
+  email String @unique
+
+  /// So a decision in the queue and a line in the audit log carry a person.
+  name String
+
+  /// Argon2id. The only way in. No OAuth, no magic link, and no self-service
+  /// recovery: an administrator who loses their password is reset by another
+  /// administrator, out of band, which is one fewer remotely reachable flow.
+  passwordHash String @map("password_hash")
+
+  /// A session issued before this is stale, exactly as for a customer.
+  passwordChangedAt DateTime? @map("password_changed_at")
+
+  /// Least privilege (B7.1): capability is granted per action and never implied
+  /// by being an administrator. An account with an empty list can sign in and
+  /// do nothing, which is the correct default for a new one.
+  roles AdminRole[]
+
+  status AdminStatus @default(ACTIVE)
+
+  lastSignedInAt DateTime? @map("last_signed_in_at")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions AdminSession[]
+
+  @@map("admin_users")
+}
+
+enum AdminRole {
+  /// Reads identity documents and decides verification. The only role in use today.
+  KYC_REVIEWER
+  /// Phase 4. Releases or refunds a disputed trade.
+  DISPUTE_RESOLVER
+  /// Phase 6. Approves an outgoing withdrawal.
+  WITHDRAWAL_APPROVER
+  /// Phase 2. Posts a typed, balanced correction. Never a "set balance".
+  FINANCIAL_ADJUSTER
+
+  @@map("admin_role")
+}
+
+enum AdminStatus {
+  ACTIVE
+  /// Cannot sign in. Sessions are revoked at the same moment.
+  SUSPENDED
+
+  @@map("admin_status")
+}
+
+/// An administrator's session. A separate table from `Session` on purpose:
+/// nothing is shared between the realms, so a bug in customer session handling
+/// cannot mint an admin session, and the lifetimes differ by design - hours
+/// here against weeks there (B7.3).
+model AdminSession {
+  id          String    @id @default(uuid(7))
+  adminUserId String    @map("admin_user_id")
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  /// SHA-256 of the opaque token, never the token.
+  tokenHash String @unique @map("token_hash")
+
+  expiresAt  DateTime @map("expires_at")
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
+
+  revokedAt     DateTime?         @map("revoked_at")
+  revokedReason SessionEndReason? @map("revoked_reason")
+
+  createdIp String? @map("created_ip")
+  userAgent String? @map("user_agent")
+
+  createdAt DateTime @default(now())
+
+  @@index([adminUserId])
+  @@index([expiresAt])
+  @@map("admin_sessions")
+}
+
+/// What an administrator did, why, and to what.
+///
+/// Append-only, enforced by a trigger rather than by convention (see
+/// ../sql/audit-append-only.sql): the answer to "an administrator denies having
+/// acted" (B7.4) is worth nothing if the same administrator can edit it.
+///
+/// The actor is stored as a plain id and a copied-down email rather than as a
+/// foreign key. That is deliberate. This table has to outlive the rows it
+/// describes, including the administrator: a cascade would erase the evidence
+/// and a null would erase the name, and either one defeats the purpose.
+model AuditEvent {
+  id String @id @default(uuid(7))
+
+  /// Dotted and past tense: "kyc.approved", "admin.signed_in".
+  action String
+
+  /// Null for something the system did on its own.
+  actorAdminId String? @map("actor_admin_id")
+  /// Copied at the time of writing, so the name survives the account.
+  actorEmail String? @map("actor_email")
+
+  /// What was acted on: "kyc_submission" and its id.
+  subjectType String @map("subject_type")
+  subjectId   String @map("subject_id")
+
+  /// Mandatory for a decision, and shown to whoever it affects. Enforced by
+  /// the service, because "why" is a product rule rather than a column type.
+  reason String?
+
+  /// Enough to see what changed without going back to the row itself, which
+  /// may since have changed again.
+  before Json?
+  after  Json?
+
+  /// Ties the event to the request that caused it, and to the logs from it.
+  correlationId String  @map("correlation_id")
+  ip            String?
+
+  createdAt DateTime @default(now())
+
+  /// The three questions asked of an audit log: what happened to this thing,
+  /// what has this person done, and what happened around this time.
+  @@index([subjectType, subjectId])
+  @@index([actorAdminId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_events")
+}

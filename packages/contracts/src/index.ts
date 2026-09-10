@@ -10,6 +10,7 @@
 */
 
 export * from "./errors";
+export * from "./admin";
 export * from "./health";
 export * from "./kyc";
 export * from "./auth";
