@@ -67,8 +67,50 @@ model User {
   sessions        Session[]
   kycSubmissions  KycSubmission[]
   kycDocuments    KycDocument[]
+  notifications   Notification[]
 
   @@map("users")
+}
+
+/// Something worth telling a customer that happened without them doing
+/// anything on this device - a decision an administrator made, for now.
+/// Deleted with the account, unlike AuditEvent: this is what the account was
+/// told, not evidence of who decided something, so it has no reason to
+/// outlive the account it was sent to.
+model Notification {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type NotificationType
+
+  /// Written by whoever creates the notification, not composed on read: the
+  /// wording an administrator's decision produced (the rejection reason,
+  /// specifically) has to survive even if the submission it describes is
+  /// later reviewed again.
+  title String
+  body  String
+
+  /// Where the bell takes you when this one is opened. A path, never a URL.
+  link String?
+
+  /// Null means unread. A timestamp rather than a boolean for the same reason
+  /// every other "has this happened" column here is one: "unread" says
+  /// nothing about when it stopped being true.
+  readAt DateTime? @map("read_at")
+
+  createdAt DateTime @default(now())
+
+  /// The one read this table exists for: this account's own, newest first.
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  KYC_APPROVED
+  KYC_REJECTED
+
+  @@map("notification_type")
 }
 
 /// One attempt at identity verification. Kept for every attempt, not just the

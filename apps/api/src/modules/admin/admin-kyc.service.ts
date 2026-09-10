@@ -12,6 +12,7 @@ import { PrismaService } from "@/infra/prisma/prisma.service";
 import { OBJECT_STORE, StorageError, type ObjectStore } from "@/infra/storage/object-store";
 import { type AdminSessionContext } from "@/modules/admin/admin-session.service";
 import { AuditService } from "@/modules/audit/audit.service";
+import { NotificationsService } from "@/modules/notifications/notifications.service";
 
 /*
   The queue an administrator works through, and the two decisions they can make.
@@ -36,6 +37,7 @@ export class AdminKycService {
     private readonly prisma: PrismaService,
     @Inject(OBJECT_STORE) private readonly store: ObjectStore,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(AdminKycService.name);
@@ -189,6 +191,28 @@ export class AdminKycService {
           correlationId: context.correlationId,
           ip: context.ip ?? null,
         },
+        tx,
+      );
+
+      // Same transaction as the decision itself: a customer must never be
+      // told about a decision that did not happen, and a decision must never
+      // happen with nobody told.
+      await this.notifications.notify(
+        outcome === "APPROVED"
+          ? {
+              userId: existing.userId,
+              type: "KYC_APPROVED",
+              title: "You're verified",
+              body: "Your identity was approved. Your limits are lifted and you can post your own offers.",
+              link: "/verify",
+            }
+          : {
+              userId: existing.userId,
+              type: "KYC_REJECTED",
+              title: "Verification could not be completed",
+              body: reason ?? "Check your details against your document and try again.",
+              link: "/verify",
+            },
         tx,
       );
     });

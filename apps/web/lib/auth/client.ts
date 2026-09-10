@@ -70,6 +70,23 @@ export type KycResult =
 export type KycDocumentResult =
   { ok: true; document: KycDocument } | { ok: false; code: AuthErrorCode; message: string };
 
+export type NotificationType = "KYC_APPROVED" | "KYC_REJECTED";
+
+/** What the account was told without doing anything on this device. */
+export type NotificationItem = {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  link: string | null;
+  readAt: string | null;
+  createdAt: string;
+};
+
+export type NotificationsResult =
+  | { ok: true; notifications: NotificationItem[]; unreadCount: number }
+  | { ok: false; code: AuthErrorCode; message: string };
+
 export type UserStatus = "ACTIVE" | "SUSPENDED" | "CLOSED";
 
 export type SessionUser = {
@@ -141,7 +158,28 @@ export interface AuthClient {
     documentNumber: string;
     documents: { front: string; back?: string | undefined; selfie: string };
   }): Promise<KycResult>;
+
+  /** Newest first, and how many are unread. */
+  notifications(): Promise<NotificationsResult>;
+  /** No payload to speak of, so not a Result: it worked, or here is why not. */
+  markNotificationRead(id: string): Promise<AuthResult>;
+  markAllNotificationsRead(): Promise<AuthResult>;
 }
+
+const notificationTypeSchema = z.enum(["KYC_APPROVED", "KYC_REJECTED"]);
+const notificationItemSchema = z.object({
+  id: z.string(),
+  type: notificationTypeSchema,
+  title: z.string(),
+  body: z.string(),
+  link: z.string().nullable(),
+  readAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+const notificationsResponseSchema = z.object({
+  notifications: z.array(notificationItemSchema),
+  unreadCount: z.number(),
+});
 
 const sessionUserSchema = z.object({
   id: z.string(),
@@ -308,6 +346,25 @@ const ignored = z.unknown();
 const empty = z.undefined();
 
 export const apiAuthClient: AuthClient = {
+  /* --------------------------------------------------------- notifications */
+
+  async notifications() {
+    const result = await send("/v1/notifications", notificationsResponseSchema, { method: "GET" });
+    return result.ok
+      ? { ok: true, notifications: result.data.notifications, unreadCount: result.data.unreadCount }
+      : result;
+  },
+
+  async markNotificationRead(id) {
+    const result = await send(`/v1/notifications/${id}/read`, empty, { method: "POST" });
+    return result.ok ? { ok: true } : result;
+  },
+
+  async markAllNotificationsRead() {
+    const result = await send("/v1/notifications/read-all", empty, { method: "POST" });
+    return result.ok ? { ok: true } : result;
+  },
+
   /* ---------------------------------------------------------------- sign-up */
 
   async startRegistration({ email }) {

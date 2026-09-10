@@ -10,6 +10,7 @@ import { AdminModule } from "@/modules/admin/admin.module";
 import { AuthModule } from "@/modules/auth/auth.module";
 import { HealthModule } from "@/modules/health/health.module";
 import { KycModule } from "@/modules/kyc/kyc.module";
+import { NotificationsModule } from "@/modules/notifications/notifications.module";
 
 /*
   The HTTP application. Feature modules (auth, ledger, offers, trades, ...)
@@ -29,6 +30,7 @@ export class AppModule {
         HealthModule,
         AuthModule,
         KycModule,
+        NotificationsModule,
         AdminModule,
       ],
       providers: [AppExceptionFilter],

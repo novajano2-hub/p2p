@@ -17,6 +17,8 @@ export type {
   KycStatus,
   KycSubmission,
   KycSubmissionStatus,
+  Notification,
+  NotificationType,
   Session,
   SessionEndReason,
   User,

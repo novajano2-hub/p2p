@@ -11,6 +11,7 @@
 
 export * from "./errors";
 export * from "./admin";
+export * from "./notifications";
 export * from "./health";
 export * from "./kyc";
 export * from "./auth";

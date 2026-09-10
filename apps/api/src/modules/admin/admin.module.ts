@@ -8,6 +8,7 @@ import { AdminSessionService } from "@/modules/admin/admin-session.service";
 import { AdminAuthController, AdminKycController } from "@/modules/admin/admin.controller";
 import { AdminGuard } from "@/modules/admin/admin.guard";
 import { AuditModule } from "@/modules/audit/audit.module";
+import { NotificationsModule } from "@/modules/notifications/notifications.module";
 
 /*
   The admin realm. Note what it does NOT import: AuthModule. The customer's
@@ -15,7 +16,7 @@ import { AuditModule } from "@/modules/audit/audit.module";
   is the separation the whole design rests on (open-questions Q2).
 */
 @Module({
-  imports: [PrismaModule, StorageModule, AuditModule],
+  imports: [PrismaModule, StorageModule, AuditModule, NotificationsModule],
   controllers: [AdminAuthController, AdminKycController],
   providers: [AdminSessionService, AdminAuthService, AdminKycService, AdminGuard],
 })

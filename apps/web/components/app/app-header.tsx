@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 
 import { AccountMenu } from "@/components/app/account-menu";
+import { NotificationBell } from "@/components/app/notification-bell";
 import { Logo } from "@/components/brand/logo";
 import { AppLink } from "@/components/ui/app-link";
 import { ButtonLink } from "@/components/ui/button";
@@ -56,6 +57,7 @@ export function AppHeader() {
           <ButtonLink href="/wallet" size="sm" arrow={false} className="hidden sm:inline-flex">
             Deposit
           </ButtonLink>
+          <NotificationBell />
           <AccountMenu />
         </div>
       </div>
