@@ -35,7 +35,7 @@ export class NotificationsService {
     return {
       notifications: notifications.map((notification) => ({
         id: notification.id,
-        type: notification.type as NotificationType,
+        type: notification.type,
         title: notification.title,
         body: notification.body,
         link: notification.link,
