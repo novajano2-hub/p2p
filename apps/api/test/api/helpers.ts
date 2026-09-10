@@ -57,3 +57,55 @@ export async function registerFully(
   if (!setCookie?.[0]) throw new Error("registration did not set a session cookie");
   return { cookie: setCookie[0], userId: complete.body.user.id };
 }
+
+/* ------------------------------------------------------------- photographs */
+
+/** A JPEG as far as anything reading the header is concerned: the magic bytes, then filler. */
+export function fakeJpeg(bytes = 4_096): Buffer {
+  const buffer = Buffer.alloc(bytes, 0x41);
+  buffer.set([0xff, 0xd8, 0xff, 0xe0], 0);
+  return buffer;
+}
+
+/** The same trick for a PNG. */
+export function fakePng(bytes = 4_096): Buffer {
+  const buffer = Buffer.alloc(bytes, 0x41);
+  buffer.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  return buffer;
+}
+
+export type PhotoKind = "front" | "back" | "selfie";
+
+/** Uploads one photograph as the raw image body; the caller asserts on the response. */
+export function uploadPhoto(
+  server: Server,
+  cookie: string,
+  kind: PhotoKind,
+  body: Buffer = fakeJpeg(),
+  contentType = "image/jpeg",
+): request.Test {
+  return request(server)
+    .post(`/v1/kyc/documents/${kind}`)
+    .set("Cookie", cookie)
+    .set("content-type", contentType)
+    .send(body);
+}
+
+/** Every photograph a submission needs, uploaded and accepted, as the ids it refers to. */
+export async function uploadPhotos(
+  server: Server,
+  cookie: string,
+  withBack = true,
+): Promise<{ front: string; back?: string; selfie: string }> {
+  const front = await uploadPhoto(server, cookie, "front").expect(201);
+  const selfie = await uploadPhoto(server, cookie, "selfie").expect(201);
+  const documents: { front: string; back?: string; selfie: string } = {
+    front: front.body.id,
+    selfie: selfie.body.id,
+  };
+  if (withBack) {
+    const back = await uploadPhoto(server, cookie, "back").expect(201);
+    documents.back = back.body.id;
+  }
+  return documents;
+}

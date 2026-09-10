@@ -7,6 +7,10 @@
   log; until that exists this is how a submission gets a decision, and it
   writes the same rows the admin tooling will.
 
+  The photographs are listed by their storage key. With Cloudflare R2 (or any
+  S3-compatible store) open the bucket in the provider's console and browse to
+  the key; with nothing configured they are files under apps/api/.storage.
+
   Usage, from the repository root:
     node packages/database/scripts/review-kyc.mjs list
     node packages/database/scripts/review-kyc.mjs approve BQ-12345678
@@ -56,6 +60,10 @@ async function main() {
             documentType: true,
             documentNumber: true,
             createdAt: true,
+            documents: {
+              orderBy: { kind: "asc" },
+              select: { kind: true, storageKey: true, sizeBytes: true },
+            },
           },
         },
       },
@@ -74,6 +82,10 @@ async function main() {
             `  ${submission.country}  ${submission.documentType}  ${submission.documentNumber}`,
         );
         console.log(`   submitted ${submission.createdAt.toISOString()}`);
+        for (const document of submission.documents) {
+          const kilobytes = Math.round(document.sizeBytes / 1024);
+          console.log(`   ${document.kind.padEnd(6)}  ${document.storageKey}  (${kilobytes} KB)`);
+        }
       }
     }
     return;

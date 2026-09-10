@@ -6,6 +6,12 @@ export { Prisma, PrismaClient } from "@prisma/client";
 export type {
   AuthIdentity,
   AuthProvider,
+  KycDocument,
+  KycDocumentKind,
+  KycDocumentType,
+  KycStatus,
+  KycSubmission,
+  KycSubmissionStatus,
   Session,
   SessionEndReason,
   User,

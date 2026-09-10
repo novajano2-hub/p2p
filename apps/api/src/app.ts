@@ -1,5 +1,6 @@
 import { type IncomingMessage } from "node:http";
 
+import { KYC_IMAGE_MAX_BYTES, KYC_IMAGE_TYPES } from "@abay/contracts";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
@@ -12,7 +13,7 @@ import { AppExceptionFilter } from "@/common/errors/app-exception.filter";
 import { requestIdFrom } from "@/common/request-id";
 import { type Env } from "@/config/env";
 
-/** Hard cap on request bodies. Nothing this API accepts is anywhere near it. */
+/** Hard cap on JSON request bodies. Photographs get their own, larger limit below. */
 const BODY_LIMIT_BYTES = 1_048_576;
 
 /*
@@ -62,6 +63,23 @@ export async function createApp(env: Env): Promise<NestFastifyApplication> {
   await app.register(cookie);
 
   const fastify = app.getHttpAdapter().getInstance();
+
+  /*
+    Photographs of identity documents arrive as the raw image, one per
+    request, under the image's own content type. Each type gets its own
+    parser with its own limit, so the cap on JSON above stays where it is.
+    The handler checks what the bytes really are; the header is never trusted.
+  */
+  for (const type of KYC_IMAGE_TYPES) {
+    fastify.addContentTypeParser(
+      type,
+      { parseAs: "buffer", bodyLimit: KYC_IMAGE_MAX_BYTES },
+      (_request, body, done) => {
+        done(null, body);
+      },
+    );
+  }
+
   fastify.addHook("onRequest", (request, reply, done) => {
     void reply.header("x-request-id", request.id);
     // Nothing this API returns may be cached by a browser or a proxy.

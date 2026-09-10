@@ -11,6 +11,9 @@ coverage/
 playwright-report/
 test-results/
 
+# identity documents kept on disk while no object store is configured
+.storage/
+
 # environment — only .env.example is committed
 .env
 .env.*

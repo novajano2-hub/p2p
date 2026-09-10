@@ -66,6 +66,7 @@ model User {
   identities      AuthIdentity[]
   sessions        Session[]
   kycSubmissions  KycSubmission[]
+  kycDocuments    KycDocument[]
 
   @@map("users")
 }
@@ -102,11 +103,52 @@ model KycSubmission {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The photographs this attempt is judged on.
+  documents KycDocument[]
+
   /// The two reads that happen often: this customer's attempts, and the
   /// administrator's queue of everything still waiting.
   @@index([userId])
   @@index([status, createdAt])
   @@map("kyc_submissions")
+}
+
+/// One photograph: the front of the document, its back, or the selfie that
+/// ties the document to the person. The bytes live in the object store under
+/// `storageKey`; this row is the record that they exist, whose they are, and
+/// which attempt they support.
+model KycDocument {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Null while the photograph is staged: uploaded, but not yet part of a
+  /// submission. Set when the submission is created, and never changed after.
+  submissionId String?        @map("submission_id")
+  submission   KycSubmission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  kind KycDocumentKind
+
+  /// The key in the object store, e.g. "kyc/<user id>/<document id>.jpg".
+  /// A key, never a URL: the store is private, and anything that reads the
+  /// bytes back is given a signed, short-lived address by the API.
+  storageKey  String @unique @map("storage_key")
+  contentType String @map("content_type")
+  sizeBytes   Int    @map("size_bytes")
+
+  createdAt DateTime @default(now())
+
+  /// Staged photographs are looked up by owner; a submission's by itself.
+  @@index([userId, submissionId])
+  @@map("kyc_documents")
+}
+
+enum KycDocumentKind {
+  FRONT
+  BACK
+  SELFIE
+
+  @@map("kyc_document_kind")
 }
 
 enum KycStatus {

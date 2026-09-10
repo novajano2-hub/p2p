@@ -87,20 +87,23 @@ export const usernameForm = z.object({
 export type UsernameForm = z.infer<typeof usernameForm>;
 
 /*
-  Identity verification, split the way the form is: what the document is, then
-  what it says. Mirrors the server's rules in @abay/contracts; the server is
-  the authority and checks all of it again.
+  Identity verification, split the way the steps are: which document, then
+  what it says. The photographs are not form fields - the flow holds the ids
+  the uploads returned. Mirrors the server's rules in @abay/contracts; the
+  server is the authority and checks all of it again.
 */
 export const kycDocumentForm = z.object({
-  country: z
-    .string()
-    .regex(/^[A-Z]{2}$/, { error: "Choose the country that issued your document" }),
-  documentType: z.enum(["NATIONAL_ID", "PASSPORT", "DRIVERS_LICENSE"]),
+  documentType: z.enum(["NATIONAL_ID", "PASSPORT", "DRIVERS_LICENSE"], {
+    error: "Choose the document you will photograph",
+  }),
 });
 export type KycDocumentForm = z.infer<typeof kycDocumentForm>;
 
 /** 18 is the age of majority in Ethiopia, and the floor for holding money here. */
-const MINIMUM_AGE_YEARS = 18;
+export const MINIMUM_AGE_YEARS = 18;
+
+/** Nobody alive is older than this; a date beyond it is a typo, not a person. */
+export const MAXIMUM_AGE_YEARS = 120;
 
 function yearsSince(iso: string): number {
   const from = new Date(iso + "T00:00:00Z");
@@ -119,11 +122,13 @@ export const kycDetailsForm = z.object({
     .max(120, { error: "That name is too long" }),
   dateOfBirth: z
     .string()
-    .regex(/^\\d{4}-\\d{2}-\\d{2}$/, { error: "Enter your date of birth" })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, { error: "Choose your date of birth" })
     .refine((value) => yearsSince(value) >= MINIMUM_AGE_YEARS, {
       error: "You must be at least " + MINIMUM_AGE_YEARS + " to use BIRQ",
     })
-    .refine((value) => yearsSince(value) <= 120, { error: "Enter a real date of birth" }),
+    .refine((value) => yearsSince(value) <= MAXIMUM_AGE_YEARS, {
+      error: "Enter a real date of birth",
+    }),
   documentNumber: z
     .string()
     .trim()

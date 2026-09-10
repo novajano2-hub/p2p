@@ -102,7 +102,8 @@ export function KycCard({ className }: { className?: string | undefined }) {
             <h2 className="text-foreground text-[15px] font-semibold">Verify your identity</h2>
             <p className="text-muted-foreground mt-1 text-[13px] leading-relaxed">
               You can trade small amounts now. Verifying lifts your limits and lets you post your
-              own offers. It takes a couple of minutes and a person reviews it.
+              own offers. Have your ID card, passport or driver&apos;s licence ready: it takes a
+              couple of minutes, and a person reviews it.
             </p>
           </div>
         </div>

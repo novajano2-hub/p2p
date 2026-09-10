@@ -62,6 +62,17 @@ function readApiUrl(): string {
 
 /** A slow network should surface as an error, not a button that spins forever. */
 const REQUEST_TIMEOUT_MS = 15_000;
+/** A photograph over a mobile connection needs far longer than a form does. */
+const UPLOAD_TIMEOUT_MS = 120_000;
+
+/**
+ * Mirrors KYC_IMAGE_MAX_BYTES on the server. Checked here first because a
+ * server refusing a body for its size answers 413 and drops the connection
+ * mid-upload, which a browser reports as a network failure rather than as
+ * the refusal it was; the same sentence, said before a byte is sent, is
+ * simply true.
+ */
+const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 
 export type AuthErrorCode =
   | "INVALID_CREDENTIALS"
@@ -76,6 +87,8 @@ export type AuthResult = { ok: true } | { ok: false; code: AuthErrorCode; messag
 
 export type KycStatus = "NOT_STARTED" | "PENDING" | "APPROVED" | "REJECTED";
 export type KycDocumentType = "NATIONAL_ID" | "PASSPORT" | "DRIVERS_LICENSE";
+/** The photographs a submission is made of. */
+export type KycDocumentKind = "FRONT" | "BACK" | "SELFIE";
 
 /** Where verification stands, and why it was refused if it was. */
 export type KycState = {
@@ -87,6 +100,12 @@ export type KycState = {
 
 export type KycResult =
   { ok: true; state: KycState } | { ok: false; code: AuthErrorCode; message: string };
+
+/** A photograph the API has kept, waiting for the submission that names it. */
+export type KycDocument = { id: string; kind: KycDocumentKind };
+
+export type KycDocumentResult =
+  { ok: true; document: KycDocument } | { ok: false; code: AuthErrorCode; message: string };
 
 export type UserStatus = "ACTIVE" | "SUSPENDED" | "CLOSED";
 
@@ -139,13 +158,23 @@ export interface AuthClient {
 
   /** Where identity verification stands. */
   kycState(): Promise<KycResult>;
-  /** Sends the details for an administrator to review. */
+  /**
+   * Sends one photograph, as the image itself. Progress is reported as a
+   * fraction of the bytes sent, for a bar; the id that comes back is what the
+   * submission refers to.
+   */
+  uploadKycDocument(input: {
+    kind: KycDocumentKind;
+    file: Blob;
+    onProgress?: ((fraction: number) => void) | undefined;
+  }): Promise<KycDocumentResult>;
+  /** Sends the details, naming the photographs already uploaded, for an administrator to review. */
   submitKyc(input: {
     legalName: string;
     dateOfBirth: string;
-    country: string;
     documentType: KycDocumentType;
     documentNumber: string;
+    documents: { front: string; back?: string | undefined; selfie: string };
   }): Promise<KycResult>;
 }
 
@@ -164,6 +193,10 @@ const kycStateSchema = z.object({
   submittedAt: z.string().nullable(),
   reviewedAt: z.string().nullable(),
   rejectionReason: z.string().nullable(),
+});
+const kycDocumentSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["FRONT", "BACK", "SELFIE"]),
 });
 const sessionResponseSchema = z.object({ user: sessionUserSchema });
 const ticketResponseSchema = z.object({ ticket: z.string().min(1) });
@@ -202,6 +235,11 @@ const OFFLINE = failure(
 
 const UNEXPECTED = failure("SERVER", "Something went wrong on our side. Please try again.");
 
+const PHOTO_TOO_LARGE = failure(
+  "SERVER",
+  "That photo is too large. Take it again, or choose a file under 10 MB.",
+);
+
 const EXPIRED = (what: string) =>
   failure("INVALID_CODE", `Your ${what} has expired. Start again to get a new code.`);
 
@@ -238,10 +276,11 @@ async function send<T>(
     return OFFLINE;
   }
 
-  if (!response.ok) return await toFailure(response);
+  const text = await response.text();
+  if (!response.ok) return failureFrom(response.status, text);
 
   // An empty body parses as undefined, which is what the `empty` schema expects.
-  const parsed = schema.safeParse(await readJson(response));
+  const parsed = schema.safeParse(parseJson(text));
   if (!parsed.success) return UNEXPECTED;
   return { ok: true, data: parsed.data };
 }
@@ -250,8 +289,7 @@ function post<T>(path: string, body: unknown, schema: z.ZodType<T>) {
   return send(path, schema, { method: "POST", body: JSON.stringify(body) });
 }
 
-async function readJson(response: Response): Promise<unknown> {
-  const text = await response.text();
+function parseJson(text: string): unknown {
   if (!text) return undefined;
   try {
     return JSON.parse(text) as unknown;
@@ -263,14 +301,15 @@ async function readJson(response: Response): Promise<unknown> {
 /*
   Maps the API's stable error code onto ours. The server's message is used as
   written: every message an AppError carries is chosen to be safe to show, and
-  rewriting them here would let the two drift apart. The exception is a
+  rewriting them here would let the two drift apart. The exceptions are a
   validation failure, where the field-level detail says far more than the
-  envelope's generic sentence.
+  envelope's generic sentence, and a body the server refused for its size,
+  where the server's sentence is about bytes and the person's is about a photo.
 */
-async function toFailure(response: Response): Promise<Failure> {
-  const parsed = apiErrorSchema.safeParse(await readJson(response));
+function failureFrom(status: number, text: string): Failure {
+  const parsed = apiErrorSchema.safeParse(parseJson(text));
   if (!parsed.success) {
-    return response.status >= 500 ? UNEXPECTED : failure("SERVER", "That request was rejected.");
+    return status >= 500 ? UNEXPECTED : failure("SERVER", "That request was rejected.");
   }
 
   const { code, message, details } = parsed.data.error;
@@ -283,6 +322,8 @@ async function toFailure(response: Response): Promise<Failure> {
       return failure("RATE_LIMITED", message);
     case "VALIDATION_FAILED":
       return failure("INVALID_CREDENTIALS", details?.[0]?.message ?? message);
+    case "PAYLOAD_TOO_LARGE":
+      return PHOTO_TOO_LARGE;
     case "NOT_READY":
       // "We could not send the email": the server's sentence is the useful one.
       return failure("SERVER", message);
@@ -435,6 +476,39 @@ export const apiAuthClient: AuthClient = {
   async kycState() {
     const result = await send("/v1/kyc", kycStateSchema, { method: "GET" });
     return result.ok ? { ok: true, state: result.data } : result;
+  },
+
+  /*
+    XMLHttpRequest rather than fetch, for one reason: fetch cannot report
+    upload progress, and a photograph over a mobile connection takes long
+    enough that a bar is the difference between waiting and giving up. The
+    body is the image itself, under its own content type; nothing is wrapped
+    in a form.
+  */
+  async uploadKycDocument({ kind, file, onProgress }) {
+    if (file.size > PHOTO_MAX_BYTES) return PHOTO_TOO_LARGE;
+    const outcome = await new Promise<{ status: number; text: string } | null>((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${apiOrigin()}/v1/kyc/documents/${kind.toLowerCase()}`);
+      xhr.withCredentials = true;
+      xhr.timeout = UPLOAD_TIMEOUT_MS;
+      xhr.setRequestHeader("content-type", file.type || "application/octet-stream");
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) onProgress(event.loaded / event.total);
+      };
+      xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText });
+      xhr.onerror = () => resolve(null);
+      xhr.ontimeout = () => resolve(null);
+      xhr.onabort = () => resolve(null);
+      xhr.send(file);
+    });
+    if (!outcome) return OFFLINE;
+    if (outcome.status < 200 || outcome.status >= 300) {
+      return failureFrom(outcome.status, outcome.text);
+    }
+    const parsed = kycDocumentSchema.safeParse(parseJson(outcome.text));
+    if (!parsed.success) return UNEXPECTED;
+    return { ok: true, document: parsed.data };
   },
 
   async submitKyc(input) {

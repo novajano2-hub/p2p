@@ -37,8 +37,16 @@ const originList = z
 
 const trim = (value: string) => value.trim();
 
+const isHttpUrl = (value: string): boolean => {
+  try {
+    return /^https?:$/.test(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+};
+
 /** A value that may be left blank in a .env file: `KEY=` reads as absent, not as "". */
-const optionalSecret = z.preprocess(
+const blankAsAbsent = z.preprocess(
   (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
   z.string().min(1).optional(),
 );
@@ -79,12 +87,24 @@ export const envSchema = z
     EMAIL_FROM: z
       .string()
       .min(3, { error: "the sender address, e.g. BIRQ <no-reply@example.com>" }),
-    RESEND_API_KEY: optionalSecret,
+    RESEND_API_KEY: blankAsAbsent,
 
     /* Google sign-in. Both or neither: with neither, the Google routes report
        the option as unavailable instead of half-working. */
-    GOOGLE_CLIENT_ID: optionalSecret,
-    GOOGLE_CLIENT_SECRET: optionalSecret,
+    GOOGLE_CLIENT_ID: blankAsAbsent,
+    GOOGLE_CLIENT_SECRET: blankAsAbsent,
+
+    /* Object storage, for identity documents. Any S3-compatible store; the
+       four connection values are set together or not at all. With none,
+       outside production, photographs are kept under STORAGE_LOCAL_DIR on
+       disk; production refuses to start without a real store (see the check
+       below), because a container's disk is not storage. */
+    STORAGE_ENDPOINT: blankAsAbsent,
+    STORAGE_REGION: z.string().min(1).default("auto"),
+    STORAGE_BUCKET: blankAsAbsent,
+    STORAGE_ACCESS_KEY_ID: blankAsAbsent,
+    STORAGE_SECRET_ACCESS_KEY: blankAsAbsent,
+    STORAGE_LOCAL_DIR: z.string().min(1).default(".storage"),
 
     /* Sessions. Two independent limits: an absolute lifetime, and an idle window
        after which an abandoned session is dead regardless of the absolute one. */
@@ -111,6 +131,38 @@ export const envSchema = z
         code: "custom",
         path: ["GOOGLE_CLIENT_SECRET"],
         message: "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together",
+      });
+    }
+
+    const storage = {
+      STORAGE_ENDPOINT: env.STORAGE_ENDPOINT,
+      STORAGE_BUCKET: env.STORAGE_BUCKET,
+      STORAGE_ACCESS_KEY_ID: env.STORAGE_ACCESS_KEY_ID,
+      STORAGE_SECRET_ACCESS_KEY: env.STORAGE_SECRET_ACCESS_KEY,
+    };
+    const unset = Object.entries(storage)
+      .filter(([, value]) => !value)
+      .map(([name]) => name);
+    if (unset.length > 0 && unset.length < Object.keys(storage).length) {
+      ctx.addIssue({
+        code: "custom",
+        path: [unset[0] ?? "STORAGE_ENDPOINT"],
+        message:
+          "STORAGE_ENDPOINT, STORAGE_BUCKET, STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY must be set together",
+      });
+    }
+    if (env.NODE_ENV === "production" && unset.length === Object.keys(storage).length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["STORAGE_BUCKET"],
+        message: "required in production: identity documents cannot be kept on a container's disk",
+      });
+    }
+    if (env.STORAGE_ENDPOINT && !isHttpUrl(env.STORAGE_ENDPOINT)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["STORAGE_ENDPOINT"],
+        message: "must be a URL such as https://<account id>.r2.cloudflarestorage.com",
       });
     }
   });

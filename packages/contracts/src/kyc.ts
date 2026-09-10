@@ -11,21 +11,43 @@ import { z } from "zod";
 
   A submission is read by an administrator, not by a provider: at this size a
   person reads the documents. That is why the flow ends in "under review"
-  rather than an instant answer.
+  rather than an instant answer, and why the photographs matter as much as
+  the typed details - they are what the person actually checks.
 */
 
 export const kycStatus = z.enum(["NOT_STARTED", "PENDING", "APPROVED", "REJECTED"]);
 export type KycStatus = z.infer<typeof kycStatus>;
 
+/**
+ * Only Ethiopian documents are verified. This is a marketplace for birr, and
+ * the person reviewing knows what an Ethiopian ID looks like and cannot vouch
+ * for anyone else's. Recorded on every submission all the same, so the day a
+ * second country is added the old rows still say which one they were.
+ */
+export const ISSUING_COUNTRY = "ET";
+
 export const kycDocumentType = z.enum(["NATIONAL_ID", "PASSPORT", "DRIVERS_LICENSE"]);
 export type KycDocumentType = z.infer<typeof kycDocumentType>;
 
-/** ISO 3166-1 alpha-2, upper case. Ethiopia is "ET". */
-export const countryCode = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^[A-Z]{2}$/, { error: "Choose the country that issued your document" });
+/** The photographs a submission is made of. */
+export const kycDocumentKind = z.enum(["FRONT", "BACK", "SELFIE"]);
+export type KycDocumentKind = z.infer<typeof kycDocumentKind>;
+
+/**
+ * Which photographs each document needs. A passport carries everything on
+ * one page; a card has a back worth reading. The selfie is what ties the
+ * document to the person holding the phone.
+ */
+export function requiredDocumentKinds(type: KycDocumentType): readonly KycDocumentKind[] {
+  return type === "PASSPORT" ? ["FRONT", "SELFIE"] : ["FRONT", "BACK", "SELFIE"];
+}
+
+/** The formats a photograph may arrive in. Checked by content, never by file name. */
+export const KYC_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
+export type KycImageType = (typeof KYC_IMAGE_TYPES)[number];
+
+/** A phone photograph is a few megabytes. This leaves room without inviting abuse. */
+export const KYC_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
 /**
  * The name exactly as printed on the document. Deliberately permissive about
@@ -39,7 +61,7 @@ export const legalName = z
   .max(120, { error: "That name is too long" })
   .regex(/\p{L}/u, { error: "Enter your full name as printed on your document" });
 
-/** Document numbers vary by country, so only length and charset are checked. */
+/** Document numbers vary by document, so only length and charset are checked. */
 export const documentNumber = z
   .string()
   .trim()
@@ -80,14 +102,46 @@ export const dateOfBirth = z
     error: "Enter a real date of birth",
   });
 
-export const kycSubmissionRequest = z.object({
-  legalName,
-  dateOfBirth,
-  country: countryCode,
-  documentType: kycDocumentType,
-  documentNumber,
-});
+/** The identifier the API minted when a photograph was uploaded. */
+const documentId = z.uuid({ error: "Upload the photo again" });
+
+/**
+ * The photographs are uploaded first, one request each, and the submission
+ * refers to them by the identifiers those uploads returned. Uploading as you
+ * go is what makes "retake" cheap and a bad connection survivable: one photo
+ * fails, not the whole application.
+ */
+export const kycSubmissionRequest = z
+  .object({
+    legalName,
+    dateOfBirth,
+    documentType: kycDocumentType,
+    documentNumber,
+    documents: z.object({
+      front: documentId,
+      back: documentId.optional(),
+      selfie: documentId,
+    }),
+  })
+  .superRefine((value, ctx) => {
+    if (requiredDocumentKinds(value.documentType).includes("BACK") && !value.documents.back) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["documents", "back"],
+        message: "Add a photo of the back of your document",
+      });
+    }
+  });
 export type KycSubmissionRequest = z.infer<typeof kycSubmissionRequest>;
+
+/** What an upload answers with: enough to refer to the photograph, nothing more. */
+export const kycDocumentResponse = z.object({
+  id: z.string(),
+  kind: kycDocumentKind,
+  contentType: z.enum(KYC_IMAGE_TYPES),
+  sizeBytes: z.number().int().nonnegative(),
+});
+export type KycDocumentResponse = z.infer<typeof kycDocumentResponse>;
 
 /**
  * What the customer is told about where they stand. The dates and the reason
@@ -103,7 +157,9 @@ export const kycStateResponse = z.object({
 export type KycStateResponse = z.infer<typeof kycStateResponse>;
 
 /*
-  What verification is worth, in birr per day.
+  What verification is worth, in US dollars per day. Dollars because the
+  asset traded here is USDT, which is worth a dollar, and a ceiling stated in
+  the asset's own unit does not move with the exchange rate.
 
   PLACEHOLDER FIGURES (owner decision outstanding). They are here so the
   interface can state a number instead of being vague, and so there is one
@@ -113,10 +169,10 @@ export type KycStateResponse = z.infer<typeof kycStateResponse>;
 */
 export interface KycTier {
   readonly label: string;
-  /** Most a customer may buy or sell in a day, in whole birr. */
-  readonly dailyTradeEtb: number;
-  /** Most a customer may withdraw in a day, in whole birr. */
-  readonly dailyWithdrawalEtb: number;
+  /** Most a customer may buy or sell in a day, in whole dollars. */
+  readonly dailyTradeUsd: number;
+  /** Most a customer may withdraw in a day, in whole dollars. */
+  readonly dailyWithdrawalUsd: number;
   /** Whether they may publish their own offer rather than only taking others'. */
   readonly canPostOffers: boolean;
 }
@@ -124,14 +180,14 @@ export interface KycTier {
 export const KYC_TIERS: { readonly unverified: KycTier; readonly verified: KycTier } = {
   unverified: {
     label: "Unverified",
-    dailyTradeEtb: 10_000,
-    dailyWithdrawalEtb: 10_000,
+    dailyTradeUsd: 100,
+    dailyWithdrawalUsd: 100,
     canPostOffers: false,
   },
   verified: {
     label: "Verified",
-    dailyTradeEtb: 500_000,
-    dailyWithdrawalEtb: 200_000,
+    dailyTradeUsd: 5_000,
+    dailyWithdrawalUsd: 2_000,
     canPostOffers: true,
   },
 };
