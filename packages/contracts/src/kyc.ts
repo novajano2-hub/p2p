@@ -147,12 +147,18 @@ export type KycDocumentResponse = z.infer<typeof kycDocumentResponse>;
  * What the customer is told about where they stand. The dates and the reason
  * describe the newest attempt only; the whole history is an administrator's
  * view, not theirs.
+ *
+ * `documents` is the staging area: photographs uploaded but not yet part of
+ * any submission. It is what lets a form abandoned halfway be picked up where
+ * it was left rather than started again, and it is empty the moment a
+ * submission claims them.
  */
 export const kycStateResponse = z.object({
   status: kycStatus,
   submittedAt: z.string().nullable(),
   reviewedAt: z.string().nullable(),
   rejectionReason: z.string().nullable(),
+  documents: z.array(kycDocumentResponse),
 });
 export type KycStateResponse = z.infer<typeof kycStateResponse>;
 

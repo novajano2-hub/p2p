@@ -1,4 +1,9 @@
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import type { PinoLogger } from "nestjs-pino";
 
 import { StorageError, type ObjectStore, type StoredObject } from "./object-store";
@@ -27,6 +32,14 @@ export interface S3Settings {
 
 /** Long enough for a large photograph on a slow link; short enough to fail before the client does. */
 const TIMEOUT_MS = 60_000;
+
+/** A key that is not there, as opposed to a store that is not answering. */
+function isMissing(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { name?: unknown; $metadata?: { httpStatusCode?: unknown } };
+  if (candidate.name === "NoSuchKey" || candidate.name === "NotFound") return true;
+  return candidate.$metadata?.httpStatusCode === 404;
+}
 
 export class S3ObjectStore implements ObjectStore {
   private readonly client: S3Client;
@@ -74,6 +87,24 @@ export class S3ObjectStore implements ObjectStore {
       { event: "storage.put", provider: "s3", key: object.key, bytes: object.body.length },
       "object stored",
     );
+  }
+
+  async get(key: string): Promise<Buffer | null> {
+    try {
+      const result = await this.client.send(
+        new GetObjectCommand({ Bucket: this.settings.bucket, Key: key }),
+        { abortSignal: AbortSignal.timeout(TIMEOUT_MS) },
+      );
+      if (!result.Body) return null;
+      return Buffer.from(await result.Body.transformToByteArray());
+    } catch (error) {
+      if (isMissing(error)) return null;
+      this.logger.error(
+        { event: "storage.get_failed", provider: "s3", key, err: error },
+        "object store could not return the object",
+      );
+      throw new StorageError("s3", error instanceof Error ? error.message : "unreachable");
+    }
   }
 
   async delete(key: string): Promise<void> {

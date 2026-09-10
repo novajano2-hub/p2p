@@ -23,7 +23,7 @@ async function bootstrap(): Promise<void> {
   });
   const logger = context.get(Logger);
   context.useLogger(logger);
-  logger.log("worker ready: no queues registered yet (BullMQ processors arrive in Phase 3)");
+  logger.log("worker ready: kyc staging sweep running (BullMQ processors arrive in Phase 3)");
 
   const shutdown = (signal: NodeJS.Signals) => {
     logger.log(`${signal} received, stopping worker`);

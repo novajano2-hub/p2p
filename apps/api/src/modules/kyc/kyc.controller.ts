@@ -6,7 +6,8 @@ import {
   type KycStateResponse,
   type KycSubmissionRequest,
 } from "@abay/contracts";
-import { Body, Controller, Get, HttpCode, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, Post, Res, UseGuards } from "@nestjs/common";
+import { type FastifyReply } from "fastify";
 import { z } from "zod";
 
 import { AppError } from "@/common/errors/app-error";
@@ -17,6 +18,8 @@ import { KycService } from "@/modules/kyc/kyc.service";
 
 /** "front", "back" or "selfie" in the path; the enum itself is upper case. */
 const kindParam = z.string().trim().toUpperCase().pipe(kycDocumentKind);
+
+const documentIdParam = z.uuid();
 
 /*
   Every route is the customer's own: the session decides whose verification
@@ -53,6 +56,24 @@ export class KycController {
       );
     }
     return this.kyc.uploadDocument(session.user.id, kind, body);
+  }
+
+  /*
+    The bytes back, so a form picked up again can show the photographs already
+    uploaded. Streamed through the API rather than handed out as a signed URL
+    from the store: the credentials stay in this process, the session is
+    checked on every read, and the global no-store header keeps an identity
+    document out of the browser's disk cache.
+  */
+  @Get("documents/:id")
+  async document(
+    @Param("id", new ZodValidationPipe(documentIdParam)) id: string,
+    @CurrentSession() session: AuthenticatedSession,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    const found = await this.kyc.readDocument(session.user.id, id);
+    if (!found) throw AppError.notFound("That photo is no longer available.");
+    await reply.type(found.contentType).send(found.body);
   }
 
   /** 202: accepted for review, not decided. The answer comes from a person. */

@@ -1,7 +1,7 @@
 /*
   The one way the API keeps a file. Identity documents are the first use:
   photographs of a person's ID that must be held somewhere private, written
-  once, and read back only by an administrator.
+  once, and read back only by their owner or an administrator.
 
   Behind an interface so the provider is a configuration choice. Any store
   that speaks the S3 API works (Cloudflare R2 is the recommendation; see
@@ -23,6 +23,12 @@ export interface StoredObject {
 export interface ObjectStore {
   /** Resolves once the store has accepted the bytes. Throws StorageError otherwise. */
   put(object: StoredObject): Promise<void>;
+  /**
+   * The bytes behind a key, or null if the store does not have it. A missing
+   * object is an answer, not a fault: a sweep may have removed it between the
+   * row being read and the bytes being asked for.
+   */
+  get(key: string): Promise<Buffer | null>;
   /** Removes an object. Deleting something already gone is not an error. */
   delete(key: string): Promise<void>;
 }

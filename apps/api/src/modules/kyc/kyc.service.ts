@@ -3,6 +3,7 @@ import {
   requiredDocumentKinds,
   type KycDocumentKind,
   type KycDocumentResponse,
+  type KycImageType,
   type KycStateResponse,
   type KycSubmissionRequest,
 } from "@abay/contracts";
@@ -24,7 +25,10 @@ import { IMAGE_EXTENSIONS, sniffImageType } from "@/modules/kyc/image-type";
   Two moves. The photographs go up first, one request each, and sit staged
   against the account; then the submission names them, and they become part
   of the record an administrator reads. Uploading as you go is what makes a
-  retake cheap and a bad connection survivable.
+  retake cheap and a bad connection survivable, and it is why `state` reports
+  what is staged: a customer who closed the tab comes back to their photos
+  rather than to an empty form. What nobody comes back for, the sweep in
+  kyc-retention.service.ts throws away.
 */
 @Injectable()
 export class KycService {
@@ -36,7 +40,7 @@ export class KycService {
     this.logger.setContext(KycService.name);
   }
 
-  /** Where this account stands, and why, if it was refused. */
+  /** Where this account stands, why it was refused, and what is already uploaded. */
   async state(userId: string): Promise<KycStateResponse> {
     const user = await this.prisma.client.user.findUnique({
       where: { id: userId },
@@ -50,6 +54,14 @@ export class KycService {
       select: { createdAt: true, reviewedAt: true, rejectionReason: true },
     });
 
+    // Staged only. A photograph that belongs to a submission is evidence in
+    // someone else's hands now, and there is nothing for the form to do with it.
+    const staged = await this.prisma.client.kycDocument.findMany({
+      where: { userId, submissionId: null },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, kind: true, contentType: true, sizeBytes: true },
+    });
+
     return {
       status: user.kycStatus,
       submittedAt: latest?.createdAt.toISOString() ?? null,
@@ -57,6 +69,14 @@ export class KycService {
       // Only meaningful while the account is actually refused: a reason left
       // over from an earlier attempt would contradict the current status.
       rejectionReason: user.kycStatus === "REJECTED" ? (latest?.rejectionReason ?? null) : null,
+      documents: staged.map((document) => ({
+        id: document.id,
+        kind: document.kind,
+        // The column is a string; only uploadDocument writes it, and only ever
+        // with a type it sniffed out of the bytes themselves.
+        contentType: document.contentType as KycImageType,
+        sizeBytes: document.sizeBytes,
+      })),
     };
   }
 
@@ -119,6 +139,40 @@ export class KycService {
     );
 
     return { id, kind, contentType, sizeBytes: body.length };
+  }
+
+  /*
+    Hands back one of this account's own photographs, so a form that was
+    abandoned can show what is already uploaded.
+
+    Ownership is part of the lookup rather than a check after it, so someone
+    else's identifier and an identifier that never existed produce the same
+    nothing, and the answer reveals neither. A row whose bytes are already
+    gone answers the same way: the sweep got there first.
+  */
+  async readDocument(
+    userId: string,
+    documentId: string,
+  ): Promise<{ body: Buffer; contentType: string } | null> {
+    const document = await this.prisma.client.kycDocument.findFirst({
+      where: { id: documentId, userId },
+      select: { storageKey: true, contentType: true },
+    });
+    if (!document) return null;
+
+    let body: Buffer | null;
+    try {
+      body = await this.store.get(document.storageKey);
+    } catch (error) {
+      if (error instanceof StorageError) {
+        throw AppError.notReady(
+          "We could not load that photo right now. Please try again in a moment.",
+        );
+      }
+      throw error;
+    }
+    if (!body) return null;
+    return { body, contentType: document.contentType };
   }
 
   /*

@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 
 import type { PinoLogger } from "nestjs-pino";
@@ -30,6 +30,16 @@ export class LocalObjectStore implements ObjectStore {
       { event: "storage.put", provider: "local", key: object.key, bytes: object.body.length, path },
       "object written to disk: no object store is configured",
     );
+  }
+
+  async get(key: string): Promise<Buffer | null> {
+    const path = this.pathFor(key);
+    try {
+      return await readFile(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw new StorageError("local", error instanceof Error ? error.message : "unreadable");
+    }
   }
 
   async delete(key: string): Promise<void> {

@@ -90,19 +90,21 @@ export type KycDocumentType = "NATIONAL_ID" | "PASSPORT" | "DRIVERS_LICENSE";
 /** The photographs a submission is made of. */
 export type KycDocumentKind = "FRONT" | "BACK" | "SELFIE";
 
-/** Where verification stands, and why it was refused if it was. */
+/** A photograph the API has kept, waiting for the submission that names it. */
+export type KycDocument = { id: string; kind: KycDocumentKind };
+
+/** Where verification stands, why it was refused, and what is already uploaded. */
 export type KycState = {
   status: KycStatus;
   submittedAt: string | null;
   reviewedAt: string | null;
   rejectionReason: string | null;
+  /** The staging area, so a form abandoned halfway can be picked up again. */
+  documents: KycDocument[];
 };
 
 export type KycResult =
   { ok: true; state: KycState } | { ok: false; code: AuthErrorCode; message: string };
-
-/** A photograph the API has kept, waiting for the submission that names it. */
-export type KycDocument = { id: string; kind: KycDocumentKind };
 
 export type KycDocumentResult =
   { ok: true; document: KycDocument } | { ok: false; code: AuthErrorCode; message: string };
@@ -156,8 +158,10 @@ export interface AuthClient {
   /** Changes the username. Resolves with the updated user. */
   updateUsername(input: { username: string }): Promise<SessionResult>;
 
-  /** Where identity verification stands. */
+  /** Where identity verification stands, including anything already uploaded. */
   kycState(): Promise<KycResult>;
+  /** The bytes of one photograph already uploaded, for a preview. Null if it is gone. */
+  kycPhoto(input: { id: string }): Promise<Blob | null>;
   /**
    * Sends one photograph, as the image itself. Progress is reported as a
    * fraction of the bytes sent, for a bar; the id that comes back is what the
@@ -188,15 +192,16 @@ const sessionUserSchema = z.object({
   kycStatus: z.enum(["NOT_STARTED", "PENDING", "APPROVED", "REJECTED"]),
 });
 
+const kycDocumentSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["FRONT", "BACK", "SELFIE"]),
+});
 const kycStateSchema = z.object({
   status: z.enum(["NOT_STARTED", "PENDING", "APPROVED", "REJECTED"]),
   submittedAt: z.string().nullable(),
   reviewedAt: z.string().nullable(),
   rejectionReason: z.string().nullable(),
-});
-const kycDocumentSchema = z.object({
-  id: z.string().min(1),
-  kind: z.enum(["FRONT", "BACK", "SELFIE"]),
+  documents: z.array(kycDocumentSchema),
 });
 const sessionResponseSchema = z.object({ user: sessionUserSchema });
 const ticketResponseSchema = z.object({ ticket: z.string().min(1) });
@@ -476,6 +481,31 @@ export const apiAuthClient: AuthClient = {
   async kycState() {
     const result = await send("/v1/kyc", kycStateSchema, { method: "GET" });
     return result.ok ? { ok: true, state: result.data } : result;
+  },
+
+  /*
+    A preview of a photograph already uploaded. Fetched rather than pointed at
+    with an <img src>, so it travels the same credentialed path as every other
+    call in this module; the caller turns the blob into an object URL exactly
+    as it would for a photo just taken, and the rest of the flow cannot tell
+    the two apart.
+
+    Null rather than a displayable failure: a preview that will not load is
+    not worth a sentence on screen. The slot shows empty and the person takes
+    that one again.
+  */
+  async kycPhoto({ id }) {
+    try {
+      const response = await fetch(`${apiOrigin()}/v1/kyc/documents/${id}`, {
+        credentials: "include",
+        cache: "no-store",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) return null;
+      return await response.blob();
+    } catch {
+      return null;
+    }
   },
 
   /*

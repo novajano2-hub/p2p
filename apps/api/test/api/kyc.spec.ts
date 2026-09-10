@@ -6,10 +6,15 @@ import { resolve } from "node:path";
 import { KYC_IMAGE_MAX_BYTES } from "@abay/contracts";
 import { createPrismaClient, type PrismaClient } from "@abay/database";
 import { type NestFastifyApplication } from "@nestjs/platform-fastify";
+import { Test, type TestingModule } from "@nestjs/testing";
 import request from "supertest";
 
 import { createApp } from "@/app";
+import { loggingModule } from "@/common/logging/logging.module";
+import { ConfigModule } from "@/config/config.module";
 import { loadEnv } from "@/config/env";
+import { KycRetentionModule } from "@/modules/kyc/kyc-retention.module";
+import { KycRetentionService } from "@/modules/kyc/kyc-retention.service";
 
 import {
   fakeJpeg,
@@ -33,6 +38,10 @@ import {
 
 let app: NestFastifyApplication;
 let db: PrismaClient;
+/* The sweep runs in the worker, which has no HTTP layer, so it is reached
+   through its own module rather than through the booted API. */
+let retentionContext: TestingModule;
+let retention: KycRetentionService;
 const server = () => app.getHttpServer() as Parameters<typeof request>[0];
 
 const DETAILS = {
@@ -93,9 +102,15 @@ beforeAll(async () => {
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   db = createPrismaClient(env.DATABASE_URL);
+
+  retentionContext = await Test.createTestingModule({
+    imports: [ConfigModule.forRoot(env), loggingModule(env), KycRetentionModule],
+  }).compile();
+  retention = retentionContext.get(KycRetentionService);
 });
 
 afterAll(async () => {
+  await retentionContext.close();
   await db.$disconnect();
   await app.close();
 });
@@ -109,6 +124,7 @@ describe("identity verification", () => {
       status: "NOT_STARTED",
       submittedAt: null,
       rejectionReason: null,
+      documents: [],
     });
 
     // And the session carries it, so every screen agrees without asking twice.
@@ -135,6 +151,8 @@ describe("identity verification", () => {
       .expect(202);
     expect(submitted.body.status).toBe("PENDING");
     expect(submitted.body.submittedAt).toEqual(expect.any(String));
+    // The staging area is empty: every photograph belongs to the submission now.
+    expect(submitted.body.documents).toEqual([]);
 
     const stored = await db.kycSubmission.findFirst({
       where: { userId },
@@ -220,6 +238,98 @@ describe("identity verification", () => {
         documents: { front: first.body.id, back: back.body.id, selfie: selfie.body.id },
       })
       .expect(400);
+  });
+
+  it("hands back the photographs already uploaded, and only to their owner", async () => {
+    const owner = await registerFully(server(), db, uniqueEmail());
+    const stranger = await registerFully(server(), db, uniqueEmail());
+
+    const front = await uploadPhoto(server(), owner.cookie, "front", fakeJpeg(2_048)).expect(201);
+    const selfie = await uploadPhoto(server(), owner.cookie, "selfie").expect(201);
+
+    // The state carries the staging area. This is what lets a form that was
+    // abandoned halfway be picked up rather than started again.
+    const state = await request(server()).get("/v1/kyc").set("Cookie", owner.cookie).expect(200);
+    expect(state.body.documents).toHaveLength(2);
+    expect(state.body.documents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: front.body.id,
+          kind: "FRONT",
+          contentType: "image/jpeg",
+          sizeBytes: 2_048,
+        }),
+        expect.objectContaining({ id: selfie.body.id, kind: "SELFIE" }),
+      ]),
+    );
+
+    // And the bytes come back, as the image they went up as.
+    const bytes = await request(server())
+      .get(`/v1/kyc/documents/${front.body.id}`)
+      .set("Cookie", owner.cookie)
+      .expect(200);
+    expect(bytes.headers["content-type"]).toContain("image/jpeg");
+    expect(Buffer.isBuffer(bytes.body)).toBe(true);
+    expect((bytes.body as Buffer).length).toBe(2_048);
+    // An identity document must never rest in a browser's disk cache.
+    expect(bytes.headers["cache-control"]).toBe("no-store");
+
+    // To nobody else, and the refusal says nothing about whether it exists.
+    await request(server())
+      .get(`/v1/kyc/documents/${front.body.id}`)
+      .set("Cookie", stranger.cookie)
+      .expect(404);
+    await request(server()).get(`/v1/kyc/documents/${front.body.id}`).expect(401);
+
+    const strangerState = await request(server())
+      .get("/v1/kyc")
+      .set("Cookie", stranger.cookie)
+      .expect(200);
+    expect(strangerState.body.documents).toEqual([]);
+  });
+
+  it("throws away photographs nobody submitted, and leaves the rest alone", async () => {
+    const abandoned = await registerFully(server(), db, uniqueEmail());
+    const stale = await uploadPhoto(server(), abandoned.cookie, "front").expect(201);
+    const fresh = await uploadPhoto(server(), abandoned.cookie, "selfie").expect(201);
+
+    const submitter = await registerFully(server(), db, uniqueEmail());
+    const documents = await uploadPhotos(server(), submitter.cookie);
+    await request(server())
+      .post("/v1/kyc")
+      .set("Cookie", submitter.cookie)
+      .send({ ...DETAILS, documents })
+      .expect(202);
+
+    // Age one staged photograph past the deadline, and age the submitted ones
+    // with it, so what survives proves the rule is "unclaimed", not "recent".
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    await db.kycDocument.update({
+      where: { id: stale.body.id },
+      data: { createdAt: twoDaysAgo },
+    });
+    await db.kycDocument.updateMany({
+      where: { userId: submitter.userId },
+      data: { createdAt: twoDaysAgo },
+    });
+    const staleRow = await db.kycDocument.findUniqueOrThrow({ where: { id: stale.body.id } });
+    expect(existsSync(onDisk(staleRow.storageKey))).toBe(true);
+
+    expect(await retention.sweepAbandoned()).toBeGreaterThanOrEqual(1);
+
+    // The row is gone and so are the bytes: this exists so that an identity
+    // document nobody asked us to check does not sit in the store forever.
+    expect(await db.kycDocument.findUnique({ where: { id: stale.body.id } })).toBeNull();
+    expect(existsSync(onDisk(staleRow.storageKey))).toBe(false);
+
+    // Uploaded a moment ago, so still waiting for the form that will name it.
+    expect(await db.kycDocument.findUnique({ where: { id: fresh.body.id } })).not.toBeNull();
+    // Evidence for a submission an administrator has not read yet. Never swept.
+    expect(
+      await db.kycDocument.count({
+        where: { userId: submitter.userId, submissionId: { not: null } },
+      }),
+    ).toBe(3);
   });
 
   it("accepts only images, only under the limit, and only as the raw body", async () => {

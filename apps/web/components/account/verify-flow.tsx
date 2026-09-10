@@ -34,6 +34,10 @@ import { DOCUMENT_LABELS, DOCUMENT_OPTIONS, PHOTO_GUIDE, requiredKinds, UNLOCKS 
   nothing left to wait for and a dropped connection costs one photo, not the
   application. The flow holds the ids those uploads returned and hands them
   to the submission at the end.
+
+  Because the photographs are already on the server, coming back to this page
+  picks up where the last visit stopped rather than starting over. Whatever
+  nobody comes back for is deleted after a day by the sweep in the worker.
 */
 type Step = "document" | "details" | "photos" | "selfie" | "review";
 
@@ -53,6 +57,12 @@ export function VerifyFlow() {
   const [documentType, setDocumentType] = useState<KycDocumentType | null>(null);
   const [details, setDetails] = useState<KycDetailsForm | null>(null);
   const [photos, setPhotos] = useState<Photos>({});
+  // Only these two states have a form to fill in at all; the others return
+  // early below, so there is nothing to restore for them.
+  const resumable = user.kycStatus === "NOT_STARTED" || user.kycStatus === "REJECTED";
+  // Both of these come from one call to the state endpoint below.
+  const [restoring, setRestoring] = useState(resumable);
+  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
 
   // Every preview is an object URL, and object URLs are only released by
   // hand. The ref follows the newest set, so leaving the page releases them all.
@@ -66,6 +76,56 @@ export function VerifyFlow() {
     },
     [],
   );
+
+  /*
+    Picking up where the last visit stopped. The typed details are
+    deliberately not restored: they are personal data, and re-typing a name
+    costs nothing next to re-taking three photographs.
+  */
+  useEffect(() => {
+    if (!resumable) return;
+    let live = true;
+    void (async () => {
+      const result = await authClient.kycState();
+      if (!live) return;
+      if (!result.ok) {
+        setRestoring(false);
+        return;
+      }
+      setRejectionReason(result.state.rejectionReason);
+
+      const restored: CapturedPhoto[] = [];
+      await Promise.all(
+        result.state.documents.map(async (document) => {
+          const blob = await authClient.kycPhoto({ id: document.id });
+          if (!blob) return;
+          restored.push({
+            id: document.id,
+            kind: document.kind,
+            previewUrl: URL.createObjectURL(blob),
+          });
+        }),
+      );
+      if (!live) {
+        for (const photo of restored) URL.revokeObjectURL(photo.previewUrl);
+        return;
+      }
+      setPhotos((current) => {
+        const next = { ...current };
+        for (const photo of restored) {
+          // A photo taken while this was in flight is the newer one, so the
+          // restored copy of that slot is released rather than leaked.
+          if (next[photo.kind]) URL.revokeObjectURL(photo.previewUrl);
+          else next[photo.kind] = photo;
+        }
+        return next;
+      });
+      setRestoring(false);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [resumable]);
 
   const addPhoto = (photo: CapturedPhoto) => {
     setPhotos((current) => {
@@ -97,7 +157,7 @@ export function VerifyFlow() {
           <Panel>
             <Steps current={step} />
 
-            {user.kycStatus === "REJECTED" ? <PreviousAttempt /> : null}
+            {user.kycStatus === "REJECTED" ? <PreviousAttempt reason={rejectionReason} /> : null}
 
             {step === "document" ? (
               <DocumentStep
@@ -125,6 +185,7 @@ export function VerifyFlow() {
                 kinds={documentKinds}
                 photos={photos}
                 onPhoto={addPhoto}
+                restoring={restoring}
                 ready={hasAll(documentKinds)}
                 onBack={() => setStep("details")}
                 onContinue={() => setStep("selfie")}
@@ -135,6 +196,7 @@ export function VerifyFlow() {
               <SelfieStep
                 photo={photos.SELFIE ?? null}
                 onPhoto={addPhoto}
+                restoring={restoring}
                 onBack={() => setStep("photos")}
                 onContinue={() => setStep("review")}
               />
@@ -203,17 +265,7 @@ function Steps({ current }: { current: Step }) {
 }
 
 /** Why the last attempt was refused, so this one can fix the actual problem. */
-function PreviousAttempt() {
-  const [reason, setReason] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    void authClient.kycState().then((result) => {
-      if (live && result.ok) setReason(result.state.rejectionReason);
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
+function PreviousAttempt({ reason }: { reason: string | null }) {
   return (
     <FormError>
       {reason
@@ -379,6 +431,7 @@ function PhotosStep({
   kinds,
   photos,
   onPhoto,
+  restoring,
   ready,
   onBack,
   onContinue,
@@ -386,6 +439,7 @@ function PhotosStep({
   kinds: readonly KycDocumentKind[];
   photos: Photos;
   onPhoto: (photo: CapturedPhoto) => void;
+  restoring: boolean;
   ready: boolean;
   onBack: () => void;
   onContinue: () => void;
@@ -396,6 +450,8 @@ function PhotosStep({
         Lay the document flat, fill the frame with it, and make sure nothing is cut off or shining.
         Each photo is uploaded as soon as you take it.
       </p>
+
+      <Restoring restoring={restoring} />
 
       <div className="grid gap-4 sm:grid-cols-2">
         {kinds.map((kind) => (
@@ -424,14 +480,26 @@ function PhotosStep({
   );
 }
 
+/** Said once, while the photographs from a previous visit are being fetched. */
+function Restoring({ restoring }: { restoring: boolean }) {
+  if (!restoring) return null;
+  return (
+    <p role="status" className="text-muted-foreground text-[13px]">
+      Checking for photos you already uploaded&hellip;
+    </p>
+  );
+}
+
 function SelfieStep({
   photo,
   onPhoto,
+  restoring,
   onBack,
   onContinue,
 }: {
   photo: CapturedPhoto | null;
   onPhoto: (photo: CapturedPhoto) => void;
+  restoring: boolean;
   onBack: () => void;
   onContinue: () => void;
 }) {
@@ -441,6 +509,8 @@ function SelfieStep({
         This is what ties the document to you. The person reviewing compares your face with the
         photo on the document, so both need to be clear.
       </p>
+
+      <Restoring restoring={restoring} />
 
       <div className="sm:max-w-sm">
         <PhotoCapture
