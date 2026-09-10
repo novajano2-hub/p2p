@@ -427,5 +427,6 @@ export function toSessionUser(user: User): SessionUser {
     username: user.username,
     status: user.status,
     emailVerified: user.emailVerifiedAt !== null,
+    kycStatus: user.kycStatus,
   };
 }

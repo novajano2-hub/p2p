@@ -10,6 +10,14 @@ const valid = {
   REDIS_URL: "redis://localhost:6379",
 };
 
+/** A complete object store configuration, as production requires. */
+const storage = {
+  STORAGE_ENDPOINT: "https://abc123.r2.cloudflarestorage.com",
+  STORAGE_BUCKET: "birq-kyc",
+  STORAGE_ACCESS_KEY_ID: "key-id",
+  STORAGE_SECRET_ACCESS_KEY: "secret",
+};
+
 describe("loadEnv", () => {
   it("parses a valid environment and applies defaults", () => {
     const env = loadEnv(valid);
@@ -63,12 +71,37 @@ describe("loadEnv", () => {
   });
 
   it("refuses to start production without a way to send email", () => {
-    expect(() => loadEnv({ ...valid, NODE_ENV: "production", COOKIE_SECURE: "true" })).toThrow(
-      /RESEND_API_KEY/,
-    );
+    const production = { ...valid, ...storage, NODE_ENV: "production", COOKIE_SECURE: "true" };
+    expect(() => loadEnv(production)).toThrow(/RESEND_API_KEY/);
+    expect(() => loadEnv({ ...production, RESEND_API_KEY: "re_x" })).not.toThrow();
+  });
+
+  it("refuses to start production without somewhere to keep identity documents", () => {
     expect(() =>
       loadEnv({ ...valid, NODE_ENV: "production", COOKIE_SECURE: "true", RESEND_API_KEY: "re_x" }),
-    ).not.toThrow();
+    ).toThrow(/STORAGE_BUCKET/);
+  });
+
+  it("requires the object store settings together, with a real URL for the endpoint", () => {
+    expect(() => loadEnv({ ...valid, STORAGE_BUCKET: "birq-kyc" })).toThrow(/STORAGE_/);
+    expect(() =>
+      loadEnv({ ...valid, ...storage, STORAGE_ENDPOINT: "abc123.r2.cloudflarestorage.com" }),
+    ).toThrow(/STORAGE_ENDPOINT/);
+
+    const env = loadEnv({ ...valid, ...storage });
+    expect(env.STORAGE_BUCKET).toBe("birq-kyc");
+    expect(env.STORAGE_REGION).toBe("auto");
+    expect(env.STORAGE_LOCAL_DIR).toBe(".storage");
+
+    // Blank means absent here too, so the example file's empty lines are fine.
+    const blank = loadEnv({
+      ...valid,
+      STORAGE_ENDPOINT: "",
+      STORAGE_BUCKET: "",
+      STORAGE_ACCESS_KEY_ID: "",
+      STORAGE_SECRET_ACCESS_KEY: "",
+    });
+    expect(blank.STORAGE_BUCKET).toBeUndefined();
   });
 
   it("requires the Google client id and secret together", () => {

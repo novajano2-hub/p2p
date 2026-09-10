@@ -12,9 +12,20 @@ export const appNav = [
 ] as const;
 
 export const settingsHref = "/settings";
+export const verifyHref = "/verify";
 
-/** Every route behind a session. proxy.ts turns cookie-less visitors away from these. */
-export const appRoutes = [...appNav.map((item) => item.href), settingsHref] as const;
+/**
+ * Every route behind a session, as prefixes: a section owns whatever sits
+ * under it. proxy.ts mirrors this list and turns cookie-less visitors away.
+ */
+export const appRoutes = [...appNav.map((item) => item.href), settingsHref, verifyHref] as const;
+
+/** The wallet's own pages. Reached from the wallet, not from the main navigation. */
+export const walletRoutes = {
+  deposit: "/wallet/deposit",
+  withdraw: "/wallet/withdraw",
+  transfer: "/wallet/transfer",
+} as const;
 
 /** A section is active on its own page and on anything nested under it. */
 export function isActivePath(pathname: string, href: string): boolean {

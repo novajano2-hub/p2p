@@ -85,3 +85,56 @@ export const usernameForm = z.object({
     .regex(/^[A-Za-z0-9_]+$/, { error: "Use letters, numbers and underscores only" }),
 });
 export type UsernameForm = z.infer<typeof usernameForm>;
+
+/*
+  Identity verification, split the way the steps are: which document, then
+  what it says. The photographs are not form fields - the flow holds the ids
+  the uploads returned. Mirrors the server's rules in @abay/contracts; the
+  server is the authority and checks all of it again.
+*/
+export const kycDocumentForm = z.object({
+  documentType: z.enum(["NATIONAL_ID", "PASSPORT", "DRIVERS_LICENSE"], {
+    error: "Choose the document you will photograph",
+  }),
+});
+export type KycDocumentForm = z.infer<typeof kycDocumentForm>;
+
+/** 18 is the age of majority in Ethiopia, and the floor for holding money here. */
+export const MINIMUM_AGE_YEARS = 18;
+
+/** Nobody alive is older than this; a date beyond it is a typo, not a person. */
+export const MAXIMUM_AGE_YEARS = 120;
+
+function yearsSince(iso: string): number {
+  const from = new Date(iso + "T00:00:00Z");
+  const now = new Date();
+  let years = now.getUTCFullYear() - from.getUTCFullYear();
+  const months = now.getUTCMonth() - from.getUTCMonth();
+  if (months < 0 || (months === 0 && now.getUTCDate() < from.getUTCDate())) years -= 1;
+  return years;
+}
+
+export const kycDetailsForm = z.object({
+  legalName: z
+    .string()
+    .trim()
+    .min(2, { error: "Enter your full name as printed on your document" })
+    .max(120, { error: "That name is too long" }),
+  dateOfBirth: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, { error: "Choose your date of birth" })
+    .refine((value) => yearsSince(value) >= MINIMUM_AGE_YEARS, {
+      error: "You must be at least " + MINIMUM_AGE_YEARS + " to use BIRQ",
+    })
+    .refine((value) => yearsSince(value) <= MAXIMUM_AGE_YEARS, {
+      error: "Enter a real date of birth",
+    }),
+  documentNumber: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(4, { error: "Enter the number printed on your document" })
+    .max(40, { error: "That document number is too long" })
+    .regex(/^[A-Z0-9][A-Z0-9 /-]*$/, { error: "Use letters, numbers, spaces, dashes and slashes" }),
+});
+export type KycDetailsForm = z.infer<typeof kycDetailsForm>;

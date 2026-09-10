@@ -1,10 +1,10 @@
 "use client";
 
 import { ActiveTrades } from "@/components/account/active-trades";
+import { KycCard, KycPill } from "@/components/account/kyc-card";
 import { MarketSnapshot } from "@/components/account/market-snapshot";
 import { QuickActions } from "@/components/account/quick-actions";
 import { RecentActivity } from "@/components/account/recent-activity";
-import { SecurityChecklist } from "@/components/account/security-checklist";
 import { WalletCard } from "@/components/account/wallet-card";
 import { UidChip } from "@/components/app/copy-button";
 import { PageHeader } from "@/components/app/panel";
@@ -30,14 +30,16 @@ export function AccountHome() {
     <>
       <PageHeader title={`${timeGreeting()}, ${user.username}`}>
         <UidChip platformId={user.platformId} />
+        <KycPill />
         <StatusPill status={user.status === "ACTIVE" ? "complete" : "attention"}>
           {user.status === "ACTIVE" ? "Account active" : "Account suspended"}
         </StatusPill>
       </PageHeader>
 
       <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
-        <WalletCard className="lg:col-span-2" />
-        <SecurityChecklist />
+        <KycCard className="lg:col-span-3" />
+
+        <WalletCard className="lg:col-span-3" />
 
         <div className="lg:col-span-3">
           <QuickActions />

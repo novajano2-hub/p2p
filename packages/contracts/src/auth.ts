@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { kycStatus } from "./kyc";
+
 /*
   Authentication contracts. Written by hand: nothing here is derived from a
   Prisma model, so a password hash cannot reach a browser because someone
@@ -117,6 +119,8 @@ export const sessionUser = z.object({
   username: z.string(),
   status: userStatus,
   emailVerified: z.boolean(),
+  /** Drives what the account may do; see KYC_TIERS in ./kyc. */
+  kycStatus,
 });
 export type SessionUser = z.infer<typeof sessionUser>;
 

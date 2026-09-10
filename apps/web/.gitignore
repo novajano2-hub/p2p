@@ -29,9 +29,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# env files: only the example is committed
+# env files. There is one for the whole repository, at the root; nothing
+# app-specific belongs here (see .env.example there).
 .env*
-!.env.example
 
 # vercel
 .vercel
