@@ -159,6 +159,13 @@ async function withSession(context: BrowserContext) {
   await context.addCookies([{ name: SESSION_COOKIE, value: SESSION_VALUE, url: SITE }]);
 }
 
+/*
+  The account home's <h1> is a time-of-day greeting ("Good morning, ..."),
+  not a fixed page title, so tests match the shape rather than the exact
+  words - it is whichever one is true when the suite happens to run.
+*/
+const ACCOUNT_GREETING = /^Good (morning|afternoon|evening|night),/;
+
 /** The first of the six boxes. Filling it with all six digits fills the rest. */
 const codeBox = (page: Page) => page.getByLabel(/digit 1 of 6/);
 
@@ -250,7 +257,7 @@ test.describe("accessibility", () => {
 
     await withSession(context);
     await page.goto("/account");
-    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: ACCOUNT_GREETING })).toBeVisible();
     await expectNoSeriousA11yViolations(page);
   });
 
@@ -371,7 +378,7 @@ test.describe("sign up", () => {
 
     await page.getByRole("button", { name: "Create account" }).click();
     await expect(page).toHaveURL(/\/account$/);
-    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: ACCOUNT_GREETING })).toBeVisible();
     // And the landing page now belongs to the signed-in app.
     await page.goto("/");
     await expect(page).toHaveURL(/\/account$/);
@@ -545,7 +552,7 @@ test.describe("account", () => {
     await withSession(context);
     await page.goto("/account");
 
-    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: ACCOUNT_GREETING })).toBeVisible();
     await page.getByRole("button", { name: "Account menu" }).click();
     await page.getByRole("button", { name: "Log out" }).click();
     // Signed out is a reason to be somewhere else, not something to be told.
@@ -561,7 +568,7 @@ test.describe("account", () => {
     await page.getByRole("button", { name: "Log out" }).click();
     await expect(page.getByRole("alert").filter({ hasText: /went wrong/ })).toBeVisible();
     // Still signed in, because the server still holds the session.
-    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: ACCOUNT_GREETING })).toBeVisible();
   });
 
   test("without a session it goes to the landing page rather than saying so", async ({ page }) => {
@@ -592,7 +599,7 @@ test.describe("the landing page and a session", () => {
 
     await page.goto("/");
     await expect(page).toHaveURL(/\/account$/);
-    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: ACCOUNT_GREETING })).toBeVisible();
   });
 
   test("a stale cookie is cleared, so the landing page does not become unreachable", async ({
