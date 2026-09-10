@@ -20,6 +20,7 @@ const USER = {
   email: "samlee@gmail.com",
   platformId: "BQ-48213967",
   username: "user_48213967",
+  kycStatus: "NOT_STARTED",
   status: "ACTIVE",
   emailVerified: true,
 };

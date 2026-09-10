@@ -85,3 +85,51 @@ export const usernameForm = z.object({
     .regex(/^[A-Za-z0-9_]+$/, { error: "Use letters, numbers and underscores only" }),
 });
 export type UsernameForm = z.infer<typeof usernameForm>;
+
+/*
+  Identity verification, split the way the form is: what the document is, then
+  what it says. Mirrors the server's rules in @abay/contracts; the server is
+  the authority and checks all of it again.
+*/
+export const kycDocumentForm = z.object({
+  country: z
+    .string()
+    .regex(/^[A-Z]{2}$/, { error: "Choose the country that issued your document" }),
+  documentType: z.enum(["NATIONAL_ID", "PASSPORT", "DRIVERS_LICENSE"]),
+});
+export type KycDocumentForm = z.infer<typeof kycDocumentForm>;
+
+/** 18 is the age of majority in Ethiopia, and the floor for holding money here. */
+const MINIMUM_AGE_YEARS = 18;
+
+function yearsSince(iso: string): number {
+  const from = new Date(iso + "T00:00:00Z");
+  const now = new Date();
+  let years = now.getUTCFullYear() - from.getUTCFullYear();
+  const months = now.getUTCMonth() - from.getUTCMonth();
+  if (months < 0 || (months === 0 && now.getUTCDate() < from.getUTCDate())) years -= 1;
+  return years;
+}
+
+export const kycDetailsForm = z.object({
+  legalName: z
+    .string()
+    .trim()
+    .min(2, { error: "Enter your full name as printed on your document" })
+    .max(120, { error: "That name is too long" }),
+  dateOfBirth: z
+    .string()
+    .regex(/^\\d{4}-\\d{2}-\\d{2}$/, { error: "Enter your date of birth" })
+    .refine((value) => yearsSince(value) >= MINIMUM_AGE_YEARS, {
+      error: "You must be at least " + MINIMUM_AGE_YEARS + " to use BIRQ",
+    })
+    .refine((value) => yearsSince(value) <= 120, { error: "Enter a real date of birth" }),
+  documentNumber: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(4, { error: "Enter the number printed on your document" })
+    .max(40, { error: "That document number is too long" })
+    .regex(/^[A-Z0-9][A-Z0-9 /-]*$/, { error: "Use letters, numbers, spaces, dashes and slashes" }),
+});
+export type KycDetailsForm = z.infer<typeof kycDetailsForm>;

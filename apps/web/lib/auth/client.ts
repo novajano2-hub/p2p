@@ -54,7 +54,7 @@ function readApiUrl(): string {
   const value = process.env.NEXT_PUBLIC_API_URL;
   if (!value) {
     throw new Error(
-      "NEXT_PUBLIC_API_URL is not set. Copy apps/web/.env.example to apps/web/.env.local.",
+      "NEXT_PUBLIC_API_URL is not set. Copy .env.example to .env at the repository root.",
     );
   }
   return value.replace(/\/+$/, "");
@@ -74,6 +74,20 @@ export type AuthErrorCode =
 
 export type AuthResult = { ok: true } | { ok: false; code: AuthErrorCode; message: string };
 
+export type KycStatus = "NOT_STARTED" | "PENDING" | "APPROVED" | "REJECTED";
+export type KycDocumentType = "NATIONAL_ID" | "PASSPORT" | "DRIVERS_LICENSE";
+
+/** Where verification stands, and why it was refused if it was. */
+export type KycState = {
+  status: KycStatus;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+};
+
+export type KycResult =
+  { ok: true; state: KycState } | { ok: false; code: AuthErrorCode; message: string };
+
 export type UserStatus = "ACTIVE" | "SUSPENDED" | "CLOSED";
 
 export type SessionUser = {
@@ -84,6 +98,8 @@ export type SessionUser = {
   username: string;
   status: UserStatus;
   emailVerified: boolean;
+  /** Drives what the account may do, and the verification prompt on the home page. */
+  kycStatus: KycStatus;
 };
 
 export type SessionResult =
@@ -120,6 +136,17 @@ export interface AuthClient {
 
   /** Changes the username. Resolves with the updated user. */
   updateUsername(input: { username: string }): Promise<SessionResult>;
+
+  /** Where identity verification stands. */
+  kycState(): Promise<KycResult>;
+  /** Sends the details for an administrator to review. */
+  submitKyc(input: {
+    legalName: string;
+    dateOfBirth: string;
+    country: string;
+    documentType: KycDocumentType;
+    documentNumber: string;
+  }): Promise<KycResult>;
 }
 
 const sessionUserSchema = z.object({
@@ -129,6 +156,14 @@ const sessionUserSchema = z.object({
   username: z.string(),
   status: z.enum(["ACTIVE", "SUSPENDED", "CLOSED"]),
   emailVerified: z.boolean(),
+  kycStatus: z.enum(["NOT_STARTED", "PENDING", "APPROVED", "REJECTED"]),
+});
+
+const kycStateSchema = z.object({
+  status: z.enum(["NOT_STARTED", "PENDING", "APPROVED", "REJECTED"]),
+  submittedAt: z.string().nullable(),
+  reviewedAt: z.string().nullable(),
+  rejectionReason: z.string().nullable(),
 });
 const sessionResponseSchema = z.object({ user: sessionUserSchema });
 const ticketResponseSchema = z.object({ ticket: z.string().min(1) });
@@ -393,6 +428,18 @@ export const apiAuthClient: AuthClient = {
       body: JSON.stringify({ username }),
     });
     return result.ok ? { ok: true, user: result.data.user } : result;
+  },
+
+  /* -------------------------------------------------------------------- kyc */
+
+  async kycState() {
+    const result = await send("/v1/kyc", kycStateSchema, { method: "GET" });
+    return result.ok ? { ok: true, state: result.data } : result;
+  },
+
+  async submitKyc(input) {
+    const result = await post("/v1/kyc", input, kycStateSchema);
+    return result.ok ? { ok: true, state: result.data } : result;
   },
 };
 

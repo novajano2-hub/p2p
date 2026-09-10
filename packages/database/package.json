@@ -19,7 +19,8 @@
     "migrate:deploy": "prisma migrate deploy",
     "migrate:status": "prisma migrate status",
     "migrate:check": "node scripts/migrate-check.mjs",
-    "studio": "prisma studio"
+    "studio": "prisma studio",
+    "kyc:review": "node scripts/review-kyc.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

@@ -54,13 +54,89 @@ model User {
 
   status UserStatus @default(ACTIVE)
 
+  /// Where this account stands with identity verification. Denormalised from
+  /// the newest KycSubmission on purpose: every authenticated request reads it
+  /// to decide what the account may do, and that must not need a join. The
+  /// submission rows remain the record of how it got here.
+  kycStatus KycStatus @default(NOT_STARTED) @map("kyc_status")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  identities AuthIdentity[]
-  sessions   Session[]
+  identities      AuthIdentity[]
+  sessions        Session[]
+  kycSubmissions  KycSubmission[]
 
   @@map("users")
+}
+
+/// One attempt at identity verification. Kept for every attempt, not just the
+/// current one: "who approved this account, when, and on what evidence" is a
+/// question a regulator and an incident review both ask, and a rejected
+/// attempt is part of the answer.
+model KycSubmission {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Personal data (docs/architecture/data-classification.md). Held because
+  /// the law requires us to know who we are holding money for; never shown to
+  /// a counterparty, and never leaves the server except to an administrator.
+  legalName      String   @map("legal_name")
+  dateOfBirth    DateTime @map("date_of_birth") @db.Date
+  /// ISO 3166-1 alpha-2, upper case.
+  country        String
+  documentType   KycDocumentType @map("document_type")
+  documentNumber String          @map("document_number")
+
+  status KycSubmissionStatus @default(PENDING)
+
+  /// Set when an administrator decides. `reviewedBy` will reference the admin
+  /// realm's own table once it exists (Phase 1 step 3); until then it holds
+  /// the identifier of whoever ran the review, so the trail is never blank.
+  reviewedAt      DateTime? @map("reviewed_at")
+  reviewedBy      String?   @map("reviewed_by")
+  /// Shown to the customer when rejected, so a retry can fix the actual problem.
+  rejectionReason String?   @map("rejection_reason")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The two reads that happen often: this customer's attempts, and the
+  /// administrator's queue of everything still waiting.
+  @@index([userId])
+  @@index([status, createdAt])
+  @@map("kyc_submissions")
+}
+
+enum KycStatus {
+  /// Never submitted. Can trade in small amounts; cannot post an offer.
+  NOT_STARTED
+  /// Submitted, waiting for an administrator. Limits stay as they were.
+  PENDING
+  /// An administrator confirmed the identity. Full limits.
+  APPROVED
+  /// An administrator refused it. The customer may correct and submit again.
+  REJECTED
+
+  @@map("kyc_status")
+}
+
+enum KycSubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("kyc_submission_status")
+}
+
+enum KycDocumentType {
+  /// Ethiopian national ID (Fayda) or an equivalent government card.
+  NATIONAL_ID
+  PASSPORT
+  DRIVERS_LICENSE
+
+  @@map("kyc_document_type")
 }
 
 enum UserStatus {

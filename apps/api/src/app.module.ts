@@ -8,6 +8,7 @@ import { PrismaModule } from "@/infra/prisma/prisma.module";
 import { RedisModule } from "@/infra/redis/redis.module";
 import { AuthModule } from "@/modules/auth/auth.module";
 import { HealthModule } from "@/modules/health/health.module";
+import { KycModule } from "@/modules/kyc/kyc.module";
 
 /*
   The HTTP application. Feature modules (auth, ledger, offers, trades, ...)
@@ -26,6 +27,7 @@ export class AppModule {
         RedisModule,
         HealthModule,
         AuthModule,
+        KycModule,
       ],
       providers: [AppExceptionFilter],
     };

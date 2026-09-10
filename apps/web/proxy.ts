@@ -28,7 +28,7 @@ const LANDING = "/";
 /** Where an authenticated customer belongs. Mirrors `afterAuth` in lib/site.ts. */
 const APP_ENTRY = "/account";
 /** Every route behind a session. Mirrors `appRoutes` in lib/app-nav.ts. */
-const APP_ROUTES = new Set(["/account", "/trade", "/orders", "/wallet", "/settings"]);
+const APP_ROUTES = new Set(["/account", "/trade", "/orders", "/wallet", "/settings", "/verify"]);
 
 export function proxy(request: NextRequest): NextResponse {
   const signedIn = request.cookies.has(SESSION_COOKIE);
@@ -48,4 +48,6 @@ export function proxy(request: NextRequest): NextResponse {
   the jar: finishing a password reset, or signing in as someone else, both mean
   arriving at those pages while one is still there.
 */
-export const config = { matcher: ["/", "/account", "/trade", "/orders", "/wallet", "/settings"] };
+export const config = {
+  matcher: ["/", "/account", "/trade", "/orders", "/wallet", "/settings", "/verify"],
+};
