@@ -22,20 +22,22 @@ import { NextResponse, type NextRequest } from "next/server";
 */
 
 /** Set by the API (apps/api/src/modules/auth/session.service.ts). */
-const SESSION_COOKIE = "abay_session";
+const SESSION_COOKIE = "birq_session";
 
 const LANDING = "/";
 /** Where an authenticated customer belongs. Mirrors `afterAuth` in lib/site.ts. */
 const APP_ENTRY = "/account";
+/** Every route behind a session. Mirrors `appRoutes` in lib/app-nav.ts. */
+const APP_ROUTES = new Set(["/account", "/trade", "/orders", "/wallet", "/settings"]);
 
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
   const signedIn = request.cookies.has(SESSION_COOKIE);
   const { pathname } = request.nextUrl;
 
   if (signedIn && pathname === LANDING) {
     return NextResponse.redirect(new URL(APP_ENTRY, request.url));
   }
-  if (!signedIn && pathname === APP_ENTRY) {
+  if (!signedIn && APP_ROUTES.has(pathname)) {
     return NextResponse.redirect(new URL(LANDING, request.url));
   }
   return NextResponse.next();
@@ -46,4 +48,4 @@ export function middleware(request: NextRequest): NextResponse {
   the jar: finishing a password reset, or signing in as someone else, both mean
   arriving at those pages while one is still there.
 */
-export const config = { matcher: ["/", "/account"] };
+export const config = { matcher: ["/", "/account", "/trade", "/orders", "/wallet", "/settings"] };

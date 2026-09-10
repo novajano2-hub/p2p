@@ -39,6 +39,19 @@ model User {
   /// route before this is set.
   emailVerifiedAt DateTime?
 
+  /// The customer-facing account number, "BQ-" and eight digits, assigned at
+  /// creation and never changed. What a person quotes to support and shows a
+  /// counterparty; random, so it is neither guessable nor a count of accounts.
+  platformId String @unique @map("platform_id")
+
+  /// Chosen by the customer, shown to counterparties. Starts as a generated
+  /// placeholder and can be changed. Uniqueness is case-insensitive, enforced
+  /// on the lower-cased copy below; this column keeps the casing they typed.
+  username String
+
+  /// Lower-cased `username`, the column the unique index lives on.
+  usernameKey String @unique @map("username_key")
+
   status UserStatus @default(ACTIVE)
 
   createdAt DateTime @default(now())

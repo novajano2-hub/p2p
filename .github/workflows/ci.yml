@@ -110,7 +110,7 @@ jobs:
       CORS_ORIGINS: http://localhost:3000
       WEB_URL: http://localhost:3000
       API_URL: http://localhost:3001
-      EMAIL_FROM: Abay <test@example.com>
+      EMAIL_FROM: BIRQ <test@example.com>
       # Dummies: the Google routes must exist to be tested; nothing reaches Google.
       GOOGLE_CLIENT_ID: test-google-client-id
       GOOGLE_CLIENT_SECRET: test-google-client-secret
@@ -165,7 +165,7 @@ jobs:
       - run: npm run build -w api
 
       - name: Build the container image
-        run: docker build -f apps/api/Dockerfile -t abay-api:ci .
+        run: docker build -f apps/api/Dockerfile -t birq-api:ci .
 
   security:
     name: Dependency audit and secret scan

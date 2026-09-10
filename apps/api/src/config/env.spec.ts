@@ -5,7 +5,7 @@ const valid = {
   CORS_ORIGINS: "http://localhost:3000, https://app.example.com",
   WEB_URL: "http://localhost:3000",
   API_URL: "http://localhost:3001",
-  EMAIL_FROM: "Abay <no-reply@example.com>",
+  EMAIL_FROM: "BIRQ <no-reply@example.com>",
   DATABASE_URL: "postgresql://abay_app:app@localhost:5432/abay?schema=public",
   REDIS_URL: "redis://localhost:6379",
 };

@@ -1,4 +1,4 @@
-# Abay (placeholder name)
+# BIRQ (placeholder name)
 
 A peer-to-peer marketplace for trading USDT against Ethiopian birr. Custodial, pooled
 wallets; an immutable double-entry ledger; escrow as an internal ledger hold; the birr leg

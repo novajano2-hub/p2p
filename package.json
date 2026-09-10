@@ -2,7 +2,7 @@
   "name": "abay-p2p",
   "version": "0.0.0",
   "private": true,
-  "description": "ETB/USDT peer-to-peer marketplace. Placeholder brand: Abay.",
+  "description": "ETB/USDT peer-to-peer marketplace. BIRQ.",
   "workspaces": [
     "apps/*",
     "packages/*"

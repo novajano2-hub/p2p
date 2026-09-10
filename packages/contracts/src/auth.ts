@@ -87,6 +87,22 @@ export type PasswordResetVerifyRequest = z.infer<typeof passwordResetVerifyReque
 export const passwordResetCompleteRequest = z.object({ ticket, password });
 export type PasswordResetCompleteRequest = z.infer<typeof passwordResetCompleteRequest>;
 
+/* Profile */
+
+/**
+ * Chosen by the customer and shown to counterparties. Letters, digits and
+ * underscores only, so it can never look like an email, a number or markup.
+ */
+export const username = z
+  .string()
+  .trim()
+  .min(3, { error: "Use at least 3 characters" })
+  .max(20, { error: "Use at most 20 characters" })
+  .regex(/^[A-Za-z0-9_]+$/, { error: "Use letters, numbers and underscores only" });
+
+export const updateProfileRequest = z.object({ username });
+export type UpdateProfileRequest = z.infer<typeof updateProfileRequest>;
+
 /* Session */
 
 export const userStatus = z.enum(["ACTIVE", "SUSPENDED", "CLOSED"]);
@@ -96,6 +112,9 @@ export type UserStatus = z.infer<typeof userStatus>;
 export const sessionUser = z.object({
   id: z.string(),
   email: z.string(),
+  /** The customer-facing account number, "BQ-" and eight digits. Never changes. */
+  platformId: z.string(),
+  username: z.string(),
   status: userStatus,
   emailVerified: z.boolean(),
 });

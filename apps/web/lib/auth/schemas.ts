@@ -74,3 +74,14 @@ export type LoginPasswordForm = z.infer<typeof loginPasswordForm>;
 
 export const recoverForm = z.object({ email: emailSchema });
 export type RecoverForm = z.infer<typeof recoverForm>;
+
+/** Mirrors the server's rule for a username (packages/contracts/src/auth.ts). */
+export const usernameForm = z.object({
+  username: z
+    .string()
+    .trim()
+    .min(3, { error: "Use at least 3 characters" })
+    .max(20, { error: "Use at most 20 characters" })
+    .regex(/^[A-Za-z0-9_]+$/, { error: "Use letters, numbers and underscores only" }),
+});
+export type UsernameForm = z.infer<typeof usernameForm>;

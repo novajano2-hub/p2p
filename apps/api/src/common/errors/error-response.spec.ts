@@ -6,7 +6,7 @@ import {
 import { z } from "zod";
 
 import { AppError } from "./app-error";
-import { INTERNAL_ERROR_MESSAGE, toErrorResponse } from "./error-response";
+import { INTERNAL_ERROR_MESSAGE, UNAVAILABLE_MESSAGE, toErrorResponse } from "./error-response";
 
 const id = "req-0123456789";
 
@@ -68,6 +68,32 @@ describe("toErrorResponse", () => {
       expect(result.body.error.correlationId).toBe(id);
     }
     expect(JSON.stringify(fromAnywhere.body)).not.toContain("10.0.0.5");
+  });
+
+  it("answers 503, not 500, when a dependency is unreachable", () => {
+    // What ioredis throws with enableOfflineQueue disabled and no connection.
+    const redisDown = new Error("Stream isn't writeable and enableOfflineQueue options is false");
+    // What Prisma throws when the database server is not there.
+    const databaseDown = Object.assign(new Error("Can't reach database server at localhost:5433"), {
+      name: "PrismaClientInitializationError",
+      errorCode: "P1001",
+    });
+    const socketRefused = Object.assign(new Error("connect ECONNREFUSED"), {
+      code: "ECONNREFUSED",
+    });
+
+    for (const error of [redisDown, databaseDown, socketRefused]) {
+      const result = toErrorResponse(error, id);
+      expect(result.status).toBe(503);
+      expect(result.body.error.code).toBe("NOT_READY");
+      expect(result.body.error.message).toBe(UNAVAILABLE_MESSAGE);
+      // An outage is not a handler bug, but it still belongs in the log with
+      // its stack: something operational has to be fixed.
+      expect(result.unexpected).toBe(true);
+    }
+
+    // And it still says nothing about where the dependency lives.
+    expect(JSON.stringify(toErrorResponse(databaseDown, id).body)).not.toContain("5433");
   });
 
   it("recognises errors Fastify raises before a handler runs", () => {

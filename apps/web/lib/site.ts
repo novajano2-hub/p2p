@@ -1,16 +1,12 @@
 /**
- * Brand and site configuration.
- *
- * "Abay" is a PLACEHOLDER name (the Blue Nile). Everything brand-specific on the
- * marketing site reads from this file so the real name is a one-file change.
+ * Brand and site configuration. Everything brand-specific reads from here.
  */
 export const site = {
-  name: "Abay",
+  name: "BIRQ",
   tagline: "Trade USDT for birr, held in escrow.",
   description:
     "A peer-to-peer marketplace for buying and selling USDT with Ethiopian birr. The USDT is locked in escrow when a trade starts and released only when you confirm the birr arrived.",
   locale: "en",
-  isPlaceholderBrand: true,
 } as const;
 
 export const nav = [

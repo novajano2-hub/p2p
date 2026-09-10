@@ -49,6 +49,12 @@
   --border: #dadfd6;
   --mist: #ecefea;
 
+  /* The brand kit's palette for components/brand/logo.tsx: charcoal and lime
+     on a light ground, all lime with off-white lettering on a dark one. */
+  --brand-mark: #171b18;
+  --brand-leaf: #b9ed67;
+  --brand-wordmark: #171b18;
+
   --accent: #183d32;
   --accent-hover: #12302a;
   --accent-contrast: #f6f4ee;
@@ -85,16 +91,9 @@
 
 /*
   An explicit choice pins the scheme: the browser has nothing left to infer.
-  Only forced-LIGHT is complete today, because the light tokens above are the
-  default and the dark block below already excludes [data-theme="light"].
-
-  Forced-DARK is deliberately absent. Adding `:root[data-theme="dark"] {
-  color-scheme: dark }` here without also binding the dark tokens to that
-  selector would give dark scrollbars and form controls on a light page: the
-  exact half-themed result this file exists to prevent. When the signed-in
-  preference control is built, the dark tokens must move to a selector both
-  the media query and [data-theme="dark"] can share, rather than being
-  duplicated and left to drift.
+  Light needs only the pin, because the light tokens are the defaults; dark
+  is bound to the same tokens as system dark in the block after the media
+  query below.
 */
 :root[data-theme="light"] {
   color-scheme: light;
@@ -111,6 +110,11 @@
     --sage: #7d8c83;
     --border: #2b332f;
     --mist: #202724;
+
+    /* On a dark ground the whole mark is lime, per the brand kit. */
+    --brand-mark: #b9ed67;
+    --brand-leaf: #b9ed67;
+    --brand-wordmark: #f4f6f2;
 
     --accent: #6cc39c;
     --accent-hover: #86d2b0;
@@ -144,6 +148,52 @@
     --raised-soft-shadow: 0 1px 1px rgb(0 0 0 / 0.4), 0 2px 5px -1px rgb(0 0 0 / 0.45);
     --raised-soft-shadow-hover: 0 2px 4px rgb(0 0 0 / 0.45), 0 8px 18px -6px rgb(0 0 0 / 0.55);
   }
+}
+
+/*
+  An explicit dark choice. These declarations are the dark palette above,
+  applied on the attribute instead of the media query; the two lists are kept
+  identical, and lib/theme.ts is the only thing that sets the attribute.
+  Change a dark token in the media block above and change it here too.
+*/
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: #121614;
+  --surface: #1a201d;
+  --ink: #e9ede8;
+  --moss: #a3ada6;
+  --sage: #7d8c83;
+  --border: #2b332f;
+  --mist: #202724;
+  --brand-mark: #b9ed67;
+  --brand-leaf: #b9ed67;
+  --brand-wordmark: #f4f6f2;
+  --accent: #6cc39c;
+  --accent-hover: #86d2b0;
+  --accent-contrast: #0d1411;
+  --accent-soft: #1c2b25;
+  --accent-soft-contrast: #a7dcc3;
+  --clay: #e08476;
+  --clay-contrast: #1b0f0d;
+  --status-complete: #16301f;
+  --status-complete-fg: #8ed6ab;
+  --status-pending: #33260f;
+  --status-pending-fg: #e6bb78;
+  --status-attention: #351a19;
+  --status-attention-fg: #f09b8e;
+  --status-neutral: #242b27;
+  --status-neutral-fg: #b0bab3;
+  --hero-glow-a: rgb(108 195 156 / 0.1);
+  --hero-glow-b: rgb(30 46 39 / 0.85);
+  --hero-wash: #161d19;
+  --cta-wash: rgb(28 43 37 / 0.55);
+  --panel-shadow: 0 1px 2px rgb(0 0 0 / 0.45), 0 10px 28px -14px rgb(0 0 0 / 0.75);
+  --raised-shadow: 0 1px 1px rgb(0 0 0 / 0.5), 0 2px 6px -1px rgb(0 0 0 / 0.55);
+  --raised-shadow-hover: 0 2px 4px rgb(0 0 0 / 0.5), 0 10px 22px -6px rgb(108 195 156 / 0.28);
+  --pressed-shadow: inset 0 1px 3px rgb(0 0 0 / 0.55);
+  --raised-soft-shadow: 0 1px 1px rgb(0 0 0 / 0.4), 0 2px 5px -1px rgb(0 0 0 / 0.45);
+  --raised-soft-shadow-hover: 0 2px 4px rgb(0 0 0 / 0.45), 0 8px 18px -6px rgb(0 0 0 / 0.55);
 }
 
 @theme inline {

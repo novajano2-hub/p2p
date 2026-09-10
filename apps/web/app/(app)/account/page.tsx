@@ -1,13 +1,10 @@
 import type { Metadata } from "next";
 
-import { SessionPanel } from "@/components/account/session-panel";
+import { AccountHome } from "@/components/account/account-home";
+import { appRobots } from "@/lib/app-nav";
 
-export const metadata: Metadata = {
-  title: "Your account",
-  // Nothing behind a session should ever be indexed.
-  robots: { index: false, follow: false },
-};
+export const metadata: Metadata = { title: "Home", robots: appRobots };
 
 export default function AccountPage() {
-  return <SessionPanel />;
+  return <AccountHome />;
 }

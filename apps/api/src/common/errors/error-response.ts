@@ -15,6 +15,9 @@ import { AppError } from "./app-error";
 export const INTERNAL_ERROR_MESSAGE =
   "Something went wrong on our side. Quote the correlation ID if you contact support.";
 
+export const UNAVAILABLE_MESSAGE =
+  "We cannot reach a service we depend on right now. Please try again in a moment.";
+
 const STATUS_TO_CODE: Readonly<Record<number, ErrorCode>> = {
   400: "VALIDATION_FAILED",
   401: "UNAUTHENTICATED",
@@ -62,6 +65,50 @@ function messageOf(exception: HttpException): string {
   return exception.message;
 }
 
+/*
+  Postgres or Redis being unreachable is not a bug in a handler, and answering
+  it with 500 "something went wrong on our side" tells the caller nothing they
+  can act on. It is a 503: the service is not ready, the request is worth
+  retrying, and /ready is saying the same thing at the same moment. Still
+  logged with its stack, because an outage should be loud.
+*/
+const UNAVAILABLE_CODES = new Set([
+  // Sockets, for Redis and anything else that dials out.
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EPIPE",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  // Prisma: cannot reach, or timed out reaching, the database server.
+  "P1000",
+  "P1001",
+  "P1002",
+  "P1017",
+]);
+
+/** ioredis reports a dead connection by message rather than by code. */
+const UNAVAILABLE_MESSAGES = [
+  "Stream isn't writeable",
+  "Connection is closed",
+  "max retries per request",
+];
+
+function isDependencyUnavailable(value: unknown): boolean {
+  if (!(value instanceof Error)) return false;
+  const candidate = value as Error & { code?: unknown; errorCode?: unknown };
+  const code =
+    typeof candidate.code === "string"
+      ? candidate.code
+      : typeof candidate.errorCode === "string"
+        ? candidate.errorCode
+        : undefined;
+  if (code !== undefined && UNAVAILABLE_CODES.has(code)) return true;
+  if (value.name === "MaxRetriesPerRequestError") return true;
+  if (value.name === "PrismaClientInitializationError") return true;
+  return UNAVAILABLE_MESSAGES.some((fragment) => value.message.includes(fragment));
+}
+
 /** Errors Fastify raises itself, before a Nest handler is reached. */
 function isFastifyError(value: unknown): value is Error & { statusCode: number; code: string } {
   if (!(value instanceof Error)) return false;
@@ -106,6 +153,14 @@ export function toErrorResponse(exception: unknown, correlationId: string): Erro
     const code = STATUS_TO_CODE[status] ?? "INTERNAL";
     const message = status < 500 ? exception.message : INTERNAL_ERROR_MESSAGE;
     return { status, body: envelope(code, message, correlationId), unexpected: status >= 500 };
+  }
+
+  if (isDependencyUnavailable(exception)) {
+    return {
+      status: 503,
+      body: envelope("NOT_READY", UNAVAILABLE_MESSAGE, correlationId),
+      unexpected: true,
+    };
   }
 
   return {
