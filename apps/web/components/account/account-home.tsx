@@ -1,15 +1,13 @@
 "use client";
 
 import { ActiveTrades } from "@/components/account/active-trades";
-import { KycCard, KycPill } from "@/components/account/kyc-card";
+import { KycCard } from "@/components/account/kyc-card";
 import { MarketSnapshot } from "@/components/account/market-snapshot";
 import { QuickActions } from "@/components/account/quick-actions";
 import { RecentActivity } from "@/components/account/recent-activity";
 import { WalletCard } from "@/components/account/wallet-card";
-import { UidChip } from "@/components/app/copy-button";
 import { PageHeader } from "@/components/app/panel";
 import { useSession } from "@/components/app/session-provider";
-import { StatusPill } from "@/components/ui/status-pill";
 import { timeGreeting } from "@/lib/greeting";
 
 /*
@@ -28,13 +26,7 @@ export function AccountHome() {
 
   return (
     <>
-      <PageHeader title={`${timeGreeting()}, ${user.username}`}>
-        <UidChip platformId={user.platformId} />
-        <KycPill />
-        <StatusPill status={user.status === "ACTIVE" ? "complete" : "attention"}>
-          {user.status === "ACTIVE" ? "Account active" : "Account suspended"}
-        </StatusPill>
-      </PageHeader>
+      <PageHeader title={`${timeGreeting()}, ${user.username}`} />
 
       <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
         <KycCard className="lg:col-span-3" />
