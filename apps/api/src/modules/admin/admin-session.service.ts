@@ -2,6 +2,7 @@ import { type AdminUser, type SessionEndReason } from "@abay/database";
 import { Inject, Injectable } from "@nestjs/common";
 import { type FastifyReply, type FastifyRequest } from "fastify";
 
+import { CSRF_HEADER, csrfTokenFor } from "@/common/security/csrf";
 import { ENV } from "@/config/config.module";
 import { type Env } from "@/config/env";
 import { PrismaService } from "@/infra/prisma/prisma.service";
@@ -27,6 +28,12 @@ export const ADMIN_SESSION_COOKIE = "birq_admin_session";
 export interface AdminSessionContext {
   sessionId: string;
   admin: AdminUser;
+  /**
+   * What a mutation on this session has to present in the x-csrf-token header.
+   * A different value from the one the same token would produce in the customer
+   * realm, on purpose: the realms share nothing, including this.
+   */
+  csrfToken: string;
 }
 
 @Injectable()
@@ -74,6 +81,14 @@ export class AdminSessionService {
         to avoid. Host-only keeps it on admin.birq.com and nowhere else.
       */
     });
+
+    /*
+      And the CSRF token for it. The header is the only workable channel for
+      this in the admin realm: a cookie set here is host-only by the rule above,
+      so script on the web host could not read it, and widening it would undo
+      exactly the separation that rule exists to keep.
+    */
+    void reply.header(CSRF_HEADER, csrfTokenFor("admin", token));
   }
 
   /** The cookie resolved to a live session, or null. Four ways to be dead. */
@@ -111,7 +126,7 @@ export class AdminSessionService {
       });
     }
 
-    return { sessionId: session.id, admin: adminUser };
+    return { sessionId: session.id, admin: adminUser, csrfToken: csrfTokenFor("admin", token) };
   }
 
   /** Revocation is a write, never a delete: the row is part of the trail. */

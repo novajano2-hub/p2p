@@ -2,6 +2,7 @@ import { type SessionEndReason, type User } from "@abay/database";
 import { Inject, Injectable } from "@nestjs/common";
 import { type FastifyReply, type FastifyRequest } from "fastify";
 
+import { CSRF_HEADER, csrfTokenFor } from "@/common/security/csrf";
 import { ENV } from "@/config/config.module";
 import { type Env } from "@/config/env";
 import { PrismaService } from "@/infra/prisma/prisma.service";
@@ -19,6 +20,11 @@ export const SESSION_COOKIE = "birq_session";
 export interface AuthenticatedSession {
   sessionId: string;
   user: User;
+  /**
+   * What a mutation on this session has to present in the x-csrf-token header.
+   * Derived from the cookie, never stored; see common/security/csrf.ts.
+   */
+  csrfToken: string;
 }
 
 @Injectable()
@@ -57,6 +63,15 @@ export class SessionService {
       maxAge: this.env.SESSION_TTL_HOURS * 3_600,
       ...(this.env.COOKIE_DOMAIN ? { domain: this.env.COOKIE_DOMAIN } : {}),
     });
+
+    /*
+      The CSRF token for the session just issued, handed over in the same
+      response as the cookie so the client has both before it can make its
+      first mutation. A header rather than a cookie, and rather than a field in
+      every body that happens to accompany a new session: this way the one
+      place that mints a session is the one place that announces its token.
+    */
+    void reply.header(CSRF_HEADER, csrfTokenFor("customer", token));
   }
 
   /**
@@ -103,7 +118,11 @@ export class SessionService {
       });
     }
 
-    return { sessionId: session.id, user: session.user };
+    return {
+      sessionId: session.id,
+      user: session.user,
+      csrfToken: csrfTokenFor("customer", token),
+    };
   }
 
   /** Revocation is a write, never a delete: the row is the audit trail. */

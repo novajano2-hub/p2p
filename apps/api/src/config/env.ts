@@ -80,6 +80,16 @@ export const envSchema = z
     REDIS_URL: z.url({ protocol: /^rediss?$/, error: "must be a redis:// or rediss:// URL" }),
     SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(0).max(120_000).default(10_000),
 
+    /* Rate limiting, on by default and refused off in production (see below).
+       The only reason to turn it off is the API test suite, where every request
+       comes from 127.0.0.1 and a suite that registers forty accounts would
+       otherwise spend the day's per-IP allowance on itself. The limiter's own
+       behaviour is tested with it on, in test/api/security.spec.ts. */
+    RATE_LIMIT_ENABLED: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((value) => value === "true"),
+
     /* Email. EMAIL_FROM is the sender every verification code goes out as,
        e.g. "BIRQ <no-reply@example.com>". Outside production the API key may
        be left blank, in which case codes are written to the log instead of
@@ -125,6 +135,14 @@ export const envSchema = z
     COOKIE_DOMAIN: z.string().min(1).optional(),
   })
   .superRefine((env, ctx) => {
+    if (env.NODE_ENV === "production" && !env.RATE_LIMIT_ENABLED) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["RATE_LIMIT_ENABLED"],
+        message:
+          "cannot be false in production: it is the only thing between the log-in endpoints and unlimited attempts",
+      });
+    }
     if (env.NODE_ENV === "production" && !env.RESEND_API_KEY) {
       ctx.addIssue({
         code: "custom",

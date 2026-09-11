@@ -120,6 +120,29 @@ const errorSchema = z.object({
   }),
 });
 
+/*
+  The CSRF token for the administrator session this tab is holding, kept apart
+  from the customer client's for the same reason everything else here is: the
+  API derives a different token for each realm, so one is meaningless in the
+  other and neither module can hand the wrong one over.
+
+  A variable, not a cookie. The admin session cookie is deliberately host-only
+  on the API host, so a cookie-delivered token could not be read by script here
+  at all; a header has no such scope, and nothing is left at rest to steal.
+*/
+let csrfToken: string | null = null;
+
+function rememberCsrfToken(headers: Headers): void {
+  const token = headers.get("x-csrf-token");
+  if (token) csrfToken = token;
+}
+
+/** Only on the methods that can change something; a GET would pay for a preflight. */
+function csrfHeader(method: string | undefined): Record<string, string> {
+  const unsafe = method !== undefined && method.toUpperCase() !== "GET";
+  return unsafe && csrfToken ? { "x-csrf-token": csrfToken } : {};
+}
+
 const fail = (code: Failure["code"], message: string): Failure => ({ ok: false, code, message });
 const OFFLINE = fail("OTHER", "We could not reach the server. Check your connection.");
 const UNEXPECTED = fail("OTHER", "Something went wrong. Please try again.");
@@ -135,6 +158,7 @@ async function send<T>(
       ...init,
       headers: {
         ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+        ...csrfHeader(init.method),
         ...init.headers,
       },
       credentials: "include",
@@ -144,6 +168,8 @@ async function send<T>(
   } catch {
     return OFFLINE;
   }
+
+  rememberCsrfToken(response.headers);
 
   const text = await response.text();
   if (!response.ok) {
@@ -204,6 +230,7 @@ export const adminClient = {
         `${apiOrigin()}/v1/admin/kyc/submissions/${submissionId}/documents/${documentId}`,
         { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) },
       );
+      rememberCsrfToken(response.headers);
       if (!response.ok) return null;
       return await response.blob();
     } catch {

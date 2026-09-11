@@ -228,6 +228,38 @@ const tickets: { registration: string | null; login: string | null; reset: strin
   reset: null,
 };
 
+/*
+  The CSRF token for whatever session this tab is holding.
+
+  The API hands it back in the x-csrf-token header of every response that
+  resolved or issued a session, and every request that can change something
+  sends it back in the same header. It is derived from the session token, which
+  lives in an httpOnly cookie, so a page on another origin cannot work it out -
+  which is the whole point (see apps/api/src/common/security/csrf.ts).
+
+  In a variable rather than a cookie or storage, for the same reason as the
+  tickets above: nothing at rest to steal, nothing for another subdomain to
+  read, and it dies with the tab. Refreshed on every response that carries one,
+  so it cannot go stale while the session behind it is still the same.
+*/
+let csrfToken: string | null = null;
+
+/** Picks up a token the API just issued. Called for every response, including failures. */
+function rememberCsrfToken(headers: Headers): void {
+  const token = headers.get("x-csrf-token");
+  if (token) csrfToken = token;
+}
+
+/*
+  Only on the methods that need it. Putting a custom header on a GET would cost
+  it a CORS preflight it does not currently need, and a GET cannot change
+  anything, so there is nothing for a token to protect.
+*/
+function csrfHeader(method: string | undefined): Record<string, string> {
+  const unsafe = method !== undefined && method.toUpperCase() !== "GET";
+  return unsafe && csrfToken ? { "x-csrf-token": csrfToken } : {};
+}
+
 type Failure = { ok: false; code: AuthErrorCode; message: string };
 
 const failure = (code: AuthErrorCode, message: string): Failure => ({ ok: false, code, message });
@@ -267,6 +299,7 @@ async function send<T>(
         // exactly what a bodiless POST like logout is, and it also spares the
         // GETs a CORS preflight they would otherwise need.
         ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+        ...csrfHeader(init.method),
         ...init.headers,
       },
       // Without this the session cookie is neither stored nor sent.
@@ -279,6 +312,8 @@ async function send<T>(
     // deliberately tells script nothing more specific than "it failed".
     return OFFLINE;
   }
+
+  rememberCsrfToken(response.headers);
 
   const text = await response.text();
   if (!response.ok) return failureFrom(response.status, text);
@@ -330,6 +365,14 @@ function failureFrom(status: number, text: string): Failure {
       return PHOTO_TOO_LARGE;
     case "NOT_READY":
       // "We could not send the email": the server's sentence is the useful one.
+      return failure("SERVER", message);
+    case "CSRF_FAILED":
+      /*
+        This tab is holding a token for a session that is no longer the one in
+        the cookie jar - signing in as somebody else in another tab is the way
+        it happens. The server's sentence says to reload, which is right: the
+        rest of what is on screen belongs to the previous session too.
+      */
       return failure("SERVER", message);
     default:
       return UNEXPECTED;
@@ -519,6 +562,7 @@ export const apiAuthClient: AuthClient = {
         cache: "no-store",
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
+      rememberCsrfToken(response.headers);
       if (!response.ok) return null;
       return await response.blob();
     } catch {
@@ -541,10 +585,17 @@ export const apiAuthClient: AuthClient = {
       xhr.withCredentials = true;
       xhr.timeout = UPLOAD_TIMEOUT_MS;
       xhr.setRequestHeader("content-type", file.type || "application/octet-stream");
+      // Same token as every other mutation; this one only looks different
+      // because progress reporting needs XMLHttpRequest rather than fetch.
+      if (csrfToken) xhr.setRequestHeader("x-csrf-token", csrfToken);
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable && onProgress) onProgress(event.loaded / event.total);
       };
-      xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText });
+      xhr.onload = () => {
+        const token = xhr.getResponseHeader("x-csrf-token");
+        if (token) csrfToken = token;
+        resolve({ status: xhr.status, text: xhr.responseText });
+      };
       xhr.onerror = () => resolve(null);
       xhr.ontimeout = () => resolve(null);
       xhr.onabort = () => resolve(null);

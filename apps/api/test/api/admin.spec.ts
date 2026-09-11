@@ -7,7 +7,7 @@ import { createApp } from "@/app";
 import { loadEnv } from "@/config/env";
 import { hashPassword } from "@/modules/auth/tokens";
 
-import { registerFully, uniqueEmail, uploadPhotos } from "./helpers";
+import { csrfFor, registerFully, uniqueEmail, uploadPhotos } from "./helpers";
 
 /*
   The admin realm, over HTTP, against the real database.
@@ -74,6 +74,7 @@ async function pendingSubmission(): Promise<{ userId: string; cookie: string; id
   await request(server())
     .post("/v1/kyc")
     .set("Cookie", customer.cookie)
+    .set("x-csrf-token", csrfFor(customer.cookie))
     .send({ ...DETAILS, documents })
     .expect(202);
   const submission = await db.kycSubmission.findFirstOrThrow({
@@ -175,6 +176,7 @@ describe("the admin realm", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${id}/approve`)
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({})
       .expect(403);
 
@@ -202,6 +204,7 @@ describe("the admin realm", () => {
     const approved = await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/approve`)
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({})
       .expect(200);
     expect(approved.body.status).toBe("APPROVED");
@@ -224,6 +227,7 @@ describe("the admin realm", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/reject`)
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({ reason: "NAME_MISMATCH" })
       .expect(409);
     // It is out of the queue.
@@ -244,6 +248,7 @@ describe("the admin realm", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/reject`)
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({})
       .expect(400);
     // A sentence the administrator typed, which is exactly what this no
@@ -251,6 +256,7 @@ describe("the admin realm", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/reject`)
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({ reason: "The photo is blurry" })
       .expect(400);
     // Still waiting: neither attempt decided anything.
@@ -261,6 +267,7 @@ describe("the admin realm", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/reject`)
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({ reason: "NAME_MISMATCH" })
       .expect(200);
 

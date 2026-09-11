@@ -11,6 +11,13 @@ import { type FastifyReply } from "fastify";
 import { z } from "zod";
 
 import { AppError } from "@/common/errors/app-error";
+import {
+  RateLimit,
+  hours,
+  minutes,
+  perIp,
+  perSession,
+} from "@/common/rate-limit/rate-limit.policy";
 import { ZodValidationPipe, zodBody } from "@/common/validation/zod-validation.pipe";
 import { CurrentSession, SessionGuard } from "@/modules/auth/session.guard";
 import { type AuthenticatedSession } from "@/modules/auth/session.service";
@@ -43,6 +50,15 @@ export class KycController {
   */
   @Post("documents/:kind")
   @HttpCode(201)
+  /*
+    The most expensive thing a customer can ask of this API: ten megabytes a
+    time, straight into object storage, which is billed by what is kept
+    (threat model B5.4, B1.7). Thirty an hour covers three photographs taken
+    several times over and a form abandoned and started again; it does not
+    cover using the bucket as free storage. The per-IP limit sits above it so
+    that one machine cannot do the same through a handful of accounts.
+  */
+  @RateLimit(perSession(30, hours(1)), perIp(60, hours(1)))
   upload(
     @Param("kind", new ZodValidationPipe(kindParam)) kind: KycDocumentKind,
     @Body() body: unknown,
@@ -66,6 +82,9 @@ export class KycController {
     document out of the browser's disk cache.
   */
   @Get("documents/:id")
+  // Reads bytes back out of the store on every call, so it is metered too,
+  // loosely: a form being filled in fetches a few previews at a time.
+  @RateLimit(perSession(120, minutes(5)))
   async document(
     @Param("id", new ZodValidationPipe(documentIdParam)) id: string,
     @CurrentSession() session: AuthenticatedSession,
@@ -79,6 +98,7 @@ export class KycController {
   /** 202: accepted for review, not decided. The answer comes from a person. */
   @Post()
   @HttpCode(202)
+  @RateLimit(perSession(10, hours(1)))
   submit(
     @Body(zodBody(kycSubmissionRequest)) body: KycSubmissionRequest,
     @CurrentSession() session: AuthenticatedSession,

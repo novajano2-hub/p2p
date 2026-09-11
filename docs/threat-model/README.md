@@ -50,16 +50,84 @@ Abbreviations: **S**poofing, **T**ampering, **R**epudiation, **I**nformation dis
 
 ### B1 — Browser → API
 
-| #    | Threat                                                                                      | STRIDE | Control                                                                                                                                                                 | Enforced where          |
-| ---- | ------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| B1.1 | Session theft via XSS                                                                       | S, E   | Strict CSP with no inline script, HTTP-only + `Secure` + `SameSite=Lax` cookies, React auto-escaping, no `dangerouslySetInnerHTML` on user content                      | Web + API headers       |
-| B1.2 | CSRF forcing a withdrawal or release                                                        | T, E   | Double-submit CSRF token on every cookie-authenticated mutation, `SameSite`, origin check                                                                               | API middleware          |
-| B1.3 | **IDOR — reading or acting on another user's trade, address, withdrawal or payment method** | I, E   | Deny-by-default authorization; ownership is a `WHERE` clause in the query, never a post-fetch `if`; a dedicated object-level authorization test per user-owned resource | Repository layer + AT-6 |
-| B1.4 | Client-supplied role, price, fee or amount trusted                                          | T, E   | Zod `.strict()` rejects unknown fields; price and fee are re-read server-side from the offer, never taken from the request; roles come from the session, never the body | API                     |
-| B1.5 | Credential stuffing, account enumeration                                                    | S      | Argon2id, per-account and per-IP rate limits, generic responses for login/recovery/registration, MFA                                                                    | API                     |
-| B1.6 | Double-click or retry causing a double release                                              | T      | `Idempotency-Key` + unique constraint                                                                                                                                   | AT-5                    |
-| B1.7 | Expensive endpoints exhausted (search, history, uploads)                                    | D      | Mandatory pagination, query cost limits, per-action rate limits, upload size/type limits                                                                                | API                     |
-| B1.8 | Stolen session used for a withdrawal                                                        | E      | Step-up authentication at the action, not at login; cooldown after password/MFA/email changes                                                                           | API                     |
+| #    | Threat                                                                                      | STRIDE | Control                                                                                                                                                                                    | Enforced where                              |
+| ---- | ------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| B1.1 | Session theft via XSS                                                                       | S, E   | Strict CSP with no inline script, HTTP-only + `Secure` + `SameSite=Lax` cookies, React auto-escaping, no `dangerouslySetInnerHTML` on user content                                         | Web + API headers                           |
+| B1.2 | CSRF forcing a withdrawal or release                                                        | T, E   | Session-derived CSRF token on every cookie-authenticated mutation, `SameSite`, origin allowlist on every unsafe request. **Built; see note 1 below**                                       | `SessionGuard`, `AdminGuard`, `OriginGuard` |
+| B1.3 | **IDOR — reading or acting on another user's trade, address, withdrawal or payment method** | I, E   | Deny-by-default authorization; ownership is a `WHERE` clause in the query, never a post-fetch `if`; a dedicated object-level authorization test per user-owned resource                    | Repository layer + AT-6                     |
+| B1.4 | Client-supplied role, price, fee or amount trusted                                          | T, E   | Zod `.strict()` rejects unknown fields; price and fee are re-read server-side from the offer, never taken from the request; roles come from the session, never the body                    | API                                         |
+| B1.5 | Credential stuffing, account enumeration                                                    | S      | Argon2id, per-account and per-IP rate limits, generic responses for login/recovery/registration, MFA. **Rate limits built; MFA outstanding**                                               | `RateLimitGuard`                            |
+| B1.6 | Double-click or retry causing a double release                                              | T      | `Idempotency-Key` + unique constraint                                                                                                                                                      | AT-5                                        |
+| B1.7 | Expensive endpoints exhausted (search, history, uploads)                                    | D      | Mandatory pagination, query cost limits, per-action rate limits, upload size/type limits. **Per-action limits and upload limits built; volumetric limiting is the edge's job, see note 2** | `RateLimitGuard`                            |
+| B1.8 | Stolen session used for a withdrawal                                                        | E      | Step-up authentication at the action, not at login; cooldown after password/MFA/email changes                                                                                              | API                                         |
+
+#### Note 1 — what CSRF protection actually is here
+
+The row above used to say "double-submit". What was built is stronger, and the
+difference is worth recording rather than leaving the table to imply the weaker
+thing.
+
+The token is **derived** from the session token, not stored beside it:
+`base64url(sha256("birq.csrf.v1." + realm + "." + sessionToken))`. The session
+token is 256 random bits in an `httpOnly` cookie, so a page on another origin
+cannot read it and therefore cannot compute this.
+
+Two consequences follow, and they are the reason for the change:
+
+- **No cookie is trusted.** The server recomputes the expected token from the
+  session cookie and compares. Classic double-submit compares a cookie against
+  a header, so somebody who can set a cookie on the registrable domain — from a
+  sibling subdomain — satisfies both halves with a value they chose. Here a
+  planted cookie proves nothing, because no cookie is an input.
+- **The token is delivered in the `x-csrf-token` response header**, not a
+  cookie, and the client holds it in a variable. That is also the only channel
+  that works for both realms: the admin session cookie is deliberately
+  host-only (B7.3), so a cookie set by the API host could not be read by script
+  on the web host, and widening it would undo the separation it exists for.
+
+The two realms derive different tokens from the same session token, so one is
+worthless in the other.
+
+Enforcement lives **inside the two auth guards** rather than in a separate
+middleware. "Every cookie-authenticated mutation" is not a list anybody
+maintains — it is exactly the set of unsafe requests those guards admit, so a
+route added later is covered because it needs a session, not because somebody
+remembered to decorate it.
+
+One deliberate exemption: `POST /v1/auth/logout` resolves its session by hand
+rather than through the guard, so it is not token-checked. It is idempotent, it
+can only end the caller's own session, and it has to stay reachable by a client
+that cannot tell whether it is signed in — which is exactly the case where no
+token has been issued yet. A forged sign-out is a nuisance, not a breach, and
+the origin check still refuses it from any origin we do not serve.
+
+The origin allowlist is applied to **every** unsafe request, authenticated or
+not, because that is what covers log-in, registration and recovery: those carry
+no session, so there is no token to ask them for, and a forged log-in lands a
+victim in an account the attacker controls. A request with no `Origin` at all is
+allowed — it is not a browser, so it has no cookie jar to borrow — but it is
+still held to the token check if it authenticates with a cookie.
+
+Asserted in `apps/api/test/api/security.spec.ts` and
+`apps/api/src/common/security/csrf.spec.ts`.
+
+#### Note 2 — what the rate limiter does and does not cover
+
+Per-action limits are declared at each route with `@RateLimit(...)`, keyed by IP
+(IPv6 narrowed to its /64, since one machine is routinely given a whole one),
+by email address where the address is the account under attack, or by session.
+Email addresses and session tokens are hashed before they are used as keys.
+
+The limiter **fails closed** (B3.4): if Redis cannot be reached, a limited
+endpoint answers 503 rather than letting the request through uncounted. Routes
+with no limit declared never touch Redis, so a cache outage degrades sign-in
+rather than everything — which is why the cheap reads deliberately have none.
+
+Not covered, on purpose: a **global volumetric limit** per IP across all routes.
+Putting one in the application would make Redis a dependency of every page view
+for a control that belongs at the edge, where it can drop traffic before it
+costs a process anything. It is part of the same Cloudflare configuration as the
+admin gate in `docs/open-questions.md` Q2a, not application code.
 
 ### B2 — API → PostgreSQL
 
@@ -74,13 +142,13 @@ Abbreviations: **S**poofing, **T**ampering, **R**epudiation, **I**nformation dis
 
 ### B3 — API → Redis / BullMQ
 
-| #    | Threat                                          | STRIDE | Control                                                                                                                      | Enforced where  |
-| ---- | ----------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| B3.1 | **Redis lock treated as financial correctness** | T      | Prohibited by ADR-0009. Redis is for rate limits, queues and disposable cache only; money is protected by database row locks | Design + review |
-| B3.2 | Duplicate job execution credits twice           | T      | Every handler idempotent; natural or explicit idempotency keys                                                               | AT-1, AT-5      |
-| B3.3 | Job payload tampering by a Redis-level attacker | T      | Jobs carry IDs, never amounts or authorization decisions; the handler re-reads and re-authorizes from PostgreSQL             | Workers         |
-| B3.4 | Redis unavailable causes a fail-open            | E      | Rate limiter fails closed; risk engine unavailability routes to `RISK_REVIEW`, never to `APPROVED`                           | API             |
-| B3.5 | Sensitive data cached in Redis                  | I      | No payment instructions, tokens or personal data in cache values                                                             | Review          |
+| #    | Threat                                          | STRIDE | Control                                                                                                                                                                      | Enforced where     |
+| ---- | ----------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| B3.1 | **Redis lock treated as financial correctness** | T      | Prohibited by ADR-0009. Redis is for rate limits, queues and disposable cache only; money is protected by database row locks                                                 | Design + review    |
+| B3.2 | Duplicate job execution credits twice           | T      | Every handler idempotent; natural or explicit idempotency keys                                                                                                               | AT-1, AT-5         |
+| B3.3 | Job payload tampering by a Redis-level attacker | T      | Jobs carry IDs, never amounts or authorization decisions; the handler re-reads and re-authorizes from PostgreSQL                                                             | Workers            |
+| B3.4 | Redis unavailable causes a fail-open            | E      | Rate limiter fails closed (**built**: a limited endpoint answers 503, asserted in security.spec.ts); risk engine unavailability routes to `RISK_REVIEW`, never to `APPROVED` | `RateLimitService` |
+| B3.5 | Sensitive data cached in Redis                  | I      | No payment instructions, tokens or personal data in cache values                                                                                                             | Review             |
 
 ### B4 — API ↔ Custody provider (the critical boundary)
 
@@ -101,7 +169,7 @@ Abbreviations: **S**poofing, **T**ampering, **R**epudiation, **I**nformation dis
 | B5.1 | Malware or a polyglot file served to staff    | T, E   | Size and MIME/magic-byte validation, malware scan **before** staff access, private objects, download via time-limited signed URL, served with `Content-Disposition: attachment` and a restrictive CSP from a separate origin |
 | B5.2 | Evidence from one dispute readable in another | I      | Object keys are unguessable; every access is authorized against the dispute, never by URL possession alone                                                                                                                   |
 | B5.3 | Storage bucket public by misconfiguration     | I      | Public access blocked at the account level; IaC assertion plus a CI check                                                                                                                                                    |
-| B5.4 | Uploads used as free storage / DoS            | D      | Per-dispute count and size caps, per-user rate limit                                                                                                                                                                         |
+| B5.4 | Uploads used as free storage / DoS            | D      | Per-dispute count and size caps, per-user rate limit. **The identity-document upload is limited per session and per IP today; the dispute-evidence caps arrive with disputes**                                               |
 
 ### B6 — Custody ↔ Blockchain
 

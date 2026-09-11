@@ -2,6 +2,9 @@ import { Module, type DynamicModule } from "@nestjs/common";
 
 import { AppExceptionFilter } from "@/common/errors/app-exception.filter";
 import { loggingModule } from "@/common/logging/logging.module";
+import { RateLimitGuard } from "@/common/rate-limit/rate-limit.guard";
+import { RateLimitService } from "@/common/rate-limit/rate-limit.service";
+import { OriginGuard } from "@/common/security/origin.guard";
 import { ConfigModule } from "@/config/config.module";
 import { type Env } from "@/config/env";
 import { PrismaModule } from "@/infra/prisma/prisma.module";
@@ -33,7 +36,12 @@ export class AppModule {
         NotificationsModule,
         AdminModule,
       ],
-      providers: [AppExceptionFilter],
+      /*
+        Registered here and applied in createApp, the same way the exception
+        filter is: the module tree owns construction, and the one place that
+        shapes a request's security posture owns the order they run in.
+      */
+      providers: [AppExceptionFilter, OriginGuard, RateLimitService, RateLimitGuard],
     };
   }
 }

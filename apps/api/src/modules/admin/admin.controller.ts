@@ -12,6 +12,13 @@ import { type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import { AppError } from "@/common/errors/app-error";
+import {
+  RateLimit,
+  minutes,
+  perEmail,
+  perIp,
+  perSession,
+} from "@/common/rate-limit/rate-limit.policy";
 import { ZodValidationPipe, zodBody } from "@/common/validation/zod-validation.pipe";
 import { AdminAuthService, toIdentity } from "@/modules/admin/admin-auth.service";
 import { AdminKycService } from "@/modules/admin/admin-kyc.service";
@@ -45,6 +52,17 @@ export class AdminAuthController {
   */
   @Post("auth/login")
   @HttpCode(200)
+  /*
+    The tightest limit in the application, and the one that matters most.
+
+    This is the single door into the admin realm, it answers to a password
+    alone until MFA lands, and docs/open-questions.md Q2a names a limit here by
+    name as part of the defence-in-depth that goes with putting the realm
+    behind an edge gate. Administrators are a handful of named people who know
+    their own password: five attempts per account in a quarter of an hour is
+    generous for them and useless to anybody else.
+  */
+  @RateLimit(perIp(10, minutes(15)), perEmail(5, minutes(15)))
   async login(
     @Body(zodBody(adminLoginRequest)) body: AdminLoginRequest,
     @Req() request: FastifyRequest,
@@ -57,6 +75,7 @@ export class AdminAuthController {
   @Post("auth/logout")
   @HttpCode(204)
   @UseGuards(AdminGuard)
+  @RateLimit(perSession(30, minutes(15)))
   async logout(
     @CurrentAdmin() session: AdminSessionContext,
     @Res({ passthrough: true }) reply: FastifyReply,
@@ -86,6 +105,13 @@ export class AdminKycController {
   }
 
   @Get("submissions/:id")
+  /*
+    Opening a submission writes an audit event, and both of these move bytes or
+    rows on every call. The numbers are set for a person working a queue -
+    flicking between three photographs on submission after submission - not for
+    a script walking the table.
+  */
+  @RateLimit(perSession(300, minutes(5)))
   open(
     @Param("id", new ZodValidationPipe(idParam)) id: string,
     @CurrentAdmin() session: AdminSessionContext,
@@ -96,6 +122,7 @@ export class AdminKycController {
 
   /** The photograph itself. Streamed through the API; the store's keys never leave it. */
   @Get("submissions/:id/documents/:documentId")
+  @RateLimit(perSession(300, minutes(5)))
   async document(
     @Param("id", new ZodValidationPipe(idParam)) id: string,
     @Param("documentId", new ZodValidationPipe(idParam)) documentId: string,
@@ -109,6 +136,9 @@ export class AdminKycController {
   /** Nothing to validate in the body: approving asks nothing of the administrator. */
   @Post("submissions/:id/approve")
   @HttpCode(200)
+  // A decision is a considered act by a person. Sixty in five minutes is far
+  // more than anyone reviews properly, and far less than a script would want.
+  @RateLimit(perSession(60, minutes(5)))
   approve(
     @Param("id", new ZodValidationPipe(idParam)) id: string,
     @CurrentAdmin() session: AdminSessionContext,
@@ -119,6 +149,7 @@ export class AdminKycController {
 
   @Post("submissions/:id/reject")
   @HttpCode(200)
+  @RateLimit(perSession(60, minutes(5)))
   reject(
     @Param("id", new ZodValidationPipe(idParam)) id: string,
     @Body(zodBody(kycRejectRequest)) body: KycRejectRequest,

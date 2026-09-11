@@ -29,6 +29,19 @@ export class AppError extends Error {
     return new AppError("FORBIDDEN", 403, message);
   }
 
+  /*
+    A cookie-authenticated mutation that cannot be shown to have come from our
+    own pages. 403 rather than 401: the caller is authenticated, and repeating
+    the request with the same credentials will not help. The message says what
+    to do, because the one legitimate way to see this is a page that has been
+    open across a change of session.
+  */
+  static csrfFailed(
+    message = "That request could not be verified. Reload the page and try again.",
+  ) {
+    return new AppError("CSRF_FAILED", 403, message);
+  }
+
   static notFound(message = "Not found.") {
     return new AppError("NOT_FOUND", 404, message);
   }
