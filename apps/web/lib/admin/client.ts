@@ -39,6 +39,34 @@ export type KycReviewItem = {
   documents: { id: string; kind: KycDocumentKind }[];
 };
 
+/*
+  The closed set of reasons a submission may be rejected for, mirroring
+  kycRejectionReason in @abay/contracts (re-declared, like every other shape
+  in this client, so the browser bundle stays independent of the API's
+  build). The label is the exact sentence the customer will read - shown to
+  the administrator as the option itself, not a paraphrase of it, because
+  choosing a reason and knowing what it says to the customer should be the
+  same act.
+*/
+export const KYC_REJECTION_REASONS = {
+  PHOTO_UNREADABLE: "The photo of your document is too blurry, dark, or glared to read clearly.",
+  PHOTO_INCOMPLETE: "The photo does not show the whole document. All four corners must be visible.",
+  NAME_MISMATCH: "The name you entered does not match the name printed on your document.",
+  DATE_OF_BIRTH_MISMATCH: "The date of birth you entered does not match your document.",
+  DOCUMENT_NUMBER_MISMATCH: "The document number you entered does not match your document.",
+  DOCUMENT_EXPIRED: "Your document has expired. Submit one that is still valid.",
+  SELFIE_MISMATCH: "The person in the selfie does not clearly match the photo on the document.",
+  SELFIE_MISSING_DOCUMENT:
+    "Your selfie must show you holding the document, with both your face and the document readable.",
+  DOCUMENT_TYPE_NOT_SUPPORTED:
+    "This is not a document type we can verify. Use a national ID, passport, or driver's licence.",
+  NOT_ETHIOPIAN_DOCUMENT: "We can only verify Ethiopian documents at this time.",
+  SUSPECTED_ALTERED: "The document appears to have been altered or edited.",
+  OTHER: "Check that your details and photos match your document exactly, then try again.",
+} as const;
+
+export type KycRejectionReason = keyof typeof KYC_REJECTION_REASONS;
+
 export type Failure = {
   ok: false;
   code: "AUTH" | "FORBIDDEN" | "CONFLICT" | "OTHER";
@@ -183,15 +211,19 @@ export const adminClient = {
     }
   },
 
-  async approve(id: string, note: string): Promise<Result<{ submission: KycReviewItem }>> {
+  /** Nothing to send: approving asks nothing of the administrator. */
+  async approve(id: string): Promise<Result<{ submission: KycReviewItem }>> {
     const result = await send(`/kyc/submissions/${id}/approve`, reviewItemSchema, {
       method: "POST",
-      body: JSON.stringify(note.trim() ? { note: note.trim() } : {}),
+      body: JSON.stringify({}),
     });
     return result.ok ? { ok: true, submission: result.data } : result;
   },
 
-  async reject(id: string, reason: string): Promise<Result<{ submission: KycReviewItem }>> {
+  async reject(
+    id: string,
+    reason: KycRejectionReason,
+  ): Promise<Result<{ submission: KycReviewItem }>> {
     const result = await send(`/kyc/submissions/${id}/reject`, reviewItemSchema, {
       method: "POST",
       body: JSON.stringify({ reason }),

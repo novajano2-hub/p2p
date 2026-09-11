@@ -1,3 +1,4 @@
+import { KYC_REJECTION_REASONS } from "@abay/contracts";
 import { createPrismaClient, type PrismaClient } from "@abay/database";
 import { type NestFastifyApplication } from "@nestjs/platform-fastify";
 import request from "supertest";
@@ -201,7 +202,7 @@ describe("the admin realm", () => {
     const approved = await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/approve`)
       .set("Cookie", cookie)
-      .send({ note: "Matches the document." })
+      .send({})
       .expect(200);
     expect(approved.body.status).toBe("APPROVED");
 
@@ -223,7 +224,7 @@ describe("the admin realm", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/reject`)
       .set("Cookie", cookie)
-      .send({ reason: "Changed my mind about this one entirely." })
+      .send({ reason: "NAME_MISMATCH" })
       .expect(409);
     // It is out of the queue.
     const after = await request(server())
@@ -234,39 +235,44 @@ describe("the admin realm", () => {
     expect(remaining.some((item) => item.id === submission.id)).toBe(false);
   });
 
-  it("will not reject without a reason the customer can act on", async () => {
+  it("will not reject without choosing one of the fixed reasons", async () => {
     const admin = await makeAdmin();
     const cookie = await signIn(admin.email);
     const submission = await pendingSubmission();
 
+    // No reason at all.
     await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/reject`)
       .set("Cookie", cookie)
       .send({})
       .expect(400);
+    // A sentence the administrator typed, which is exactly what this no
+    // longer accepts: rejecting is choosing from the fixed set, not writing one.
     await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/reject`)
       .set("Cookie", cookie)
-      .send({ reason: "no" })
+      .send({ reason: "The photo is blurry" })
       .expect(400);
     // Still waiting: neither attempt decided anything.
     expect(
       (await db.kycSubmission.findUniqueOrThrow({ where: { id: submission.id } })).status,
     ).toBe("PENDING");
 
-    const reason = "The name on the card does not match the name you entered.";
     await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/reject`)
       .set("Cookie", cookie)
-      .send({ reason })
+      .send({ reason: "NAME_MISMATCH" })
       .expect(200);
 
-    // And the customer is told exactly that, which is the point of requiring it.
+    // The customer reads the reviewed sentence for that code, not a code.
     const state = await request(server())
       .get("/v1/kyc")
       .set("Cookie", submission.cookie)
       .expect(200);
-    expect(state.body).toMatchObject({ status: "REJECTED", rejectionReason: reason });
+    expect(state.body).toMatchObject({
+      status: "REJECTED",
+      rejectionReason: KYC_REJECTION_REASONS.NAME_MISMATCH,
+    });
   });
 
   it("records who looked at somebody's identity documents", async () => {

@@ -1,10 +1,8 @@
 import {
   adminLoginRequest,
-  kycApproveRequest,
   kycRejectRequest,
   type AdminLoginRequest,
   type AdminSessionResponse,
-  type KycApproveRequest,
   type KycQueueResponse,
   type KycRejectRequest,
   type KycReviewItem,
@@ -108,15 +106,15 @@ export class AdminKycController {
     await reply.type(found.contentType).send(found.body);
   }
 
+  /** Nothing to validate in the body: approving asks nothing of the administrator. */
   @Post("submissions/:id/approve")
   @HttpCode(200)
   approve(
     @Param("id", new ZodValidationPipe(idParam)) id: string,
-    @Body(zodBody(kycApproveRequest)) body: KycApproveRequest,
     @CurrentAdmin() session: AdminSessionContext,
     @Req() request: FastifyRequest,
   ): Promise<KycReviewItem> {
-    return this.kyc.approve(id, body.note, session, requestContext(request));
+    return this.kyc.approve(id, session, requestContext(request));
   }
 
   @Post("submissions/:id/reject")

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { kycDocumentKind, kycDocumentType, kycStatus } from "./kyc";
+import { kycDocumentKind, kycDocumentType, kycRejectionReason, kycStatus } from "./kyc";
 
 /*
   The administrator's side of the platform.
@@ -81,20 +81,21 @@ export const kycQueueResponse = z.object({
 export type KycQueueResponse = z.infer<typeof kycQueueResponse>;
 
 /**
- * An approval may carry a note. A rejection must carry a reason, because the
- * customer is shown it and "try again" with no explanation is not a decision
- * they can act on.
+ * Approving asks nothing of the administrator: there is no reason to record
+ * because there is nothing to explain, and no wording to compose because
+ * nobody reads one. The request body is empty on purpose - not optional
+ * fields nobody fills in, an actually empty shape.
  */
-export const kycApproveRequest = z.object({
-  note: z.string().trim().max(500).optional(),
-});
+export const kycApproveRequest = z.object({});
 export type KycApproveRequest = z.infer<typeof kycApproveRequest>;
 
+/**
+ * Rejecting asks for exactly one thing: which of the fixed reasons applies.
+ * Not a sentence the administrator composes - see kycRejectionReason in
+ * ./kyc for why a closed set is the right shape for this, not a shortcut past
+ * a better one.
+ */
 export const kycRejectRequest = z.object({
-  reason: z
-    .string()
-    .trim()
-    .min(10, { error: "Say what was wrong, in a sentence the customer can act on" })
-    .max(500),
+  reason: kycRejectionReason,
 });
 export type KycRejectRequest = z.infer<typeof kycRejectRequest>;

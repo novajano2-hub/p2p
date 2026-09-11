@@ -143,6 +143,60 @@ export const kycDocumentResponse = z.object({
 });
 export type KycDocumentResponse = z.infer<typeof kycDocumentResponse>;
 
+/*
+  Why a submission was refused, as a closed set an administrator chooses from
+  rather than a sentence they type.
+
+  Two things this buys that free text does not. The wording a customer reads
+  is fixed and reviewed once, here, instead of composed fresh - and
+  differently - by whoever happens to be on shift; anyone who has watched a
+  support inbox knows how much that varies under free text. And a closed set
+  is exactly what a rejection reason should be: there is a real, small number
+  of ways a document fails to check out, and naming them is what makes the
+  rejection something the customer can act on rather than read past.
+
+  OTHER exists because the set above it, however careful, cannot be
+  exhaustive - and a reviewer forced to misuse the nearest wrong reason
+  produces advice that sends the customer to fix the wrong thing.
+*/
+export const kycRejectionReason = z.enum([
+  "PHOTO_UNREADABLE",
+  "PHOTO_INCOMPLETE",
+  "NAME_MISMATCH",
+  "DATE_OF_BIRTH_MISMATCH",
+  "DOCUMENT_NUMBER_MISMATCH",
+  "DOCUMENT_EXPIRED",
+  "SELFIE_MISMATCH",
+  "SELFIE_MISSING_DOCUMENT",
+  "DOCUMENT_TYPE_NOT_SUPPORTED",
+  "NOT_ETHIOPIAN_DOCUMENT",
+  "SUSPECTED_ALTERED",
+  "OTHER",
+]);
+export type KycRejectionReason = z.infer<typeof kycRejectionReason>;
+
+/**
+ * The exact sentence a customer reads for each reason. One place, read by the
+ * administrator's picker and by whatever eventually writes the row a customer
+ * sees - so the two can never say something different about the same code.
+ */
+export const KYC_REJECTION_REASONS: Record<KycRejectionReason, string> = {
+  PHOTO_UNREADABLE: "The photo of your document is too blurry, dark, or glared to read clearly.",
+  PHOTO_INCOMPLETE: "The photo does not show the whole document. All four corners must be visible.",
+  NAME_MISMATCH: "The name you entered does not match the name printed on your document.",
+  DATE_OF_BIRTH_MISMATCH: "The date of birth you entered does not match your document.",
+  DOCUMENT_NUMBER_MISMATCH: "The document number you entered does not match your document.",
+  DOCUMENT_EXPIRED: "Your document has expired. Submit one that is still valid.",
+  SELFIE_MISMATCH: "The person in the selfie does not clearly match the photo on the document.",
+  SELFIE_MISSING_DOCUMENT:
+    "Your selfie must show you holding the document, with both your face and the document readable.",
+  DOCUMENT_TYPE_NOT_SUPPORTED:
+    "This is not a document type we can verify. Use a national ID, passport, or driver's licence.",
+  NOT_ETHIOPIAN_DOCUMENT: "We can only verify Ethiopian documents at this time.",
+  SUSPECTED_ALTERED: "The document appears to have been altered or edited.",
+  OTHER: "Check that your details and photos match your document exactly, then try again.",
+} as const;
+
 /**
  * What the customer is told about where they stand. The dates and the reason
  * describe the newest attempt only; the whole history is an administrator's

@@ -1,7 +1,9 @@
 import {
+  KYC_REJECTION_REASONS,
   type KycDocumentKind,
   type KycDocumentType,
   type KycQueueResponse,
+  type KycRejectionReason,
   type KycReviewItem,
 } from "@abay/contracts";
 import { Inject, Injectable } from "@nestjs/common";
@@ -20,8 +22,8 @@ import { NotificationsService } from "@/modules/notifications/notifications.serv
   Verification is the one thing in the platform today that a person has to
   decide, and until now the only way to decide it was a command-line script
   that wrote the rows and left no record of who ran it. That script is gone.
-  Every decision here names an administrator, carries a reason, and commits
-  together with its audit event.
+  Every decision here names an administrator and commits together with its
+  audit event.
 
   Reading a submission is itself recorded. These are photographs of somebody's
   identity document - RESTRICTED data - and the threat model asks for access to
@@ -113,22 +115,29 @@ export class AdminKycService {
     return { body, contentType: document.contentType };
   }
 
+  /** Nothing to say: approving asks nothing of the administrator, and needs no reason. */
   approve(
     submissionId: string,
-    note: string | undefined,
     session: AdminSessionContext,
     context: { correlationId: string; ip?: string | undefined },
   ): Promise<KycReviewItem> {
-    return this.decide(submissionId, "APPROVED", note ?? null, session, context);
+    return this.decide(submissionId, "APPROVED", null, session, context);
   }
 
+  /**
+   * The reason is a code from a fixed set (kycRejectionReason in
+   * @abay/contracts), not a sentence the administrator writes. What is
+   * stored and shown to the customer, and what the audit event carries, is
+   * the canonical wording for that code - resolved here, once, so the
+   * customer always reads the reviewed sentence and never a first draft.
+   */
   reject(
     submissionId: string,
-    reason: string,
+    reason: KycRejectionReason,
     session: AdminSessionContext,
     context: { correlationId: string; ip?: string | undefined },
   ): Promise<KycReviewItem> {
-    return this.decide(submissionId, "REJECTED", reason, session, context);
+    return this.decide(submissionId, "REJECTED", KYC_REJECTION_REASONS[reason], session, context);
   }
 
   /*

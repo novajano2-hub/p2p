@@ -1,22 +1,32 @@
 "use client";
 
-import { ArrowLeft, Warning } from "@phosphor-icons/react";
-import { useRouter } from "next/navigation";
+import { ArrowLeft, CheckCircle, Warning, WarningCircle } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 import { ActionButton, NeedsRole, useAdmin } from "@/components/admin/admin-shell";
+import { ButtonLink } from "@/components/ui/button";
 import { AppLink } from "@/components/ui/app-link";
-import { Field, Input } from "@/components/ui/field";
-import { adminClient, type KycDocumentKind, type KycReviewItem } from "@/lib/admin/client";
+import { Field } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
+import {
+  KYC_REJECTION_REASONS,
+  adminClient,
+  type KycDocumentKind,
+  type KycRejectionReason,
+  type KycReviewItem,
+} from "@/lib/admin/client";
 
 /*
   One submission, and the decision.
 
   The photographs and the typed details are side by side because that is the
-  whole job: the reviewer is checking one against the other. The rejection
-  reason is a required field rather than an optional note, because it is shown
-  to the customer and "rejected" with no explanation is not something they can
-  act on.
+  whole job: the reviewer is checking one against the other. Approving asks
+  nothing further - there is nothing to explain when the answer is yes.
+  Rejecting is choosing one of a fixed set of reasons (lib/admin/client.ts),
+  never a sentence typed on the spot: the wording a customer reads is settled
+  once, here, rather than composed fresh by whoever is on shift, and a closed
+  set is what a rejection reason actually is - a small number of ways a
+  document fails to check out.
 
   Opening this page is recorded on the server. Somebody's identity document is
   on screen, and who looked at it is a question that should have an answer.
@@ -28,18 +38,18 @@ const LABELS: Record<KycDocumentKind, string> = {
   SELFIE: "Holding the document",
 };
 
+const REASON_OPTIONS = Object.entries(KYC_REJECTION_REASONS) as [KycRejectionReason, string][];
+
 const longDate = new Intl.DateTimeFormat("en-GB", { dateStyle: "long" });
 
 type Photo = { id: string; kind: KycDocumentKind; url: string };
 
 export function KycReview({ submissionId }: { submissionId: string }) {
   const admin = useAdmin();
-  const router = useRouter();
   const [item, setItem] = useState<KycReviewItem | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [reason, setReason] = useState("");
-  const [note, setNote] = useState("");
+  const [reason, setReason] = useState<KycRejectionReason | "">("");
   const [decided, setDecided] = useState<"APPROVED" | "REJECTED" | null>(null);
 
   const mayReview = admin.roles.includes("KYC_REVIEWER");
@@ -108,10 +118,15 @@ export function KycReview({ submissionId }: { submissionId: string }) {
           role="status"
           className={
             decided === "APPROVED"
-              ? "rounded-surface bg-status-complete text-status-complete-fg mb-5 px-4 py-3 text-sm font-medium"
-              : "rounded-surface bg-status-attention text-status-attention-fg mb-5 px-4 py-3 text-sm font-medium"
+              ? "rounded-surface bg-status-complete text-status-complete-fg mb-5 flex items-center gap-2.5 px-4 py-3 text-sm font-medium"
+              : "rounded-surface bg-status-attention text-status-attention-fg mb-5 flex items-center gap-2.5 px-4 py-3 text-sm font-medium"
           }
         >
+          {decided === "APPROVED" ? (
+            <CheckCircle size={18} weight="fill" aria-hidden="true" className="shrink-0" />
+          ) : (
+            <WarningCircle size={18} weight="fill" aria-hidden="true" className="shrink-0" />
+          )}
           {decided === "APPROVED"
             ? "Approved. The account has full limits and can post offers."
             : "Rejected. The customer has been told why and can submit again."}
@@ -171,59 +186,87 @@ export function KycReview({ submissionId }: { submissionId: string }) {
 
             {item.status === "PENDING" && !decided ? (
               <div className="mt-6 flex flex-col gap-4">
-                <Field
-                  label="Note (optional)"
-                  hint="Recorded in the audit trail, not shown to the customer."
-                >
-                  {(a11y) => (
-                    <Input
-                      {...a11y}
-                      value={note}
-                      onChange={(event) => setNote(event.target.value)}
-                      placeholder="Anything worth recording"
+                <h2 className="text-foreground text-[15px] font-semibold">Decision</h2>
+
+                <div className="rounded-surface border-status-complete-fg/25 bg-status-complete/40 flex flex-col gap-3 border px-4 py-4">
+                  <div className="flex items-start gap-2.5">
+                    <CheckCircle
+                      size={18}
+                      weight="fill"
+                      aria-hidden="true"
+                      className="text-status-complete-fg mt-0.5 shrink-0"
                     />
-                  )}
-                </Field>
+                    <div>
+                      <p className="text-foreground text-[14px] font-medium">Approve</p>
+                      <p className="text-muted-foreground mt-0.5 text-[12px] leading-relaxed">
+                        The account is lifted to full limits and can post its own offers
+                        immediately.
+                      </p>
+                    </div>
+                  </div>
+                  <ActionButton
+                    label="Approve"
+                    busyLabel="Approving…"
+                    className="w-full"
+                    onRun={async () => {
+                      setError(null);
+                      const result = await adminClient.approve(item.id);
+                      if (result.ok) setDecided("APPROVED");
+                      else setError(result.message);
+                    }}
+                  />
+                </div>
 
-                <ActionButton
-                  label="Approve"
-                  busyLabel="Approving…"
-                  onRun={async () => {
-                    setError(null);
-                    const result = await adminClient.approve(item.id, note);
-                    if (result.ok) setDecided("APPROVED");
-                    else setError(result.message);
-                  }}
-                />
+                <div className="rounded-surface border-status-attention-fg/25 bg-status-attention/30 flex flex-col gap-3 border px-4 py-4">
+                  <div className="flex items-start gap-2.5">
+                    <WarningCircle
+                      size={18}
+                      weight="fill"
+                      aria-hidden="true"
+                      className="text-status-attention-fg mt-0.5 shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-foreground text-[14px] font-medium">Reject</p>
+                      <p className="text-muted-foreground mt-0.5 text-[12px] leading-relaxed">
+                        Choose the reason closest to what is wrong. It is shown to the customer
+                        exactly as written here.
+                      </p>
+                    </div>
+                  </div>
 
-                <div className="border-border border-t pt-4">
-                  <Field
-                    label="Reason for rejecting"
-                    hint="Shown to the customer. Say what to fix, in a sentence."
-                  >
+                  <Field label="Reason">
                     {(a11y) => (
-                      <Input
+                      <Select
                         {...a11y}
                         value={reason}
-                        onChange={(event) => setReason(event.target.value)}
-                        placeholder="The name on the card does not match…"
-                      />
+                        onChange={(event) => setReason(event.target.value as KycRejectionReason)}
+                      >
+                        <option value="" disabled>
+                          Choose a reason&hellip;
+                        </option>
+                        {REASON_OPTIONS.map(([code, label]) => (
+                          <option key={code} value={code}>
+                            {label}
+                          </option>
+                        ))}
+                      </Select>
                     )}
                   </Field>
-                  <div className="mt-3">
-                    <ActionButton
-                      label="Reject"
-                      busyLabel="Rejecting…"
-                      variant="destructive"
-                      disabled={reason.trim().length < 10}
-                      onRun={async () => {
-                        setError(null);
-                        const result = await adminClient.reject(item.id, reason.trim());
-                        if (result.ok) setDecided("REJECTED");
-                        else setError(result.message);
-                      }}
-                    />
-                  </div>
+
+                  <ActionButton
+                    label="Reject"
+                    busyLabel="Rejecting…"
+                    variant="destructive"
+                    className="w-full"
+                    disabled={!reason}
+                    onRun={async () => {
+                      if (!reason) return;
+                      setError(null);
+                      const result = await adminClient.reject(item.id, reason);
+                      if (result.ok) setDecided("REJECTED");
+                      else setError(result.message);
+                    }}
+                  />
                 </div>
 
                 <p className="text-muted-foreground flex items-start gap-2 text-[12px] leading-relaxed">
@@ -236,15 +279,15 @@ export function KycReview({ submissionId }: { submissionId: string }) {
 
             {item.status !== "PENDING" || decided ? (
               <div className="mt-6">
-                <ActionButton
-                  label="Back to the queue"
-                  busyLabel="…"
+                <ButtonLink
+                  href="/admin"
                   variant="secondary"
-                  onRun={async () => {
-                    router.push("/admin");
-                    return Promise.resolve();
-                  }}
-                />
+                  size="lg"
+                  arrow={false}
+                  className="w-full"
+                >
+                  Back to the queue
+                </ButtonLink>
               </div>
             ) : null}
           </section>

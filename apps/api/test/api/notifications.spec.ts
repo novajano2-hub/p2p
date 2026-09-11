@@ -1,3 +1,4 @@
+import { KYC_REJECTION_REASONS } from "@abay/contracts";
 import { createPrismaClient, type PrismaClient } from "@abay/database";
 import { type NestFastifyApplication } from "@nestjs/platform-fastify";
 import request from "supertest";
@@ -118,22 +119,24 @@ describe("notifications", () => {
     });
   });
 
-  it("carries the administrator's own rejection reason, verbatim", async () => {
+  it("carries the canonical sentence for the reason the administrator chose", async () => {
     const submission = await pendingSubmission();
     const adminCookie = await makeAdmin();
-    const reason = "The photo of the back of the card is too blurry to read.";
 
     await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/reject`)
       .set("Cookie", adminCookie)
-      .send({ reason })
+      .send({ reason: "PHOTO_UNREADABLE" })
       .expect(200);
 
     const list = await request(server())
       .get("/v1/notifications")
       .set("Cookie", submission.cookie)
       .expect(200);
-    expect(list.body.notifications[0]).toMatchObject({ type: "KYC_REJECTED", body: reason });
+    expect(list.body.notifications[0]).toMatchObject({
+      type: "KYC_REJECTED",
+      body: KYC_REJECTION_REASONS.PHOTO_UNREADABLE,
+    });
   });
 
   it("marks one as read, and only its owner may", async () => {
@@ -189,7 +192,7 @@ describe("notifications", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${a.id}/reject`)
       .set("Cookie", adminCookie)
-      .send({ reason: "Try again with better lighting, please." })
+      .send({ reason: "PHOTO_UNREADABLE" })
       .expect(200);
 
     // Submit and decide a second time for the same customer.
