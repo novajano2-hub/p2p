@@ -8,7 +8,6 @@ import { ThemeControl } from "@/components/app/theme-control";
 import { FormError } from "@/components/auth/notices";
 import { AppLink } from "@/components/ui/app-link";
 import { Button } from "@/components/ui/button";
-import { StatusPill } from "@/components/ui/status-pill";
 import { settingsHref } from "@/lib/app-nav";
 import { cn } from "@/lib/cn";
 
@@ -85,13 +84,6 @@ export function AccountMenu() {
           <p className="text-muted-foreground mt-1 text-[12px]">
             UID <span className="text-foreground font-mono tabular-nums">{user.platformId}</span>
           </p>
-          <div className="mt-2">
-            {user.emailVerified ? (
-              <StatusPill status="complete">Email verified</StatusPill>
-            ) : (
-              <StatusPill status="pending">Email not verified</StatusPill>
-            )}
-          </div>
         </div>
 
         <div className="border-border border-t px-2 py-3">
