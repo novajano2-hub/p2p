@@ -187,9 +187,47 @@ admin gate in `docs/open-questions.md` Q2a, not application code.
 | ---- | --------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | B7.1 | **Malicious or compromised admin resolves disputes to an accomplice** | E, R   | Least-privilege roles (`dispute_resolver` ≠ `withdrawal_approver` ≠ `financial_adjuster`); mandatory reason codes and evidence; append-only audit; resolver may not be a party to the trade; **anomaly reporting on resolution patterns per admin** — the control here is detection, because prevention is impossible |
 | B7.2 | Admin moves funds directly                                            | E      | No "set balance" function exists. Adjustments go through a typed, balanced workflow; dual approval above thresholds                                                                                                                                                                                                   |
-| B7.3 | Admin session hijacked                                                | S, E   | Separate admin origin/routes, mandatory hardware-backed MFA, short sessions, IP/device constraints, step-up per privileged action                                                                                                                                                                                     |
+| B7.3 | Admin session hijacked                                                | S, E   | Separate admin origin/routes, **mandatory MFA (TOTP built; hardware keys still the goal, see note 3)**, short sessions, IP/device constraints, step-up per privileged action                                                                                                                                          |
 | B7.4 | Admin denies having acted                                             | R      | Append-only `audit_event` with actor, correlation ID, before/after, reason; retained independently of the record acted upon                                                                                                                                                                                           |
 | B7.5 | Admin reads customer payment details at will                          | I      | Access is logged and attributable; sensitive fields decrypted only on justified access with a reason code                                                                                                                                                                                                             |
+
+#### Note 3 — what the admin second factor is, and is not
+
+B7.3 asks for **hardware-backed** MFA. What is built is **TOTP** - the
+six-digit authenticator-app kind (RFC 6238). That is a real second factor and
+closes the gap the rate limiter cannot: a correct password, leaked or phished
+or reused from another breach, is no longer enough on its own. It is not yet a
+hardware key, and the honest difference is that TOTP can be phished in real
+time (a fake page that relays the code within its 30-second window) where a
+WebAuthn key, bound to the origin, cannot. WebAuthn is the eventual target and
+this does not discharge it; it raises the floor from one factor to two now,
+without waiting for the hardware-key work.
+
+How it holds together:
+
+- **Mandatory by construction, not by policy.** The guard confines a session
+  whose account has no enrolled factor to the enrollment routes alone
+  (`AllowWithoutMfa`, an explicit opt-out that a new route does not get by
+  default). So "every administrator has MFA" is a property of the code, and the
+  password-only window is exactly as long as it takes to scan a QR code and
+  closes itself. New accounts are created without a factor and enroll at first
+  sign-in.
+- **The secret is encrypted at rest** (AES-256-GCM under `FIELD_ENCRYPTION_KEY`,
+  `apps/api/src/common/security/field-encryption.ts`), so a copy of the database
+  does not yield working secrets. This is the same field-encryption the brief
+  wants for payment instructions later; the admin secret is its first user.
+- **A code is single-use** (RFC 6238 5.2): the accepted 30-second step is
+  recorded and the claim to a later step is atomic, so a shoulder-surfed or
+  logged code cannot be replayed - not even by two requests racing it.
+- **Recovery is out-of-band only.** A lost phone is reset by another
+  administrator at the machine (`npm run admin -- mfa-reset`), which strips the
+  factor, ends every session, and writes an audit event. There is deliberately
+  no online recovery path, which would be the realm's softest door.
+
+Asserted in `apps/api/test/api/admin-mfa.spec.ts` (enrollment, the confined
+un-enrolled session, the demand at sign-in, replay refusal) and
+`apps/api/src/common/security/totp.spec.ts` (the algorithm, against the RFC's
+own published vectors).
 
 ### B8 — Users ↔ Ethiopian banks (outside our systems)
 

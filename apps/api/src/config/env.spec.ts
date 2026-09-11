@@ -8,6 +8,7 @@ const valid = {
   EMAIL_FROM: "BIRQ <no-reply@example.com>",
   DATABASE_URL: "postgresql://abay_app:app@localhost:5432/abay?schema=public",
   REDIS_URL: "redis://localhost:6379",
+  FIELD_ENCRYPTION_KEY: "0".repeat(63) + "1",
 };
 
 /** A complete object store configuration, as production requires. */
@@ -70,6 +71,17 @@ describe("loadEnv", () => {
     expect(env.GOOGLE_CLIENT_ID).toBeUndefined();
   });
 
+  it("refuses to start production with the public sample encryption key", () => {
+    const production = { ...valid, ...storage, NODE_ENV: "production", COOKIE_SECURE: "true" };
+    expect(() =>
+      loadEnv({
+        ...production,
+        RESEND_API_KEY: "re_x",
+        FIELD_ENCRYPTION_KEY: "5f2b0c9a41d8e37f6a1b8c2d9e0f4a5b6c7d8e9f0a1b2c3d4e5f60718293a4b5",
+      }),
+    ).toThrow(/FIELD_ENCRYPTION_KEY/);
+  });
+
   it("refuses to start production without a way to send email", () => {
     const production = { ...valid, ...storage, NODE_ENV: "production", COOKIE_SECURE: "true" };
     expect(() => loadEnv(production)).toThrow(/RESEND_API_KEY/);
@@ -123,5 +135,8 @@ describe("loadEnv", () => {
       /DATABASE_URL/,
     );
     expect(() => loadEnv({ ...valid, REDIS_URL: "http://localhost:6379" })).toThrow(/REDIS_URL/);
+    expect(() => loadEnv({ ...valid, FIELD_ENCRYPTION_KEY: "too-short" })).toThrow(
+      /FIELD_ENCRYPTION_KEY/,
+    );
   });
 });

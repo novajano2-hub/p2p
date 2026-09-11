@@ -7,7 +7,14 @@ import { createApp } from "@/app";
 import { loadEnv } from "@/config/env";
 import { hashPassword } from "@/modules/auth/tokens";
 
-import { csrfFor, registerFully, uniqueEmail, uploadPhotos } from "./helpers";
+import {
+  csrfFor,
+  enrolledTotp,
+  registerFully,
+  totpCodeFor,
+  uniqueEmail,
+  uploadPhotos,
+} from "./helpers";
 
 /*
   What a customer is told without doing anything on this device.
@@ -35,6 +42,8 @@ const DETAILS = {
 
 async function makeAdmin(): Promise<string> {
   const email = `admin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
+  // Enrolled from the start: what is under test here is notifications.
+  const totp = enrolledTotp();
   await db.adminUser.create({
     data: {
       email,
@@ -42,11 +51,12 @@ async function makeAdmin(): Promise<string> {
       passwordHash: await hashPassword(ADMIN_PASSWORD),
       passwordChangedAt: new Date(),
       roles: ["KYC_REVIEWER"],
+      ...totp.fields,
     },
   });
   const response = await request(server())
     .post("/v1/admin/auth/login")
-    .send({ email, password: ADMIN_PASSWORD })
+    .send({ email, password: ADMIN_PASSWORD, code: totpCodeFor(totp.secret) })
     .expect(200);
   const cookie = response.headers["set-cookie"]?.[0];
   if (!cookie) throw new Error("admin sign-in set no cookie");

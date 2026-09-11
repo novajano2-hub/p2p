@@ -37,6 +37,10 @@ const originList = z
 
 const trim = (value: string) => value.trim();
 
+/** The key committed in .env.example for development. Worthless by design, and
+    refused in production because anyone can read it on GitHub. */
+const EXAMPLE_FIELD_KEY = "5f2b0c9a41d8e37f6a1b8c2d9e0f4a5b6c7d8e9f0a1b2c3d4e5f60718293a4b5";
+
 const isHttpUrl = (value: string): boolean => {
   try {
     return /^https?:$/.test(new URL(value).protocol);
@@ -116,6 +120,15 @@ export const envSchema = z
     STORAGE_SECRET_ACCESS_KEY: blankAsAbsent,
     STORAGE_LOCAL_DIR: z.string().min(1).default(".storage"),
 
+    /* Encrypts single database fields the server must read back - an admin's
+       TOTP secret today, payment instructions later. 32 bytes of hex; generate
+       with `openssl rand -hex 32`. Required everywhere, because MFA enrollment
+       happens in development too; production additionally refuses the sample
+       value from .env.example (see below). */
+    FIELD_ENCRYPTION_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, {
+      error: "must be 64 hex characters (32 bytes), e.g. from `openssl rand -hex 32`",
+    }),
+
     /* Sessions. Two independent limits: an absolute lifetime, and an idle window
        after which an abandoned session is dead regardless of the absolute one. */
     SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(8_760).default(720),
@@ -135,6 +148,14 @@ export const envSchema = z
     COOKIE_DOMAIN: z.string().min(1).optional(),
   })
   .superRefine((env, ctx) => {
+    if (env.NODE_ENV === "production" && env.FIELD_ENCRYPTION_KEY === EXAMPLE_FIELD_KEY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["FIELD_ENCRYPTION_KEY"],
+        message:
+          "is the sample value from .env.example, which is public. Generate a real one: openssl rand -hex 32",
+      });
+    }
     if (env.NODE_ENV === "production" && !env.RATE_LIMIT_ENABLED) {
       ctx.addIssue({
         code: "custom",

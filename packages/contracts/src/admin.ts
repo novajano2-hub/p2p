@@ -22,9 +22,22 @@ export const adminRole = z.enum([
 ]);
 export type AdminRole = z.infer<typeof adminRole>;
 
+/** Six digits from an authenticator app. Trimmed: people paste these. */
+export const totpCode = z
+  .string()
+  .trim()
+  .regex(/^\d{6}$/, { error: "Enter the 6-digit code from your authenticator app." });
+
 export const adminLoginRequest = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email()),
   password: z.string().min(1),
+  /*
+    Absent on the first attempt. If the account has a second factor enrolled,
+    the answer is MFA_REQUIRED and the client repeats the request with the
+    code filled in; an account not yet enrolled signs in without one and can
+    then reach nothing but the enrollment routes.
+  */
+  code: totpCode.optional(),
 });
 export type AdminLoginRequest = z.infer<typeof adminLoginRequest>;
 
@@ -34,11 +47,32 @@ export const adminIdentity = z.object({
   email: z.string(),
   name: z.string(),
   roles: z.array(adminRole),
+  /** False until a code has been confirmed. The interface gates on this. */
+  mfaEnrolled: z.boolean(),
 });
 export type AdminIdentity = z.infer<typeof adminIdentity>;
 
 export const adminSessionResponse = z.object({ admin: adminIdentity });
 export type AdminSessionResponse = z.infer<typeof adminSessionResponse>;
+
+/* --------------------------------------------------------------------- mfa */
+
+/**
+ * A fresh, not-yet-active secret for enrollment. The URI is what the QR code
+ * encodes; the secret is the same value spelled out for typing into an app by
+ * hand. Neither grants anything until a code computed from it is confirmed -
+ * and this is the ONLY time the secret ever leaves the server, because it is
+ * the one moment the authenticator app needs it.
+ */
+export const adminMfaSetupResponse = z.object({
+  secret: z.string(),
+  otpauthUri: z.string(),
+});
+export type AdminMfaSetupResponse = z.infer<typeof adminMfaSetupResponse>;
+
+/** Proves the app was really enrolled: a code computed from the pending secret. */
+export const adminMfaConfirmRequest = z.object({ code: totpCode });
+export type AdminMfaConfirmRequest = z.infer<typeof adminMfaConfirmRequest>;
 
 /* -------------------------------------------------------------- kyc review */
 

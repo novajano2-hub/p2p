@@ -13,6 +13,13 @@
     npm run admin -w @abay/database -- roles you@example.com KYC_REVIEWER,DISPUTE_RESOLVER
     npm run admin -w @abay/database -- suspend you@example.com
     npm run admin -w @abay/database -- activate you@example.com
+    npm run admin -w @abay/database -- mfa-reset you@example.com
+
+  mfa-reset is the lost-phone path, and deliberately the ONLY one: it strips
+  the second factor, ends every session, and leaves the account password-only
+  until its owner enrolls again at next sign-in. It lives here, beside
+  create, because recovery must require what issuing does - a person at this
+  machine - and never a URL.
 
   The password is never an argument: it would be in your shell history and in
   the process list. It is prompted for, or read from ADMIN_PASSWORD.
@@ -110,7 +117,8 @@ async function main() {
       const seen = admin.lastSignedInAt
         ? `last in ${admin.lastSignedInAt.toISOString()}`
         : "never signed in";
-      console.log(`${admin.email}  ${admin.name}  [${admin.status}]  ${roles}  ${seen}`);
+      const mfa = admin.totpEnrolledAt ? "MFA on" : "MFA NOT SET UP";
+      console.log(`${admin.email}  ${admin.name}  [${admin.status}]  [${mfa}]  ${roles}  ${seen}`);
     }
     return;
   }
@@ -179,8 +187,48 @@ async function main() {
     return;
   }
 
+  if (command === "mfa-reset") {
+    const [emailRaw] = rest;
+    if (!emailRaw) throw new Error("Usage: mfa-reset <email>");
+    const email = emailRaw.trim().toLowerCase();
+    const admin = await db.adminUser.update({
+      where: { email },
+      data: {
+        totpSecret: null,
+        totpPendingSecret: null,
+        totpEnrolledAt: null,
+        totpLastUsedStep: null,
+      },
+    });
+    // Every session, current ones included: whoever holds one may be exactly
+    // the reason the factor is being reset.
+    const { count } = await db.adminSession.updateMany({
+      where: { adminUserId: admin.id, revokedAt: null },
+      data: { revokedAt: new Date(), revokedReason: "REVOKED_BY_ADMIN" },
+    });
+    // The trail must say this happened. The trigger allows inserts only, so
+    // this writes the same append-only table the API writes.
+    await db.auditEvent.create({
+      data: {
+        action: "admin.mfa_reset",
+        actorAdminId: null,
+        actorEmail: "cli",
+        subjectType: "admin_user",
+        subjectId: admin.id,
+        reason: "mfa-reset from the command line",
+        correlationId: `cli-${Date.now()}`,
+        ip: null,
+      },
+    });
+    console.log(
+      `${admin.email}: second factor removed, ${count} session(s) ended. ` +
+        "They sign in with their password alone next time, and are held at enrollment until a new app is set up.",
+    );
+    return;
+  }
+
   console.error(
-    "Usage: admin.mjs list | create <email> <name> [ROLES] | roles <email> <ROLES> | suspend <email> | activate <email>",
+    "Usage: admin.mjs list | create <email> <name> [ROLES] | roles <email> <ROLES> | suspend <email> | activate <email> | mfa-reset <email>",
   );
   process.exitCode = 1;
 }

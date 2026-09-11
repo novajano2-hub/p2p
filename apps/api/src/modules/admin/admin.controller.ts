@@ -1,7 +1,10 @@
 import {
   adminLoginRequest,
+  adminMfaConfirmRequest,
   kycRejectRequest,
   type AdminLoginRequest,
+  type AdminMfaConfirmRequest,
+  type AdminMfaSetupResponse,
   type AdminSessionResponse,
   type KycQueueResponse,
   type KycRejectRequest,
@@ -22,8 +25,14 @@ import {
 import { ZodValidationPipe, zodBody } from "@/common/validation/zod-validation.pipe";
 import { AdminAuthService, toIdentity } from "@/modules/admin/admin-auth.service";
 import { AdminKycService } from "@/modules/admin/admin-kyc.service";
+import { AdminMfaService } from "@/modules/admin/admin-mfa.service";
 import { type AdminSessionContext } from "@/modules/admin/admin-session.service";
-import { AdminGuard, CurrentAdmin, RequireAdminRole } from "@/modules/admin/admin.guard";
+import {
+  AdminGuard,
+  AllowWithoutMfa,
+  CurrentAdmin,
+  RequireAdminRole,
+} from "@/modules/admin/admin.guard";
 
 /*
   Everything an administrator can do, under its own prefix.
@@ -43,7 +52,10 @@ const requestContext = (request: FastifyRequest) => ({
 
 @Controller("admin")
 export class AdminAuthController {
-  constructor(private readonly auth: AdminAuthService) {}
+  constructor(
+    private readonly auth: AdminAuthService,
+    private readonly mfa: AdminMfaService,
+  ) {}
 
   /*
     Deliberately not behind the guard: this is how a session begins. It is
@@ -68,13 +80,20 @@ export class AdminAuthController {
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<AdminSessionResponse> {
-    const admin = await this.auth.login(body.email, body.password, reply, requestContext(request));
+    const admin = await this.auth.login(
+      body.email,
+      body.password,
+      body.code,
+      reply,
+      requestContext(request),
+    );
     return { admin };
   }
 
   @Post("auth/logout")
   @HttpCode(204)
   @UseGuards(AdminGuard)
+  @AllowWithoutMfa()
   @RateLimit(perSession(30, minutes(15)))
   async logout(
     @CurrentAdmin() session: AdminSessionContext,
@@ -85,8 +104,44 @@ export class AdminAuthController {
 
   @Get("auth/me")
   @UseGuards(AdminGuard)
+  @AllowWithoutMfa()
   me(@CurrentAdmin() session: AdminSessionContext): AdminSessionResponse {
     return { admin: toIdentity(session.admin) };
+  }
+
+  /* ------------------------------------------------------------------- mfa */
+
+  /*
+    Enrollment, reachable before enrollment is done - these two routes and
+    the pair above are the whole of what an un-enrolled session can touch.
+    Both still sit behind the guard: a session, its CSRF token, and its rate
+    limits all apply as everywhere else.
+  */
+
+  @Post("auth/mfa/setup")
+  @HttpCode(200)
+  @UseGuards(AdminGuard)
+  @AllowWithoutMfa()
+  // A handful of QR codes is a person changing phones; a stream is a script.
+  @RateLimit(perSession(10, minutes(15)))
+  mfaSetup(@CurrentAdmin() session: AdminSessionContext): Promise<AdminMfaSetupResponse> {
+    return this.mfa.setup(session);
+  }
+
+  @Post("auth/mfa/confirm")
+  @HttpCode(200)
+  @UseGuards(AdminGuard)
+  @AllowWithoutMfa()
+  // Six digits against one staged secret: ten tries dwarfs any honest fumble
+  // and starves a guesser, who needs a million.
+  @RateLimit(perSession(10, minutes(15)))
+  async mfaConfirm(
+    @Body(zodBody(adminMfaConfirmRequest)) body: AdminMfaConfirmRequest,
+    @CurrentAdmin() session: AdminSessionContext,
+    @Req() request: FastifyRequest,
+  ): Promise<AdminSessionResponse> {
+    const admin = await this.mfa.confirm(session, body.code, requestContext(request));
+    return { admin: toIdentity(admin) };
   }
 }
 

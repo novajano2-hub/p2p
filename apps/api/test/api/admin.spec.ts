@@ -7,7 +7,14 @@ import { createApp } from "@/app";
 import { loadEnv } from "@/config/env";
 import { hashPassword } from "@/modules/auth/tokens";
 
-import { csrfFor, registerFully, uniqueEmail, uploadPhotos } from "./helpers";
+import {
+  csrfFor,
+  enrolledTotp,
+  registerFully,
+  totpCodeFor,
+  uniqueEmail,
+  uploadPhotos,
+} from "./helpers";
 
 /*
   The admin realm, over HTTP, against the real database.
@@ -40,11 +47,18 @@ const DETAILS = {
   documentNumber: "ET-4410-9921",
 } as const;
 
-/** An administrator straight into the table, the way the CLI makes one. */
+/*
+  An administrator straight into the table, the way the CLI makes one, but
+  already enrolled in the second factor: these specs are about the realm's
+  behaviour once someone can work, and enrollment has a spec of its own
+  (admin-mfa.spec.ts). The clear secret comes back so signIn can compute the
+  code an authenticator app would show.
+*/
 async function makeAdmin(
   roles: string[] = ["KYC_REVIEWER"],
-): Promise<{ id: string; email: string }> {
+): Promise<{ id: string; email: string; secret: string }> {
   const email = `admin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
+  const totp = enrolledTotp();
   const admin = await db.adminUser.create({
     data: {
       email,
@@ -52,15 +66,16 @@ async function makeAdmin(
       passwordHash: await hashPassword(ADMIN_PASSWORD),
       passwordChangedAt: new Date(),
       roles: roles as never,
+      ...totp.fields,
     },
   });
-  return { id: admin.id, email: admin.email };
+  return { id: admin.id, email: admin.email, secret: totp.secret };
 }
 
-async function signIn(email: string, password = ADMIN_PASSWORD): Promise<string> {
+async function signIn(email: string, secret: string, password = ADMIN_PASSWORD): Promise<string> {
   const response = await request(server())
     .post("/v1/admin/auth/login")
-    .send({ email, password })
+    .send({ email, password, code: totpCodeFor(secret) })
     .expect(200);
   const cookie = response.headers["set-cookie"]?.[0];
   if (!cookie) throw new Error("admin sign-in set no cookie");
@@ -100,7 +115,7 @@ afterAll(async () => {
 describe("the admin realm", () => {
   it("signs an administrator in with their own cookie, and records it", async () => {
     const admin = await makeAdmin();
-    const cookie = await signIn(admin.email);
+    const cookie = await signIn(admin.email, admin.secret);
 
     // Its own name. Nothing about it says "session" in the customer sense.
     expect(cookie).toContain("birq_admin_session=");
@@ -148,7 +163,7 @@ describe("the admin realm", () => {
 
   it("keeps the two realms apart in both directions", async () => {
     const admin = await makeAdmin();
-    const adminCookie = await signIn(admin.email);
+    const adminCookie = await signIn(admin.email, admin.secret);
     const customer = await registerFully(server(), db, uniqueEmail());
 
     // A customer session is not a weak admin session. It is nothing here.
@@ -165,7 +180,7 @@ describe("the admin realm", () => {
   it("treats being an administrator and being allowed as different things", async () => {
     // A real, signed-in administrator, with no roles at all.
     const nobody = await makeAdmin([]);
-    const cookie = await signIn(nobody.email);
+    const cookie = await signIn(nobody.email, nobody.secret);
 
     // They are signed in.
     await request(server()).get("/v1/admin/auth/me").set("Cookie", cookie).expect(200);
@@ -182,13 +197,13 @@ describe("the admin realm", () => {
 
     // Holding a different role is not holding this one.
     const other = await makeAdmin(["WITHDRAWAL_APPROVER"]);
-    const otherCookie = await signIn(other.email);
+    const otherCookie = await signIn(other.email, other.secret);
     await request(server()).get("/v1/admin/kyc/queue").set("Cookie", otherCookie).expect(403);
   });
 
   it("approves a submission, lifts the account, and cannot do it twice", async () => {
     const admin = await makeAdmin();
-    const cookie = await signIn(admin.email);
+    const cookie = await signIn(admin.email, admin.secret);
     const submission = await pendingSubmission();
 
     const queue = await request(server())
@@ -241,7 +256,7 @@ describe("the admin realm", () => {
 
   it("will not reject without choosing one of the fixed reasons", async () => {
     const admin = await makeAdmin();
-    const cookie = await signIn(admin.email);
+    const cookie = await signIn(admin.email, admin.secret);
     const submission = await pendingSubmission();
 
     // No reason at all.
@@ -284,7 +299,7 @@ describe("the admin realm", () => {
 
   it("records who looked at somebody's identity documents", async () => {
     const admin = await makeAdmin();
-    const cookie = await signIn(admin.email);
+    const cookie = await signIn(admin.email, admin.secret);
     const submission = await pendingSubmission();
 
     const opened = await request(server())
@@ -332,7 +347,7 @@ describe("the admin realm", () => {
       const admin = await makeAdmin();
       const signIn = await request(wide())
         .post("/v1/admin/auth/login")
-        .send({ email: admin.email, password: ADMIN_PASSWORD })
+        .send({ email: admin.email, password: ADMIN_PASSWORD, code: totpCodeFor(admin.secret) })
         .expect(200);
       expect(signIn.headers["set-cookie"]?.[0]).not.toMatch(/Domain=/i);
 
@@ -347,7 +362,7 @@ describe("the admin realm", () => {
 
   it("cannot rewrite its own audit trail", async () => {
     const admin = await makeAdmin();
-    await signIn(admin.email);
+    await signIn(admin.email, admin.secret);
     const event = await db.auditEvent.findFirstOrThrow({ where: { actorAdminId: admin.id } });
 
     // The database refuses, not the application: this has to hold for every
