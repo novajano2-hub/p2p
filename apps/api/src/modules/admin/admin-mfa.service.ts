@@ -57,21 +57,49 @@ export class AdminMfaService {
   }
 
   /*
-    A fresh secret, staged but inert. Calling this again simply replaces the
-    staged secret - abandoning a half-finished enrollment, or rotating to a
-    new phone from a signed-in (and therefore already code-proven) session.
-    The active secret is untouched until a code proves the new one.
+    A secret staged for enrollment, inert until a code proves it.
+
+    Idempotent while one is in progress, and that is not a nicety: two calls
+    that race - React's development double-effect, an impatient double-click,
+    two tabs - must never leave the server holding a different secret from the
+    one on the screen. That failure is silent and total; the QR scans fine and
+    every code the person types is genuinely wrong, with nothing to suggest
+    why. So the write is a conditional one (set only if unset, which the
+    database decides, not this process), and a caller that loses the race is
+    handed the winner's secret rather than its own.
+
+    Re-using a pending secret is safe because it grants nothing until it is
+    confirmed, and confirm clears it - so the next setup after a successful
+    enrollment does mint a fresh one, which is what rotating to a new phone
+    from an already-enrolled session needs. The active secret is untouched
+    throughout.
   */
   async setup(session: AdminSessionContext): Promise<{ secret: string; otpauthUri: string }> {
-    const secret = generateTotpSecret();
-    await this.prisma.client.adminUser.update({
-      where: { id: session.admin.id },
-      data: { totpPendingSecret: encryptField(base32Encode(secret), this.key, PURPOSE) },
+    const fresh = generateTotpSecret();
+    const { count } = await this.prisma.client.adminUser.updateMany({
+      where: { id: session.admin.id, totpPendingSecret: null },
+      data: { totpPendingSecret: encryptField(base32Encode(fresh), this.key, PURPOSE) },
     });
+
+    const secret = count === 1 ? fresh : await this.pendingSecretOf(session.admin.id);
     return {
       secret: base32Encode(secret),
       otpauthUri: otpauthUri(this.issuer, session.admin.email, secret),
     };
+  }
+
+  /** The staged secret another caller won the race to write. */
+  private async pendingSecretOf(adminUserId: string): Promise<Buffer> {
+    const row = await this.prisma.client.adminUser.findUniqueOrThrow({
+      where: { id: adminUserId },
+      select: { totpPendingSecret: true },
+    });
+    if (!row.totpPendingSecret) {
+      // Confirmed or reset in the moment between the write and this read.
+      // Practically unreachable, and a plain "start again" beats a 500.
+      throw AppError.conflict("That set-up has moved on. Start again from the QR code.");
+    }
+    return base32Decode(decryptField(row.totpPendingSecret, this.key, PURPOSE));
   }
 
   /*

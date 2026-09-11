@@ -2,7 +2,7 @@
 
 import { LockKey } from "@phosphor-icons/react";
 import QRCode from "qrcode";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { CopyButton } from "@/components/app/copy-button";
 import { Button } from "@/components/ui/button";
@@ -37,24 +37,51 @@ export function MfaEnroll({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /*
+    Asks the server for the secret once, and hands the answer to whichever
+    mount is on screen when it arrives.
+
+    Both halves of that matter, and each is a trap on its own. React runs
+    effects twice in development on purpose, to surface effects that are not
+    safe to repeat - and this is one, because asking for a secret is a POST
+    that changes the server. Firing it twice can leave the screen showing a
+    secret the server did not keep, which is the worst kind of bug here: the
+    QR scans perfectly and every code is then wrong, with nothing on screen to
+    explain why.
+
+    But simply refusing to run a second time is not enough either. React's
+    development remount runs the FIRST effect's cleanup before the second
+    effect, so a plain "ignore the result if I have been cleaned up" flag
+    discards the only response that was ever asked for, and the screen waits
+    forever. So the request is kept in a ref as a promise: the first mount
+    starts it, every mount awaits the same one, and each only writes state if
+    it is still the mount that is showing.
+
+    The server refuses to mint a second secret over a pending one as well, so
+    a duplicate request could not do damage anyway - but the right number of
+    requests here is one, and this is what makes it one.
+  */
+  const pending = useRef<Promise<Stage> | null>(null);
+
   useEffect(() => {
     let live = true;
-    void (async () => {
+
+    pending.current ??= (async (): Promise<Stage> => {
       const result = await adminClient.mfaSetup();
-      if (!live) return;
-      if (!result.ok) {
-        setStage({ status: "failed", message: result.message });
-        return;
-      }
+      if (!result.ok) return { status: "failed", message: result.message };
       /*
         Drawn oversized and displayed at half size, so it stays crisp on a
         dense screen. M-level error correction and the library's default
         quiet zone; authenticator cameras are not the demanding kind.
       */
       const qr = await QRCode.toDataURL(result.otpauthUri, { width: 384, margin: 2 });
-      if (!live) return;
-      setStage({ status: "ready", secret: result.secret, qr });
+      return { status: "ready", secret: result.secret, qr };
     })();
+
+    void pending.current.then((next) => {
+      if (live) setStage(next);
+    });
+
     return () => {
       live = false;
     };

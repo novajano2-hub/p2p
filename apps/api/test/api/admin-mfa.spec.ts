@@ -131,6 +131,92 @@ describe("enrollment", () => {
     expect(event).not.toBeNull();
   });
 
+  /*
+    The regression this exists for: the enrollment screen asked for a secret in
+    an effect, React's development double-effect fired it twice, and the server
+    kept whichever write landed last - so the QR on screen could be a secret the
+    server had already replaced. It scanned perfectly and every code was wrong.
+
+    Two calls must therefore agree, including when they are genuinely
+    concurrent, which is what the second half checks: the conditional write
+    makes the database the arbiter rather than whichever request happens to
+    finish last.
+  */
+  it("hands back the same staged secret when setup is called twice", async () => {
+    const admin = await makeBareAdmin();
+    const cookie = await passwordOnlySignIn(admin.email);
+
+    const first = await request(server())
+      .post("/v1/admin/auth/mfa/setup")
+      .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
+      .expect(200);
+    const second = await request(server())
+      .post("/v1/admin/auth/mfa/setup")
+      .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
+      .expect(200);
+
+    expect(String(second.body.secret)).toBe(String(first.body.secret));
+
+    // And the one on screen is the one that actually works.
+    await request(server())
+      .post("/v1/admin/auth/mfa/confirm")
+      .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
+      .send({ code: totpCodeFor(String(second.body.secret)) })
+      .expect(200);
+  });
+
+  it("agrees with itself when two setups race", async () => {
+    const admin = await makeBareAdmin();
+    const cookie = await passwordOnlySignIn(admin.email);
+
+    const fire = () =>
+      request(server())
+        .post("/v1/admin/auth/mfa/setup")
+        .set("Cookie", cookie)
+        .set("x-csrf-token", csrfFor(cookie))
+        .expect(200);
+
+    const [a, b, c] = await Promise.all([fire(), fire(), fire()]);
+    expect(String(b.body.secret)).toBe(String(a.body.secret));
+    expect(String(c.body.secret)).toBe(String(a.body.secret));
+
+    // Whatever they all agreed on is what the server will accept.
+    await request(server())
+      .post("/v1/admin/auth/mfa/confirm")
+      .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
+      .send({ code: totpCodeFor(String(a.body.secret)) })
+      .expect(200);
+  });
+
+  it("mints a fresh secret for the next enrollment after one succeeds", async () => {
+    const admin = await makeBareAdmin();
+    const cookie = await passwordOnlySignIn(admin.email);
+
+    const first = await request(server())
+      .post("/v1/admin/auth/mfa/setup")
+      .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
+      .expect(200);
+    await request(server())
+      .post("/v1/admin/auth/mfa/confirm")
+      .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
+      .send({ code: totpCodeFor(String(first.body.secret)) })
+      .expect(200);
+
+    // Rotating to a new phone must not hand back the secret just retired.
+    const rotation = await request(server())
+      .post("/v1/admin/auth/mfa/setup")
+      .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
+      .expect(200);
+    expect(String(rotation.body.secret)).not.toBe(String(first.body.secret));
+  });
+
   it("refuses to confirm with a wrong code, and stays unenrolled", async () => {
     const admin = await makeBareAdmin();
     const cookie = await passwordOnlySignIn(admin.email);
