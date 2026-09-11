@@ -9,7 +9,10 @@ import tseslint from "typescript-eslint";
   `switch` over a state enum that silently ignores a new state.
 */
 export default tseslint.config(
-  { ignores: ["dist/**", "coverage/**", "*.config.mjs"] },
+  // global-teardown.js is a plain CommonJS script Jest loads outside the
+  // test environment, so it is deliberately not in the TypeScript project
+  // that the type-aware rules below need.
+  { ignores: ["dist/**", "coverage/**", "*.config.mjs", "test/global-teardown.js"] },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,

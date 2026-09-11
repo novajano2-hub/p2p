@@ -110,6 +110,12 @@ export const envSchema = z
        after which an abandoned session is dead regardless of the absolute one. */
     SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(8_760).default(720),
     SESSION_IDLE_TTL_HOURS: z.coerce.number().int().min(1).max(8_760).default(168),
+
+    /* An administrator's session, which is a different thing (threat model
+       B7.3): hours rather than weeks, and idle-out in minutes. Somebody at a
+       desk doing a task, not a phone carried around for a month. */
+    ADMIN_SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(24).default(8),
+    ADMIN_SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).max(480).default(30),
     /* Defaults closed: a session cookie must not travel over plain HTTP. Local
        development over http://localhost is the only reason to turn it off. */
     COOKIE_SECURE: z

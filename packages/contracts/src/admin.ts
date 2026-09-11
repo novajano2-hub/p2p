@@ -1,0 +1,101 @@
+import { z } from "zod";
+
+import { kycDocumentKind, kycDocumentType, kycRejectionReason, kycStatus } from "./kyc";
+
+/*
+  The administrator's side of the platform.
+
+  A separate realm from the customer's, decided in Phase 0 (open-questions Q2)
+  and shaped by the threat model's B7: an administrator has their own account,
+  their own session, their own cookie and their own routes, and shares no
+  infrastructure with a customer. Nothing under /v1/admin is reachable with a
+  customer session, and nothing under /v1 is reachable with an admin one.
+
+  Capability is granted per role, never implied by being an administrator.
+*/
+
+export const adminRole = z.enum([
+  "KYC_REVIEWER",
+  "DISPUTE_RESOLVER",
+  "WITHDRAWAL_APPROVER",
+  "FINANCIAL_ADJUSTER",
+]);
+export type AdminRole = z.infer<typeof adminRole>;
+
+export const adminLoginRequest = z.object({
+  email: z.string().trim().toLowerCase().pipe(z.email()),
+  password: z.string().min(1),
+});
+export type AdminLoginRequest = z.infer<typeof adminLoginRequest>;
+
+/** Everything the admin interface is allowed to know about whoever is signed in. */
+export const adminIdentity = z.object({
+  id: z.string(),
+  email: z.string(),
+  name: z.string(),
+  roles: z.array(adminRole),
+});
+export type AdminIdentity = z.infer<typeof adminIdentity>;
+
+export const adminSessionResponse = z.object({ admin: adminIdentity });
+export type AdminSessionResponse = z.infer<typeof adminSessionResponse>;
+
+/* -------------------------------------------------------------- kyc review */
+
+/**
+ * One submission as the queue lists it. This is RESTRICTED personal data
+ * (docs/architecture/data-classification.md) and the only place in the system
+ * it is ever returned: a customer cannot read it back, and no other admin
+ * route exposes it.
+ */
+export const kycReviewItem = z.object({
+  id: z.string(),
+  status: kycStatus,
+  submittedAt: z.string(),
+  reviewedAt: z.string().nullable(),
+
+  /** Who it belongs to, as the queue needs to show them. */
+  account: z.object({
+    userId: z.string(),
+    platformId: z.string(),
+    username: z.string(),
+    email: z.string(),
+  }),
+
+  /** What they claim, to be checked against the photographs. */
+  legalName: z.string(),
+  dateOfBirth: z.string(),
+  country: z.string(),
+  documentType: kycDocumentType,
+  documentNumber: z.string(),
+
+  documents: z.array(z.object({ id: z.string(), kind: kycDocumentKind })),
+});
+export type KycReviewItem = z.infer<typeof kycReviewItem>;
+
+export const kycQueueResponse = z.object({
+  submissions: z.array(kycReviewItem),
+  /** How many are still waiting, so the queue can say so without a second call. */
+  pending: z.number().int().nonnegative(),
+});
+export type KycQueueResponse = z.infer<typeof kycQueueResponse>;
+
+/**
+ * Approving asks nothing of the administrator: there is no reason to record
+ * because there is nothing to explain, and no wording to compose because
+ * nobody reads one. The request body is empty on purpose - not optional
+ * fields nobody fills in, an actually empty shape.
+ */
+export const kycApproveRequest = z.object({});
+export type KycApproveRequest = z.infer<typeof kycApproveRequest>;
+
+/**
+ * Rejecting asks for exactly one thing: which of the fixed reasons applies.
+ * Not a sentence the administrator composes - see kycRejectionReason in
+ * ./kyc for why a closed set is the right shape for this, not a shortcut past
+ * a better one.
+ */
+export const kycRejectRequest = z.object({
+  reason: kycRejectionReason,
+});
+export type KycRejectRequest = z.infer<typeof kycRejectRequest>;

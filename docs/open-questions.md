@@ -30,6 +30,29 @@ directory is under version control, which will eventually try to track `.ssh`,
 into it as the first commit, and leave the `liwatch` repository alone. **Please confirm
 before I create or move anything**, since it touches your existing repository layout.
 
+### Q2a — The admin realm is reachable from the open internet with only a password. **Blocks any deployment on a public hostname**
+
+Built (2026-09-10, commit c313670 on `feat/admin-realm`): a separate `AdminUser` realm,
+its own session, its own routes under `/v1/admin` and `/admin`, append-only audit events.
+What it is not: restricted to who can even attempt to sign in. Today `/admin/login` is
+served to anyone who requests it, from anywhere, and a correct password alone is enough to
+open an identity-verification queue holding RESTRICTED personal data.
+
+That is acceptable right now. Nothing here is reachable except on localhost or this LAN,
+and there is no attacker on either. It stops being acceptable the moment this application
+is reachable at a public hostname, or the moment a real customer's identity documents land
+in the queue — whichever comes first.
+
+**Decision, recorded so it cannot quietly slip:** before either of those happens, put the
+admin realm behind an edge-level gate the application itself cannot be bypassed to reach -
+Cloudflare Access is the natural choice, since the project already holds a Cloudflare
+account for R2. Free for a team this size; pure configuration, no code. MFA on the
+`AdminUser` account itself and a rate limit on `/v1/admin/auth/login` (both already named
+in the threat model, B7.3) are the defense-in-depth layer to add once Access is live, not
+a substitute for it.
+
+This is a go/no-go gate for the first public deployment, not a backlog item.
+
 ### Q2 — Is admin identity a role on `User`, or a separate account realm? **Blocks Phase 1**
 
 Two workable designs with different security properties:
@@ -172,13 +195,13 @@ any of them.
 
 ## 4. Decisions taken after Phase 0 review (2026-09-07)
 
-| Question          | Decision                                                                                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Q1 repository     | New git repository at `Desktop/p2p`; the `liwatch` repository is untouched. GitHub remote still to be created by the owner (no `gh` CLI on the machine)      |
-| Q2 admin identity | **Separate admin realm** (own table, own auth), not a role flag on `User`                                                                                    |
-| Q3 fees           | **No P2P fee at launch.** Ledger and UI are shaped so a buyer-pays percentage can be switched on later without a schema change (JE-4 keeps the zero fee leg) |
-| Q4 ETB balances   | Still open; Phase 0 assumption (never) stands until contradicted                                                                                             |
-| Q8 brand          | Placeholder **"BIRQ"**; English-first UI for an Ethiopian audience. Brand lives in one file (`apps/web/lib/site.ts`) and one token sheet                     |
+| Question          | Decision                                                                                                                                                        |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q1 repository     | New git repository at `Desktop/p2p`; the `liwatch` repository is untouched. GitHub remote still to be created by the owner (no `gh` CLI on the machine)         |
+| Q2 admin identity | **Separate admin realm** (own table, own auth), not a role flag on `User`. Built in Phase 1 step 3: `AdminUser`, `AdminSession`, `AuditEvent`, and `/v1/admin`. |
+| Q3 fees           | **No P2P fee at launch.** Ledger and UI are shaped so a buyer-pays percentage can be switched on later without a schema change (JE-4 keeps the zero fee leg)    |
+| Q4 ETB balances   | Still open; Phase 0 assumption (never) stands until contradicted                                                                                                |
+| Q8 brand          | Placeholder **"BIRQ"**; English-first UI for an Ethiopian audience. Brand lives in one file (`apps/web/lib/site.ts`) and one token sheet                        |
 
 ## 5. Deliberately deferred items (tracked here, not as code TODOs)
 

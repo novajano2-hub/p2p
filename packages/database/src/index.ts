@@ -4,6 +4,11 @@ export { Prisma, PrismaClient } from "@prisma/client";
 
 // Row types, so services can be typed without importing @prisma/client directly.
 export type {
+  AdminRole,
+  AdminSession,
+  AdminStatus,
+  AdminUser,
+  AuditEvent,
   AuthIdentity,
   AuthProvider,
   KycDocument,
@@ -12,6 +17,8 @@ export type {
   KycStatus,
   KycSubmission,
   KycSubmissionStatus,
+  Notification,
+  NotificationType,
   Session,
   SessionEndReason,
   User,
