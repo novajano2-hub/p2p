@@ -1,6 +1,9 @@
 import { type PrismaClient, type VerificationPurpose } from "@abay/database";
 import request from "supertest";
 
+import { csrfTokenFor } from "@/common/security/csrf";
+import { ADMIN_SESSION_COOKIE } from "@/modules/admin/admin-session.service";
+
 /*
   The walk-through steps more than one API spec needs. Registration is three
   requests and a code that only exists as a hash, so every suite that needs a
@@ -8,6 +11,27 @@ import request from "supertest";
 */
 
 type Server = Parameters<typeof request>[0];
+
+/*
+  The CSRF token that goes with a session cookie.
+
+  Derived here the same way the API derives it, from the token inside the
+  cookie, so that a spec holding a cookie can make a mutating request without
+  threading a second value through every helper it calls. That the API really
+  does hand this value back on the wire - and really does refuse a request
+  without it - is what test/api/security.spec.ts is for; this is the
+  convenience that lets every other spec exercise the protected path.
+
+  The realm is read from the cookie's own name, because the two derive
+  different tokens from the same session token on purpose.
+*/
+export function csrfFor(cookie: string): string {
+  const pair = cookie.split(";")[0] ?? "";
+  const separator = pair.indexOf("=");
+  const name = pair.slice(0, separator);
+  const token = pair.slice(separator + 1);
+  return csrfTokenFor(name === ADMIN_SESSION_COOKIE ? "admin" : "customer", token);
+}
 
 /** A fresh address per run, so runs do not collide in a shared database. */
 export const uniqueEmail = (): string =>
@@ -87,6 +111,7 @@ export function uploadPhoto(
   return request(server)
     .post(`/v1/kyc/documents/${kind}`)
     .set("Cookie", cookie)
+    .set("x-csrf-token", csrfFor(cookie))
     .set("content-type", contentType)
     .send(body);
 }

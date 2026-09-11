@@ -7,9 +7,15 @@ import {
   type ExecutionContext,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { type FastifyRequest } from "fastify";
+import { type FastifyReply, type FastifyRequest } from "fastify";
 
 import { AppError } from "@/common/errors/app-error";
+import {
+  CSRF_HEADER,
+  csrfTokenMatches,
+  isUnsafeMethod,
+  singleHeader,
+} from "@/common/security/csrf";
 import {
   AdminSessionService,
   type AdminSessionContext,
@@ -28,6 +34,12 @@ import {
   needs, and an account without it is refused. A route that forgets to name one
   is readable by any administrator, which is why the ones that matter say so
   out loud.
+
+  And third, for anything that changes something: the CSRF token, for the same
+  reason and by the same construction as in the customer realm's guard. Unlike
+  that one there is no exemption here at all - even signing out is checked,
+  because an administrator always has a token by the time they can act, so
+  nothing is made unreachable by requiring it.
 */
 
 const ADMIN_ROLES_KEY = "admin:roles";
@@ -45,9 +57,19 @@ export class AdminGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<RequestWithAdmin>();
+    const http = context.switchToHttp();
+    const request = http.getRequest<RequestWithAdmin>();
     const session = await this.sessions.resolve(request);
     if (!session) throw AppError.unauthenticated("Sign in to the admin area to continue.");
+
+    if (isUnsafeMethod(request.method)) {
+      const presented = singleHeader(request.headers[CSRF_HEADER]);
+      if (!csrfTokenMatches(session.csrfToken, presented)) {
+        throw AppError.csrfFailed();
+      }
+    }
+
+    void http.getResponse<FastifyReply>().header(CSRF_HEADER, session.csrfToken);
 
     const required = this.reflector.getAllAndOverride<AdminRole[] | undefined>(ADMIN_ROLES_KEY, [
       context.getHandler(),

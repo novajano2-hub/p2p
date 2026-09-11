@@ -7,7 +7,7 @@ import { createApp } from "@/app";
 import { loadEnv } from "@/config/env";
 import { hashPassword } from "@/modules/auth/tokens";
 
-import { registerFully, uniqueEmail, uploadPhotos } from "./helpers";
+import { csrfFor, registerFully, uniqueEmail, uploadPhotos } from "./helpers";
 
 /*
   What a customer is told without doing anything on this device.
@@ -59,6 +59,7 @@ async function pendingSubmission(): Promise<{ userId: string; cookie: string; id
   await request(server())
     .post("/v1/kyc")
     .set("Cookie", customer.cookie)
+    .set("x-csrf-token", csrfFor(customer.cookie))
     .send({ ...DETAILS, documents })
     .expect(202);
   const submission = await db.kycSubmission.findFirstOrThrow({
@@ -103,6 +104,7 @@ describe("notifications", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/approve`)
       .set("Cookie", adminCookie)
+      .set("x-csrf-token", csrfFor(adminCookie))
       .send({})
       .expect(200);
 
@@ -126,6 +128,7 @@ describe("notifications", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/reject`)
       .set("Cookie", adminCookie)
+      .set("x-csrf-token", csrfFor(adminCookie))
       .send({ reason: "PHOTO_UNREADABLE" })
       .expect(200);
 
@@ -145,6 +148,7 @@ describe("notifications", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${submission.id}/approve`)
       .set("Cookie", adminCookie)
+      .set("x-csrf-token", csrfFor(adminCookie))
       .send({})
       .expect(200);
 
@@ -159,6 +163,7 @@ describe("notifications", () => {
     await request(server())
       .post(`/v1/notifications/${id}/read`)
       .set("Cookie", stranger.cookie)
+      .set("x-csrf-token", csrfFor(stranger.cookie))
       .expect(404);
     const untouched = await request(server())
       .get("/v1/notifications")
@@ -169,6 +174,7 @@ describe("notifications", () => {
     await request(server())
       .post(`/v1/notifications/${id}/read`)
       .set("Cookie", submission.cookie)
+      .set("x-csrf-token", csrfFor(submission.cookie))
       .expect(204);
     const read = await request(server())
       .get("/v1/notifications")
@@ -181,6 +187,7 @@ describe("notifications", () => {
     await request(server())
       .post(`/v1/notifications/${id}/read`)
       .set("Cookie", submission.cookie)
+      .set("x-csrf-token", csrfFor(submission.cookie))
       .expect(204);
   });
 
@@ -192,6 +199,7 @@ describe("notifications", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${a.id}/reject`)
       .set("Cookie", adminCookie)
+      .set("x-csrf-token", csrfFor(adminCookie))
       .send({ reason: "PHOTO_UNREADABLE" })
       .expect(200);
 
@@ -200,6 +208,7 @@ describe("notifications", () => {
     await request(server())
       .post("/v1/kyc")
       .set("Cookie", a.cookie)
+      .set("x-csrf-token", csrfFor(a.cookie))
       .send({ ...DETAILS, documents })
       .expect(202);
     const second = await db.kycSubmission.findFirstOrThrow({
@@ -209,6 +218,7 @@ describe("notifications", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${second.id}/approve`)
       .set("Cookie", adminCookie)
+      .set("x-csrf-token", csrfFor(adminCookie))
       .send({})
       .expect(200);
 
@@ -218,7 +228,11 @@ describe("notifications", () => {
       .expect(200);
     expect(before.body.unreadCount).toBe(2);
 
-    await request(server()).post("/v1/notifications/read-all").set("Cookie", a.cookie).expect(204);
+    await request(server())
+      .post("/v1/notifications/read-all")
+      .set("Cookie", a.cookie)
+      .set("x-csrf-token", csrfFor(a.cookie))
+      .expect(204);
 
     const after = await request(server())
       .get("/v1/notifications")
@@ -230,6 +244,7 @@ describe("notifications", () => {
     await request(server())
       .post(`/v1/admin/kyc/submissions/${b.id}/approve`)
       .set("Cookie", adminCookie)
+      .set("x-csrf-token", csrfFor(adminCookie))
       .send({})
       .expect(200);
     const bList = await request(server())

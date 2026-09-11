@@ -8,6 +8,14 @@ export const errorCode = z.enum([
   "VALIDATION_FAILED",
   "UNAUTHENTICATED",
   "FORBIDDEN",
+  /**
+   * A cookie-authenticated mutation arrived without proof that the page asking
+   * for it is ours: a missing or wrong CSRF token, or an Origin that is not on
+   * the allowlist. Separate from FORBIDDEN because the cause and the cure are
+   * different - the caller is not lacking a permission, its request is not
+   * trusted to have come from the application at all.
+   */
+  "CSRF_FAILED",
   "NOT_FOUND",
   "CONFLICT",
   "RATE_LIMITED",

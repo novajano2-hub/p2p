@@ -17,6 +17,7 @@ import { KycRetentionModule } from "@/modules/kyc/kyc-retention.module";
 import { KycRetentionService } from "@/modules/kyc/kyc-retention.service";
 
 import {
+  csrfFor,
   fakeJpeg,
   fakePng,
   registerFully,
@@ -147,6 +148,7 @@ describe("identity verification", () => {
     const submitted = await request(server())
       .post("/v1/kyc")
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({ ...DETAILS, documents })
       .expect(202);
     expect(submitted.body.status).toBe("PENDING");
@@ -185,6 +187,7 @@ describe("identity verification", () => {
     await request(server())
       .post("/v1/kyc")
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({ ...DETAILS, documents })
       .expect(409);
     await uploadPhoto(server(), cookie, "front").expect(409);
@@ -196,6 +199,7 @@ describe("identity verification", () => {
     await request(server())
       .post("/v1/kyc")
       .set("Cookie", passport.cookie)
+      .set("x-csrf-token", csrfFor(passport.cookie))
       .send({ ...DETAILS, documentType: "PASSPORT", documents })
       .expect(202);
 
@@ -204,6 +208,7 @@ describe("identity verification", () => {
     const refused = await request(server())
       .post("/v1/kyc")
       .set("Cookie", card.cookie)
+      .set("x-csrf-token", csrfFor(card.cookie))
       .send({ ...DETAILS, documents: noBack })
       .expect(400);
     expect(refused.body.error.details).toEqual([
@@ -233,6 +238,7 @@ describe("identity verification", () => {
     await request(server())
       .post("/v1/kyc")
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({
         ...DETAILS,
         documents: { front: first.body.id, back: back.body.id, selfie: selfie.body.id },
@@ -298,6 +304,7 @@ describe("identity verification", () => {
     await request(server())
       .post("/v1/kyc")
       .set("Cookie", submitter.cookie)
+      .set("x-csrf-token", csrfFor(submitter.cookie))
       .send({ ...DETAILS, documents })
       .expect(202);
 
@@ -353,6 +360,7 @@ describe("identity verification", () => {
     await request(server())
       .post("/v1/kyc/documents/front")
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({ photo: "..." })
       .expect(400);
 
@@ -377,6 +385,7 @@ describe("identity verification", () => {
     const under18 = await request(server())
       .post("/v1/kyc")
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({ ...DETAILS, documents, dateOfBirth: tooYoung.toISOString().slice(0, 10) })
       .expect(400);
     expect(under18.body.error.code).toBe("VALIDATION_FAILED");
@@ -384,17 +393,24 @@ describe("identity verification", () => {
     await request(server())
       .post("/v1/kyc")
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({ ...DETAILS, documents, documentType: "LIBRARY_CARD" })
       .expect(400);
 
     await request(server())
       .post("/v1/kyc")
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({ ...DETAILS, documents, legalName: "A" })
       .expect(400);
 
     // No photographs at all.
-    await request(server()).post("/v1/kyc").set("Cookie", cookie).send(DETAILS).expect(400);
+    await request(server())
+      .post("/v1/kyc")
+      .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
+      .send(DETAILS)
+      .expect(400);
 
     // None of that got as far as the database.
     const count = await db.kycSubmission.count({
@@ -420,6 +436,7 @@ describe("identity verification", () => {
     const stolen = await request(server())
       .post("/v1/kyc")
       .set("Cookie", bob.cookie)
+      .set("x-csrf-token", csrfFor(bob.cookie))
       .send({ ...DETAILS, documents: alicePhotos })
       .expect(400);
     expect(stolen.body.error.details).toEqual([
@@ -433,6 +450,7 @@ describe("identity verification", () => {
     await request(server())
       .post("/v1/kyc")
       .set("Cookie", alice.cookie)
+      .set("x-csrf-token", csrfFor(alice.cookie))
       .send({ ...DETAILS, documents: alicePhotos })
       .expect(202);
 
@@ -447,12 +465,17 @@ describe("identity verification", () => {
     await request(server())
       .post("/v1/kyc")
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({ ...DETAILS, documents })
       .expect(202);
 
     // Approval is an administrator's act. Nothing under /v1/kyc performs one.
     for (const path of ["/v1/kyc/approve", "/v1/kyc/review", "/v1/kyc/status"]) {
-      const res = await request(server()).post(path).set("Cookie", cookie).send({});
+      const res = await request(server())
+        .post(path)
+        .set("Cookie", cookie)
+        .set("x-csrf-token", csrfFor(cookie))
+        .send({});
       expect(res.status).toBe(404);
     }
     // And the account is still only pending.

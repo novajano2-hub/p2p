@@ -5,6 +5,8 @@ import request from "supertest";
 import { createApp } from "@/app";
 import { loadEnv } from "@/config/env";
 
+import { csrfFor } from "./helpers";
+
 /*
   The real application, over HTTP, against the real database and Redis.
 
@@ -298,13 +300,21 @@ describe("session", () => {
     const { cookie } = await registerFully(uniqueEmail());
     await request(server()).get("/v1/auth/me").set("Cookie", cookie).expect(200);
 
-    await request(server()).post("/v1/auth/logout").set("Cookie", cookie).expect(204);
+    await request(server())
+      .post("/v1/auth/logout")
+      .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
+      .expect(204);
     await request(server()).get("/v1/auth/me").set("Cookie", cookie).expect(401);
   });
 
   it("records revocation instead of deleting the row", async () => {
     const { cookie, userId } = await registerFully(uniqueEmail());
-    await request(server()).post("/v1/auth/logout").set("Cookie", cookie).expect(204);
+    await request(server())
+      .post("/v1/auth/logout")
+      .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
+      .expect(204);
 
     const session = await db.session.findFirst({ where: { userId } });
     expect(session).not.toBeNull();
@@ -314,8 +324,16 @@ describe("session", () => {
 
   it("is idempotent: logging out twice, or with no session, still succeeds", async () => {
     const { cookie } = await registerFully(uniqueEmail());
-    await request(server()).post("/v1/auth/logout").set("Cookie", cookie).expect(204);
-    await request(server()).post("/v1/auth/logout").set("Cookie", cookie).expect(204);
+    await request(server())
+      .post("/v1/auth/logout")
+      .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
+      .expect(204);
+    await request(server())
+      .post("/v1/auth/logout")
+      .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
+      .expect(204);
     await request(server()).post("/v1/auth/logout").expect(204);
   });
 
@@ -346,6 +364,7 @@ describe("profile", () => {
     const updated = await request(server())
       .patch("/v1/auth/me")
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({ username: chosen })
       .expect(200);
     expect(updated.body.user.username).toBe(chosen);
@@ -354,6 +373,7 @@ describe("profile", () => {
     const clash = await request(server())
       .patch("/v1/auth/me")
       .set("Cookie", other.cookie)
+      .set("x-csrf-token", csrfFor(other.cookie))
       .send({ username: chosen.toUpperCase() })
       .expect(409);
     expect(clash.body.error.code).toBe("CONFLICT");
@@ -362,6 +382,7 @@ describe("profile", () => {
     await request(server())
       .patch("/v1/auth/me")
       .set("Cookie", cookie)
+      .set("x-csrf-token", csrfFor(cookie))
       .send({ username: "no spaces!" })
       .expect(400);
 

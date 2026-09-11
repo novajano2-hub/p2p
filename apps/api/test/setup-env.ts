@@ -33,3 +33,13 @@ process.env.DATABASE_URL ??= "postgresql://abay_app:app@localhost:5433/abay?sche
 process.env.REDIS_URL ??= "redis://localhost:6379";
 // Tests talk to the app over plain HTTP, so the cookie cannot be Secure here.
 process.env.COOKIE_SECURE ??= "false";
+/*
+  Rate limiting off by default, because every request in this suite comes from
+  127.0.0.1: one address registering forty accounts would spend the per-IP
+  allowance of half the endpoints on the suite itself, and the failures would
+  land on whichever spec happened to run last.
+
+  `??=` means a spec that wants the limiter can turn it on for its own file
+  before loadEnv runs, which is what test/api/security.spec.ts does.
+*/
+process.env.RATE_LIMIT_ENABLED ??= "false";

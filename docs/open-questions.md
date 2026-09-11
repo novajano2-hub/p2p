@@ -51,6 +51,12 @@ account for R2. Free for a team this size; pure configuration, no code. MFA on t
 in the threat model, B7.3) are the defense-in-depth layer to add once Access is live, not
 a substitute for it.
 
+**Update:** the rate limit is built - ten attempts per IP and five per account in a
+quarter of an hour, asserted in `apps/api/test/api/security.spec.ts`. MFA is not, and
+neither is the Access gate. A limit makes the door slower to knock on; it does not stop
+the door being on the open internet, which is what this entry is about. Nothing here is
+discharged.
+
 This is a go/no-go gate for the first public deployment, not a backlog item.
 
 ### Q2 — Is admin identity a role on `User`, or a separate account realm? **Blocks Phase 1**
