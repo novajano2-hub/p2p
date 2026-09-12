@@ -13,6 +13,8 @@ export interface ChainConfig {
   token: { symbol: LedgerAsset; contract: string; decimals: number; standard: string };
   finality: { confirmations: number; reorgDepth: number };
   deposit: { dust: bigint; reviewThreshold: bigint };
+  sweep: { minimum: bigint };
+  reconciliation: { tolerance: bigint };
   withdrawal: {
     min: bigint;
     max: bigint;
@@ -37,6 +39,8 @@ export const chainConfig = (env: Env): ChainConfig => ({
   },
   finality: { confirmations: env.DEPOSIT_CONFIRMATIONS, reorgDepth: env.REORG_DEPTH },
   deposit: { dust: env.DEPOSIT_DUST_MICRO, reviewThreshold: env.DEPOSIT_REVIEW_THRESHOLD_MICRO },
+  sweep: { minimum: env.SWEEP_MIN_MICRO },
+  reconciliation: { tolerance: env.RECONCILIATION_TOLERANCE_MICRO },
   withdrawal: {
     min: env.WITHDRAWAL_MIN_MICRO,
     max: env.WITHDRAWAL_MAX_MICRO,

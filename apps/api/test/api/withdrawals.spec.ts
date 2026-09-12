@@ -126,8 +126,18 @@ async function funded(usdt: bigint, options: { verified?: boolean } = {}) {
   return { cookie, userId };
 }
 
-/** The hot treasury, funded the way a sweep will fund it in stage 4. */
+/*
+  The hot treasury, funded the way a sweep funds it: coins on the chain AND
+  the ledger entry that records them. Funding only the ledger would leave the
+  mock world physically incoherent - an address paying out coins it never
+  received - and the reconciler would be right to call that a shortfall.
+*/
 async function fundTreasury(usdt: bigint) {
+  await chain.mint({
+    to: await custody.treasuryAddress("BSC", "HOT"),
+    rawAmount: usdt * 10n ** 18n,
+    tag: uniq("treasury"),
+  });
   await ledger.post({
     reason: "OPENING_BALANCE",
     asset: "USDT",

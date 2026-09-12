@@ -405,7 +405,7 @@ Two rows deserve attention:
 | L6  | Escrowed funds are not simultaneously available                    | Follows from L2 + per-trade accounts + row locking; asserted by AT-2                                                   | **Row locking built** (`LedgerService`); the escrow assertion itself is Phase 4 |
 | L7  | Settled trade escrow balance is exactly 0                          | Invariant test across all trades (AT-14)                                                                               | Phase 4                                                                         |
 | L8  | Balances rebuilt from entries equal the projection                 | Rebuild-and-compare test (AT-11)                                                                                       | **Built** (`ledger-properties.spec.ts`, rebuild in a rolled-back transaction)   |
-| L9  | Σ controlled on-chain assets = Σ customer liabilities ± in-flight  | Reconciler; break detection tested by AT-12                                                                            | Phase 3                                                                         |
+| L9  | Σ controlled on-chain assets = Σ customer liabilities ± in-flight  | Reconciler; break detection tested by AT-12                                                                            | **Built** (reconciler + AT-12; read-only, raises breaks)                        |
 | L10 | Every transaction carries reference, actor, reason, correlation ID | `NOT NULL` columns on `ledger_transactions`                                                                            | **Built**                                                                       |
 
 The built rows live in `packages/database/sql/` (`ledger-invariants.sql`,
@@ -441,6 +441,23 @@ two brand-new accounts (a customer's first hold and first hold-release) in oppos
 orders, each waiting on the other's uncommitted unique key. `LedgerService` now resolves
 accounts in code order, one global order for everyone, for the same reason its
 `FOR UPDATE` is in id order.
+
+**Phase 3 - money in, money out, and the check against reality.**
+`apps/api/src/modules/` now carries deposits (JE-1, JE-10a/b), withdrawals (JE-7,
+JE-8a/b, JE-9), sweeps (JE-2a/b) and reconciliation. The last of those is the only
+thing in the system that looks outside the database: everything else - balanced
+entries, balances equal to a rebuild, no negative customer balance - is internally
+consistent by construction and would not notice if the coins were simply gone.
+
+The reconciler compares each position the chain can be asked about (customer deposit
+addresses, hot treasury, cold treasury) against its ledger account, and raises a
+`reconciliation_break` naming the direction and the amount. It posts nothing, ever
+(ADR-0009): a surplus is money we may owe somebody and a shortfall is a loss, software
+cannot tell them apart, and a reconciler that posted its own correction would be a
+program that can create or destroy money whenever it is confused. JE-11 and JE-12 are
+posted only through the adjustment workflow, by a person holding `FINANCIAL_ADJUSTER`,
+with a reason recorded - and JE-12 lands on `EXP:PLATFORM:USDT:LOSSES`, never on
+customer balances. Proven in `apps/api/test/api/reconciliation.spec.ts` (AT-12).
 
 **Stage 4 - the viewer.** `apps/api/src/modules/admin/admin-ledger.*` and
 `apps/web/components/admin/ledger-*.tsx`: the ledger read by an administrator holding the

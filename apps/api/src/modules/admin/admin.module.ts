@@ -5,6 +5,7 @@ import { StorageModule } from "@/infra/storage/storage.module";
 import { AdminAuthService } from "@/modules/admin/admin-auth.service";
 import { AdminDepositsController } from "@/modules/admin/admin-deposits.controller";
 import { AdminKycService } from "@/modules/admin/admin-kyc.service";
+import { AdminReconciliationController } from "@/modules/admin/admin-reconciliation.controller";
 import { AdminLedgerController } from "@/modules/admin/admin-ledger.controller";
 import { AdminLedgerService } from "@/modules/admin/admin-ledger.service";
 import { AdminMfaService } from "@/modules/admin/admin-mfa.service";
@@ -15,6 +16,8 @@ import { AdminGuard } from "@/modules/admin/admin.guard";
 import { AuditModule } from "@/modules/audit/audit.module";
 import { DepositsModule } from "@/modules/deposits/deposits.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
+import { ReconciliationModule } from "@/modules/reconciliation/reconciliation.module";
+import { SweepsModule } from "@/modules/sweeps/sweeps.module";
 import { WithdrawalsModule } from "@/modules/withdrawals/withdrawals.module";
 
 /*
@@ -30,6 +33,8 @@ import { WithdrawalsModule } from "@/modules/withdrawals/withdrawals.module";
     NotificationsModule,
     DepositsModule,
     WithdrawalsModule,
+    SweepsModule,
+    ReconciliationModule,
   ],
   controllers: [
     AdminAuthController,
@@ -37,6 +42,7 @@ import { WithdrawalsModule } from "@/modules/withdrawals/withdrawals.module";
     AdminLedgerController,
     AdminDepositsController,
     AdminWithdrawalsController,
+    AdminReconciliationController,
   ],
   providers: [
     AdminSessionService,
