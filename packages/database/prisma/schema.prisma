@@ -451,6 +451,8 @@ enum AdminRole {
   WITHDRAWAL_APPROVER
   /// Phase 2. Posts a typed, balanced correction. Never a "set balance".
   FINANCIAL_ADJUSTER
+  /// Phase 2. Reads accounts, balances and posted history. Moves nothing.
+  LEDGER_VIEWER
 
   @@map("admin_role")
 }
@@ -716,6 +718,7 @@ model LedgerTransaction {
   @@index([referenceType, referenceId])
   @@index([reason, createdAt])
   @@index([createdAt])
+  @@index([correlationId])
   @@map("ledger_transactions")
 }
 

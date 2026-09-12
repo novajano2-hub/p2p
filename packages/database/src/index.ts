@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 
-export { Prisma, PrismaClient } from "@prisma/client";
+export { $Enums, Prisma, PrismaClient } from "@prisma/client";
 
 // Row types, so services can be typed without importing @prisma/client directly.
 export type {

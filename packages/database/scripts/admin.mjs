@@ -33,7 +33,13 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../../..");
 
-const ROLES = ["KYC_REVIEWER", "DISPUTE_RESOLVER", "WITHDRAWAL_APPROVER", "FINANCIAL_ADJUSTER"];
+const ROLES = [
+  "KYC_REVIEWER",
+  "DISPUTE_RESOLVER",
+  "WITHDRAWAL_APPROVER",
+  "FINANCIAL_ADJUSTER",
+  "LEDGER_VIEWER",
+];
 /** Longer than the customer rule. These accounts are worth more to an attacker. */
 const MIN_PASSWORD = 12;
 

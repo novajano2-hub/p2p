@@ -1,11 +1,12 @@
 "use client";
 
 import { Desktop, Moon, ShieldCheck, SignOut, Sun } from "@phosphor-icons/react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useSyncExternalStore } from "react";
 
 import { MfaEnroll } from "@/components/admin/mfa-enroll";
+import { AppLink } from "@/components/ui/app-link";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { adminClient, type AdminIdentity } from "@/lib/admin/client";
 import {
@@ -108,9 +109,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
           style={{ backgroundColor: "var(--admin-bar-bg)", color: "var(--admin-bar-fg)" }}
         >
           <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between gap-4 px-5">
-            <div className="flex items-center gap-2.5">
-              <ShieldCheck size={20} weight="fill" aria-hidden="true" />
-              <span className="text-[15px] font-semibold tracking-tight">BIRQ administration</span>
+            <div className="flex min-w-0 items-center gap-2.5">
+              <ShieldCheck size={20} weight="fill" aria-hidden="true" className="shrink-0" />
+              <span className="hidden text-[15px] font-semibold tracking-tight md:inline">
+                BIRQ administration
+              </span>
+              <SectionNav />
             </div>
             <div className="flex items-center gap-3">
               <AdminThemeToggle />
@@ -139,6 +143,53 @@ export function AdminShell({ children }: { children: ReactNode }) {
         <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-8 sm:py-10">{children}</main>
       </div>
     </AdminContext.Provider>
+  );
+}
+
+/*
+  Where an administrator can go: one link per area, with the current one
+  marked. Each area gates itself on its own role, so a link here promises
+  nothing - it only says the area exists.
+*/
+const SECTIONS: readonly { href: string; label: string; match: (pathname: string) => boolean }[] = [
+  {
+    href: "/admin",
+    label: "Verification",
+    match: (pathname) => pathname === "/admin" || pathname.startsWith("/admin/submissions"),
+  },
+  {
+    href: "/admin/ledger",
+    label: "Ledger",
+    match: (pathname) => pathname.startsWith("/admin/ledger"),
+  },
+];
+
+function SectionNav() {
+  const pathname = usePathname();
+  return (
+    <nav aria-label="Areas" className="ml-1 flex items-center gap-0.5 md:ml-3">
+      {SECTIONS.map(({ href, label, match }) => {
+        const active = match(pathname);
+        return (
+          <AppLink
+            key={href}
+            href={href}
+            aria-current={active ? "page" : undefined}
+            className="rounded-control flex h-8 items-center px-2.5 text-[13px] font-medium transition-[background-color,opacity] duration-150 hover:opacity-100"
+            style={
+              active
+                ? {
+                    backgroundColor: "color-mix(in srgb, var(--admin-bar-fg) 14%, transparent)",
+                    opacity: 1,
+                  }
+                : { opacity: 0.7 }
+            }
+          >
+            {label}
+          </AppLink>
+        );
+      })}
+    </nav>
   );
 }
 

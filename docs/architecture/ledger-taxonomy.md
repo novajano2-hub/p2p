@@ -435,7 +435,27 @@ balanced, overdrawing transaction written by hand, which the floor constraint re
 name. Then every balance is zeroed and rebuilt from the entries alone inside a transaction
 that is rolled back, and the rebuild must equal the projection exactly (AT-11). An
 `afterEach` hook fails the file if any transaction in the database is unbalanced (AT-10).
-A failing run prints its seed; `LEDGER_PROPERTY_SEED=<seed>` replays it.
+A failing run prints its seed; `LEDGER_PROPERTY_SEED=<seed>` replays it. The test earned its
+keep on its first day: it found a deadlock between two postings that each created the same
+two brand-new accounts (a customer's first hold and first hold-release) in opposite line
+orders, each waiting on the other's uncommitted unique key. `LedgerService` now resolves
+accounts in code order, one global order for everyone, for the same reason its
+`FOR UPDATE` is in id order.
+
+**Stage 4 - the viewer.** `apps/api/src/modules/admin/admin-ledger.*` and
+`apps/web/components/admin/ledger-*.tsx`: the ledger read by an administrator holding the
+`LEDGER_VIEWER` role, a role of its own because seeing a person's balance is a capability
+in its own right and an auditor should not need the power to move money in order to look.
+Every route is a GET. The overview re-verifies the four database-enforced invariants from
+the rows on every load (every transaction sums to zero; the projection equals a rebuild;
+no floor breached; assets + expenses = liabilities + equity + revenue) and shows the trial
+balance and the platform accounts. Accounts page by code; an account's statement carries a
+running balance computed as a window over its entries; the journal filters by reason,
+reference, correlation id and account, and a transaction shows its lines with what it
+reversed and what has since reversed it. Money crosses the wire only as integer strings of
+millionths (AT-21), and opening a customer's or a trade's account, or a transaction that
+touched one, writes `ledger.account_viewed` / `ledger.transaction_viewed` to the audit log,
+as opening an identity submission does.
 
 Three implementation notes where the code is more specific than this document was:
 

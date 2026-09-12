@@ -146,11 +146,19 @@ export class LedgerService {
     tx: Prisma.TransactionClient,
     posting: ValidatedPosting,
   ): Promise<PostedTransaction> {
+    /*
+      Accounts are resolved in code order, not line order, and this is a
+      lock-ordering rule as much as the FOR UPDATE below is. Resolving may
+      INSERT a brand-new account, and an uncommitted insert holds its unique
+      key until commit: two postings creating the same two new accounts in
+      opposite orders each wait for the other's key, and PostgreSQL has to
+      kill one (found by the AT-18 property test - a customer's first hold
+      and first hold-release racing, both creating AVAILABLE and
+      PENDING_WITHDRAWAL). One order for everyone means no opposite order.
+    */
     const byCode = new Map<string, ResolvedAccount>();
-    for (const line of posting.lines) {
-      if (!byCode.has(line.account)) {
-        byCode.set(line.account, await this.resolveAccount(tx, line.account));
-      }
+    for (const code of [...new Set(posting.lines.map((line) => line.account))].sort()) {
+      byCode.set(code, await this.resolveAccount(tx, code));
     }
     const byId = new Map([...byCode.values()].map((account) => [account.id, account]));
     const ids = [...byId.keys()].sort();
