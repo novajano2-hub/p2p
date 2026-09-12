@@ -106,6 +106,8 @@ worth thirty seconds.
 
 ### Q5 — Deposit finality policy: how many confirmations, and what reorg depth? **Blocks Phase 3 defaults, needs real data before Phase 6**
 
+**Status (2026-09-12).** Phase 3 runs with `DEPOSIT_CONFIRMATIONS=15` and `REORG_DEPTH=30`, both configuration with defaults, chosen for BNB Smart Chain now that it is the network (ADR-0006 amendment). Still UNVALIDATED against the live chain until Phase 6.
+
 Crediting too early lets an attacker deposit, trade, withdraw, and then have the deposit
 reorged away. Crediting too late makes the product feel broken.
 
@@ -116,6 +118,8 @@ number must come from authoritative network documentation before Phase 6**, not 
 estimate.
 
 ### Q6 — Which custody/signing provider, and does it support the target network at all? **Blocks Phase 6; shapes the `CustodyProvider` interface now**
+
+**Status (2026-09-12).** With BSC as the network, (2) is no longer a risk: every mainstream provider supports it. The interface is now written (`apps/api/src/modules/custody/custody.provider.ts`): addresses issued per customer, transfers idempotent on a client reference, and an honest `UNKNOWN` outcome. Which provider, and what it costs, is the owner's decision before Phase 6.
 
 Two sub-questions with different urgency:
 
@@ -130,6 +134,8 @@ The adapter design means a wrong guess is cheap. But if the answer to (2) is "no
 network choice is decided for us, and it is better to learn that before Phase 6.
 
 ### Q7 — Can your users actually get USDT onto the target network today? **Should be answered before Phase 1**
+
+**Status (2026-09-12).** Largely answered by choosing BSC: BEP-20 USDT withdrawal is offered by nearly every exchange customers are likely to hold funds on. Worth confirming against the two or three services Ethiopian users actually use, but no longer a viability risk.
 
 The one question here that no amount of correct code can compensate for. If the exchanges
 and wallets Ethiopian users actually hold funds in do not support withdrawing USDT to this

@@ -11,7 +11,7 @@ will point there.
 | [ADR-0003](#adr-0003--an-immutable-double-entry-ledger-is-the-sole-source-of-monetary-truth)           | Immutable double-entry ledger is the sole source of monetary truth               | Accepted |
 | [ADR-0004](#adr-0004--escrow-is-an-internal-ledger-hold-in-a-per-trade-account)                        | Escrow is an internal ledger hold in a per-trade account                         | Accepted |
 | [ADR-0005](#adr-0005--value-representation-money-time-and-identifiers)                                 | Value representation: money, time and identifiers                                | Accepted |
-| [ADR-0006](#adr-0006--chain-and-custody-behind-adapters-plasma-is-a-hypothesis)                        | Chain and custody behind adapters; Plasma is a hypothesis                        | Accepted |
+| [ADR-0006](#adr-0006--chain-and-custody-behind-adapters-bsc-is-the-network)                            | Chain and custody behind adapters; Plasma is a hypothesis                        | Accepted |
 | [ADR-0007](#adr-0007--idempotency-keys-and-a-transactional-outbox-for-every-external-effect)           | Idempotency keys and a transactional outbox for every external effect            | Accepted |
 | [ADR-0008](#adr-0008--zod-as-the-single-validation-and-contract-library)                               | Zod as the single validation and contract library                                | Accepted |
 | [ADR-0009](#adr-0009--balances-are-a-transactional-projection-row-locks-are-the-concurrency-primitive) | Balances are a transactional projection; row locks are the concurrency primitive | Accepted |
@@ -178,7 +178,7 @@ conversion at the edge where the currency and decimals are also stated.
 
 ---
 
-## ADR-0006 — Chain and custody behind adapters; Plasma is a hypothesis
+## ADR-0006 — Chain and custody behind adapters; BSC is the network
 
 **Context.** The brief targets Plasma because eligible USDT transfers can use sponsored
 gas. **None of this has been verified.** Sponsored-gas eligibility rules, rate limits,
@@ -212,9 +212,25 @@ code, copy or documentation until proven:
   of how good our code is. This is a product-viability risk, not merely a technical one.
 
 **Consequences.** We can build and fully test the entire product without a provider. If
-Plasma turns out to be unworkable, the change is one adapter and a config file, not a
+the network turns out to be unworkable, the change is one adapter and a config file, not a
 rewrite. The cost is that our mock's behavior is our _assumption_ about the chain, so
 Phase 6 must re-run the full acceptance suite against the sandbox.
+
+**Amendment, 2026-09-12 — the network is BNB Smart Chain.** The context above was written
+when Plasma was the target; it is kept because it explains why the adapters exist. The
+owner chose BSC at the start of Phase 3, and it is the better-founded choice on every
+axis the questions above raise: custody providers support it as a matter of course
+(Q6), it is one of the most widely offered USDT withdrawal networks on the exchanges
+customers already use (Q7), its finality behaviour is documented and ordinary, and gas is
+a fraction of a cent, paid in BNB by the platform at sweep and at withdrawal, never by a
+customer trading. What was "sponsored gas" is now simply "cheap gas".
+
+The facts of the network live in configuration (`apps/api/src/config/env.ts`, all with
+defaults): chain id 56, the BEP-20 USDT contract, 18 token decimals against the ledger's
+6 (converted once, at the edge, `common/money/units.ts`), 15 confirmations before a
+deposit is credited, and a transfer absent for 30 blocks treated as gone. The two
+finality numbers remain **UNVALIDATED** until Phase 6 exercises them against the live
+network (open-questions Q5). Nothing about Plasma remains in code.
 
 ---
 
@@ -245,6 +261,15 @@ is assumed rather than defended against.
 **Consequences.** One extra table and one extra insert per financial write. In exchange,
 retries become boring. The `idempotency_key` table needs a retention policy (proposed:
 30 days, longer than any plausible client retry window).
+
+_As built (Phase 3, stage 1)._ The outbox and the workers that follow it are polled from
+PostgreSQL - rows claimed with `FOR UPDATE SKIP LOCKED` under a short lease, retried with
+backoff, parked as `FAILED` after the last attempt - rather than pushed through BullMQ as
+earlier phases anticipated. The outbox row is already the durable record; putting a
+second datastore between it and delivery would have added a place for money-relevant
+work to be lost without adding a property. Redis keeps only a lock so that one worker
+replica polls at a time. Inbound keys are claimed in the same transaction as the work
+and answered from the stored response (`common/idempotency`).
 
 ---
 

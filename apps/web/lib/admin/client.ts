@@ -18,7 +18,8 @@ export type AdminRole =
   | "DISPUTE_RESOLVER"
   | "WITHDRAWAL_APPROVER"
   | "FINANCIAL_ADJUSTER"
-  | "LEDGER_VIEWER";
+  | "LEDGER_VIEWER"
+  | "DEPOSIT_REVIEWER";
 
 export type AdminIdentity = {
   id: string;
@@ -87,6 +88,7 @@ const role = z.enum([
   "WITHDRAWAL_APPROVER",
   "FINANCIAL_ADJUSTER",
   "LEDGER_VIEWER",
+  "DEPOSIT_REVIEWER",
 ]);
 
 const identitySchema = z.object({

@@ -109,10 +109,21 @@ module.exports = async function teardown() {
 
     const ledger = await clearTestLedgerRows();
 
+    // Phase 3 rows the tests tagged as theirs. Deposits, withdrawals and
+    // idempotency keys hang off the test customers deleted above and went
+    // with them; these three tables are not owned by anybody.
+    const outbox = await db.outboxEvent.deleteMany({
+      where: { correlationId: { startsWith: "test-" } },
+    });
+    const chain = await db.mockChainTransfer.deleteMany({
+      where: { OR: [{ tag: { startsWith: "test-" } }, { tag: { startsWith: "custody:test-" } }] },
+    });
+    await db.mockCustodyDirective.deleteMany({ where: { clientRef: { startsWith: "test-" } } });
+
     const cleared = test.length + testAdmins.length;
-    if (cleared > 0 || ledger > 0) {
+    if (cleared > 0 || ledger > 0 || outbox.count > 0 || chain.count > 0) {
       console.log(
-        `[teardown] cleared ${test.length} test customer(s), ${testAdmins.length} test admin(s) and ${ledger} test ledger transaction(s)`,
+        `[teardown] cleared ${test.length} test customer(s), ${testAdmins.length} test admin(s), ${ledger} test ledger transaction(s), ${outbox.count} outbox event(s) and ${chain.count} mock chain transfer(s)`,
       );
     }
   } catch (error) {

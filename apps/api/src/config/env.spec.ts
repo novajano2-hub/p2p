@@ -83,9 +83,45 @@ describe("loadEnv", () => {
   });
 
   it("refuses to start production without a way to send email", () => {
-    const production = { ...valid, ...storage, NODE_ENV: "production", COOKIE_SECURE: "true" };
+    const production = {
+      ...valid,
+      ...storage,
+      NODE_ENV: "production",
+      COOKIE_SECURE: "true",
+      CUSTODY_WEBHOOK_SECRET: "a-real-secret-of-decent-length",
+    };
     expect(() => loadEnv(production)).toThrow(/RESEND_API_KEY/);
     expect(() => loadEnv({ ...production, RESEND_API_KEY: "re_x" })).not.toThrow();
+  });
+
+  it("refuses the development webhook secret in production, and accepts it elsewhere", () => {
+    expect(() =>
+      loadEnv({
+        ...valid,
+        ...storage,
+        NODE_ENV: "production",
+        COOKIE_SECURE: "true",
+        RESEND_API_KEY: "re_x",
+      }),
+    ).toThrow(/CUSTODY_WEBHOOK_SECRET/);
+    expect(loadEnv(valid).CUSTODY_WEBHOOK_SECRET.length).toBeGreaterThanOrEqual(16);
+  });
+
+  it("reads the chain settings with BSC defaults, amounts as bigint", () => {
+    const env = loadEnv(valid);
+    expect(env.CHAIN_NETWORK).toBe("BSC");
+    expect(env.CHAIN_ID).toBe(56);
+    expect(env.USDT_DECIMALS).toBe(18);
+    expect(env.DEPOSIT_CONFIRMATIONS).toBe(15);
+    expect(env.DEPOSIT_DUST_MICRO).toBe(1_000_000n);
+    expect(loadEnv({ ...valid, WITHDRAWAL_MAX_MICRO: "5000000" }).WITHDRAWAL_MAX_MICRO).toBe(
+      5_000_000n,
+    );
+    expect(() =>
+      loadEnv({ ...valid, WITHDRAWAL_MAX_MICRO: "5", WITHDRAWAL_MIN_MICRO: "6" }),
+    ).toThrow(/WITHDRAWAL_MAX_MICRO/);
+    expect(() => loadEnv({ ...valid, DEPOSIT_DUST_MICRO: "1.5" })).toThrow(/DEPOSIT_DUST_MICRO/);
+    expect(() => loadEnv({ ...valid, USDT_CONTRACT: "0x123" })).toThrow(/USDT_CONTRACT/);
   });
 
   it("refuses to start production without somewhere to keep identity documents", () => {

@@ -39,6 +39,7 @@ const ROLES = [
   "WITHDRAWAL_APPROVER",
   "FINANCIAL_ADJUSTER",
   "LEDGER_VIEWER",
+  "DEPOSIT_REVIEWER",
 ];
 /** Longer than the customer rule. These accounts are worth more to an attacker. */
 const MIN_PASSWORD = 12;

@@ -55,6 +55,23 @@ const blankAsAbsent = z.preprocess(
   z.string().min(1).optional(),
 );
 
+/** An EVM address, shape only, lower-cased. Checksum validation arrives with the real adapter (Phase 6). */
+const evmAddress = z
+  .string()
+  .regex(/^0x[0-9a-fA-F]{40}$/, { error: "must be a 0x-prefixed 40-hex-digit address" })
+  .transform((value) => value.toLowerCase());
+
+/** An amount in millionths of a USDT, as an integer string, parsed to bigint. */
+const micro = (fallback: string) =>
+  z
+    .string()
+    .regex(/^\d+$/, { error: "must be an integer number of millionths of a USDT" })
+    .default(fallback)
+    .transform((value) => BigInt(value));
+
+/** Signs the mock provider's webhooks in development. Refused in production. */
+const DEV_WEBHOOK_SECRET = "dev-custody-webhook-secret-not-for-production";
+
 export const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -146,6 +163,45 @@ export const envSchema = z
       .default("true")
       .transform((value) => value === "true"),
     COOKIE_DOMAIN: z.string().min(1).optional(),
+
+    /* ------------------------------------------------------------ chain */
+
+    /* The one network at launch - BNB Smart Chain, decided 2026-09-12 (ADR-0006)
+       - and everything about it that is a fact of the network rather than a
+       choice of ours. All of it is configuration so that a change of network
+       is a change of values, and so that no domain code ever names a chain. */
+    CHAIN_NETWORK: z.enum(["BSC"]).default("BSC"),
+    CHAIN_ID: z.coerce.number().int().positive().default(56),
+    USDT_CONTRACT: evmAddress.default("0x55d398326f99059ff775485246999027b3197955"),
+    /** BEP-20 USDT carries 18 decimals; the ledger carries 6. Converted once, at the edge. */
+    USDT_DECIMALS: z.coerce.number().int().min(6).max(30).default(18),
+
+    /* Finality (open-questions Q5). Deliberately conservative: a deposit is
+       credited at DEPOSIT_CONFIRMATIONS, and a transfer missing from the
+       canonical chain for REORG_DEPTH blocks is treated as gone. UNVALIDATED
+       against the live network until Phase 6 runs the suite against it. */
+    DEPOSIT_CONFIRMATIONS: z.coerce.number().int().min(1).max(1_000).default(15),
+    REORG_DEPTH: z.coerce.number().int().min(1).max(10_000).default(30),
+
+    /* Policy amounts, in millionths of a USDT. The review and approval
+       thresholds are set high on purpose: an ordinary deposit or withdrawal
+       never meets a human (see state-machines.md). */
+    DEPOSIT_DUST_MICRO: micro("1000000"),
+    DEPOSIT_REVIEW_THRESHOLD_MICRO: micro("10000000000"),
+    WITHDRAWAL_MIN_MICRO: micro("1000000"),
+    WITHDRAWAL_MAX_MICRO: micro("50000000000"),
+    WITHDRAWAL_DAILY_MAX_MICRO: micro("100000000000"),
+    WITHDRAWAL_AUTO_APPROVE_MICRO: micro("2000000000"),
+    WITHDRAWAL_DUAL_APPROVAL_MICRO: micro("10000000000"),
+    WITHDRAWAL_NEW_ADDRESS_COOLDOWN_HOURS: z.coerce.number().int().min(0).max(720).default(24),
+
+    /* The adapters at the edge (ADR-0006). Only the deterministic mocks exist
+       until Phase 6; a real one is a new value here and a new file there. */
+    BLOCKCHAIN_GATEWAY: z.enum(["mock"]).default("mock"),
+    CUSTODY_PROVIDER: z.enum(["mock"]).default("mock"),
+    RISK_ENGINE: z.enum(["mock"]).default("mock"),
+    /** Verifies the provider's webhooks over the raw body. The sample value is refused in production. */
+    CUSTODY_WEBHOOK_SECRET: z.string().min(16).default(DEV_WEBHOOK_SECRET),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === "production" && env.FIELD_ENCRYPTION_KEY === EXAMPLE_FIELD_KEY) {
@@ -154,6 +210,21 @@ export const envSchema = z
         path: ["FIELD_ENCRYPTION_KEY"],
         message:
           "is the sample value from .env.example, which is public. Generate a real one: openssl rand -hex 32",
+      });
+    }
+    if (env.NODE_ENV === "production" && env.CUSTODY_WEBHOOK_SECRET === DEV_WEBHOOK_SECRET) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["CUSTODY_WEBHOOK_SECRET"],
+        message:
+          "is the development sample, which is public. Set the secret the custody provider signs with",
+      });
+    }
+    if (env.WITHDRAWAL_MIN_MICRO > env.WITHDRAWAL_MAX_MICRO) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["WITHDRAWAL_MAX_MICRO"],
+        message: "must be at least WITHDRAWAL_MIN_MICRO",
       });
     }
     if (env.NODE_ENV === "production" && !env.RATE_LIMIT_ENABLED) {

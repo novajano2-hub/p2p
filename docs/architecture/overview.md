@@ -16,7 +16,7 @@
    platform records intent and instructions, never money movement, for birr.
 7. The blockchain is touched at exactly two boundaries: **deposit in** and
    **withdrawal out**. Both go through a `BlockchainGateway` / `CustodyProvider` adapter
-   pair with deterministic mocks; the real Plasma route is UNVALIDATED.
+   pair with deterministic mocks; the real BSC adapter arrives in Phase 6 (ADR-0006).
 8. The runtime is a **modular monolith**: one NestJS/Fastify application with strict
    module boundaries plus BullMQ background workers, not microservices.
 9. **Every monetary mutation goes through the Ledger module.** No other module writes
@@ -61,7 +61,7 @@
                                          │  B6
                                          ▼
                                   ┌──────────────┐
-                                  │ Blockchain   │  Plasma (UNVALIDATED)
+                                  │ Blockchain   │  BSC (adapter: Phase 6)
                                   │ RPC/indexer  │
                                   └──────────────┘
 

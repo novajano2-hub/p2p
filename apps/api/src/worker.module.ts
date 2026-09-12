@@ -8,13 +8,17 @@ import { RedisModule } from "@/infra/redis/redis.module";
 import { KycRetentionModule } from "@/modules/kyc/kyc-retention.module";
 import { LedgerModule } from "@/modules/ledger/ledger.module";
 import { KycSweepScheduler } from "@/modules/kyc/kyc-sweep.scheduler";
+import { OutboxModule } from "@/modules/outbox/outbox.module";
+import { OutboxPublisher } from "@/modules/outbox/outbox.publisher";
 
 /*
-  The worker process: the same modules as the API, minus HTTP. Its one job
-  today is the KYC staging sweep, which deletes photographs no submission
-  ever claimed. BullMQ queues and their processors register here from Phase 3
-  (deposit confirmation, withdrawal broadcast, reconciliation), and the sweep
-  becomes a repeatable job among them.
+  The worker process: the same modules as the API, minus HTTP. Its jobs are
+  timers over Postgres state - the KYC staging sweep, and the outbox publisher
+  (ADR-0007) - each under a short Redis lock so replicas take turns rather
+  than collide. The deposit, withdrawal and reconciliation processors of
+  Phase 3 join them the same way: the rows are the queue, claimed with
+  SKIP LOCKED, so that money-moving work never depends on a second
+  datastore's durability.
 */
 @Module({})
 export class WorkerModule {
@@ -28,8 +32,9 @@ export class WorkerModule {
         RedisModule,
         KycRetentionModule,
         LedgerModule,
+        OutboxModule,
       ],
-      providers: [KycSweepScheduler],
+      providers: [KycSweepScheduler, OutboxPublisher],
     };
   }
 }
