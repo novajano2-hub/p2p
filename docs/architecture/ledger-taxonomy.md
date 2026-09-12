@@ -404,7 +404,7 @@ Two rows deserve attention:
 | L5  | Customer and escrow balances never negative                        | `CHECK (balance >= 0 OR allows_negative)` on the projection                                                            | **Built**                                                                       |
 | L6  | Escrowed funds are not simultaneously available                    | Follows from L2 + per-trade accounts + row locking; asserted by AT-2                                                   | **Row locking built** (`LedgerService`); the escrow assertion itself is Phase 4 |
 | L7  | Settled trade escrow balance is exactly 0                          | Invariant test across all trades (AT-14)                                                                               | Phase 4                                                                         |
-| L8  | Balances rebuilt from entries equal the projection                 | Rebuild-and-compare test (AT-11)                                                                                       | Stage 3                                                                         |
+| L8  | Balances rebuilt from entries equal the projection                 | Rebuild-and-compare test (AT-11)                                                                                       | **Built** (`ledger-properties.spec.ts`, rebuild in a rolled-back transaction)   |
 | L9  | Σ controlled on-chain assets = Σ customer liabilities ± in-flight  | Reconciler; break detection tested by AT-12                                                                            | Phase 3                                                                         |
 | L10 | Every transaction carries reference, actor, reason, correlation ID | `NOT NULL` columns on `ledger_transactions`                                                                            | **Built**                                                                       |
 
@@ -424,6 +424,18 @@ Proven in `apps/api/test/api/ledger.spec.ts`: AT-15, AT-16, AT-19, and twenty co
 spends against ten units of funds landing on exactly zero. Outbound adapters (email,
 object storage, Google) refuse to run inside any transaction opened through
 `PrismaService.transaction` (AT-19, `apps/api/src/common/io/transaction-scope.ts`).
+
+**Stage 3 - the properties.** `apps/api/test/api/ledger-properties.spec.ts` plays seeded
+random sequences of deposits, escrow locks, releases, refunds, withdrawal holds and hold
+releases - about a quarter of them deliberately unaffordable - first one at a time, where
+a model in memory predicts exactly which postings succeed, then in concurrent batches,
+where it follows the outcomes; after every step the database must equal the model and no
+customer or trade balance may be below zero (AT-18). The service is also bypassed with a
+balanced, overdrawing transaction written by hand, which the floor constraint refuses by
+name. Then every balance is zeroed and rebuilt from the entries alone inside a transaction
+that is rolled back, and the rebuild must equal the projection exactly (AT-11). An
+`afterEach` hook fails the file if any transaction in the database is unbalanced (AT-10).
+A failing run prints its seed; `LEDGER_PROPERTY_SEED=<seed>` replays it.
 
 Three implementation notes where the code is more specific than this document was:
 
