@@ -1,6 +1,7 @@
 import type { PinoLogger } from "nestjs-pino";
 
 import { MailError, type Mail, type Mailer } from "./mailer";
+import { assertNoOpenTransaction } from "@/common/io/transaction-scope";
 
 /*
   Resend, over its HTTP API directly rather than through its SDK. One endpoint
@@ -26,6 +27,7 @@ export class ResendMailer implements Mailer {
   }
 
   async send(mail: Mail): Promise<void> {
+    assertNoOpenTransaction("sending email");
     let response: Response;
     try {
       response = await fetch(ENDPOINT, {

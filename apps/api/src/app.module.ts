@@ -13,6 +13,7 @@ import { AdminModule } from "@/modules/admin/admin.module";
 import { AuthModule } from "@/modules/auth/auth.module";
 import { HealthModule } from "@/modules/health/health.module";
 import { KycModule } from "@/modules/kyc/kyc.module";
+import { LedgerModule } from "@/modules/ledger/ledger.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
 
 /*
@@ -33,6 +34,7 @@ export class AppModule {
         HealthModule,
         AuthModule,
         KycModule,
+        LedgerModule,
         NotificationsModule,
         AdminModule,
       ],

@@ -395,22 +395,35 @@ Two rows deserve attention:
 
 ## 6. Invariants this taxonomy makes checkable
 
-| #   | Invariant                                                          | How it is enforced                                                                                                     | Status                              |
-| --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| L1  | Every ledger transaction has ≥ 2 entries                           | Deferred constraint trigger `ledger_entries_balance_check`                                                             | **Built**                           |
-| L2  | Debits = credits per `(transaction, asset)`                        | Same trigger, on `SUM(signed_amount) = 0`                                                                              | **Built**                           |
-| L3  | One asset per ledger transaction                                   | Same trigger, on `COUNT(DISTINCT asset) = 1`                                                                           | **Built**                           |
-| L4  | Entries are immutable                                              | `REVOKE UPDATE, DELETE, TRUNCATE` from `abay_app` **and** raising triggers that stop everyone else, superuser included | **Built**                           |
-| L5  | Customer and escrow balances never negative                        | `CHECK (balance >= 0 OR allows_negative)` on the projection                                                            | **Built**                           |
-| L6  | Escrowed funds are not simultaneously available                    | Follows from L2 + per-trade accounts + row locking; asserted by AT-2                                                   | Stage 2 (locking), Phase 4 (escrow) |
-| L7  | Settled trade escrow balance is exactly 0                          | Invariant test across all trades (AT-14)                                                                               | Phase 4                             |
-| L8  | Balances rebuilt from entries equal the projection                 | Rebuild-and-compare test (AT-11)                                                                                       | Stage 3                             |
-| L9  | Σ controlled on-chain assets = Σ customer liabilities ± in-flight  | Reconciler; break detection tested by AT-12                                                                            | Phase 3                             |
-| L10 | Every transaction carries reference, actor, reason, correlation ID | `NOT NULL` columns on `ledger_transactions`                                                                            | **Built**                           |
+| #   | Invariant                                                          | How it is enforced                                                                                                     | Status                                                                          |
+| --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| L1  | Every ledger transaction has ≥ 2 entries                           | Deferred constraint trigger `ledger_entries_balance_check`                                                             | **Built**                                                                       |
+| L2  | Debits = credits per `(transaction, asset)`                        | Same trigger, on `SUM(signed_amount) = 0`                                                                              | **Built**                                                                       |
+| L3  | One asset per ledger transaction                                   | Same trigger, on `COUNT(DISTINCT asset) = 1`                                                                           | **Built**                                                                       |
+| L4  | Entries are immutable                                              | `REVOKE UPDATE, DELETE, TRUNCATE` from `abay_app` **and** raising triggers that stop everyone else, superuser included | **Built**                                                                       |
+| L5  | Customer and escrow balances never negative                        | `CHECK (balance >= 0 OR allows_negative)` on the projection                                                            | **Built**                                                                       |
+| L6  | Escrowed funds are not simultaneously available                    | Follows from L2 + per-trade accounts + row locking; asserted by AT-2                                                   | **Row locking built** (`LedgerService`); the escrow assertion itself is Phase 4 |
+| L7  | Settled trade escrow balance is exactly 0                          | Invariant test across all trades (AT-14)                                                                               | Phase 4                                                                         |
+| L8  | Balances rebuilt from entries equal the projection                 | Rebuild-and-compare test (AT-11)                                                                                       | Stage 3                                                                         |
+| L9  | Σ controlled on-chain assets = Σ customer liabilities ± in-flight  | Reconciler; break detection tested by AT-12                                                                            | Phase 3                                                                         |
+| L10 | Every transaction carries reference, actor, reason, correlation ID | `NOT NULL` columns on `ledger_transactions`                                                                            | **Built**                                                                       |
 
 The built rows live in `packages/database/sql/` (`ledger-invariants.sql`,
 `ledger-immutability.sql`, `ledger-balance-projection.sql`,
 `ledger-chart-of-accounts.sql`), applied by migration `20260912090000_ledger`.
+
+**Stage 2 - the writer.** `apps/api/src/modules/ledger/ledger.service.ts` is the only
+code that posts. Its order of operations is the concurrency design in ADR-0009 made
+concrete: validate before any I/O, answer a repeated idempotency key with the original
+posting, resolve accounts (creating a customer's or a trade's on first use, atomically),
+`SELECT ... FOR UPDATE` every touched balance row in ascending account-id order, refuse an
+overdraw while those rows are locked and name the account, then write. Every account a
+posting touches is locked - the credited ones too - because the balance trigger updates
+each of them and two postings updating the same rows in opposite orders is a deadlock.
+Proven in `apps/api/test/api/ledger.spec.ts`: AT-15, AT-16, AT-19, and twenty concurrent
+spends against ten units of funds landing on exactly zero. Outbound adapters (email,
+object storage, Google) refuse to run inside any transaction opened through
+`PrismaService.transaction` (AT-19, `apps/api/src/common/io/transaction-scope.ts`).
 
 Three implementation notes where the code is more specific than this document was:
 

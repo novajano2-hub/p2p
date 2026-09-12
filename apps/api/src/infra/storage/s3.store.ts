@@ -7,6 +7,7 @@ import {
 import type { PinoLogger } from "nestjs-pino";
 
 import { StorageError, type ObjectStore, type StoredObject } from "./object-store";
+import { assertNoOpenTransaction } from "@/common/io/transaction-scope";
 
 /*
   Any store that speaks the S3 API: Cloudflare R2, Backblaze B2, MinIO, or S3
@@ -63,6 +64,7 @@ export class S3ObjectStore implements ObjectStore {
   }
 
   async put(object: StoredObject): Promise<void> {
+    assertNoOpenTransaction("writing to object storage");
     try {
       await this.client.send(
         new PutObjectCommand({
@@ -90,6 +92,7 @@ export class S3ObjectStore implements ObjectStore {
   }
 
   async get(key: string): Promise<Buffer | null> {
+    assertNoOpenTransaction("reading from object storage");
     try {
       const result = await this.client.send(
         new GetObjectCommand({ Bucket: this.settings.bucket, Key: key }),
@@ -108,6 +111,7 @@ export class S3ObjectStore implements ObjectStore {
   }
 
   async delete(key: string): Promise<void> {
+    assertNoOpenTransaction("deleting from object storage");
     try {
       await this.client.send(new DeleteObjectCommand({ Bucket: this.settings.bucket, Key: key }), {
         abortSignal: AbortSignal.timeout(TIMEOUT_MS),

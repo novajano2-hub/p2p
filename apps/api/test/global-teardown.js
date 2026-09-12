@@ -50,6 +50,32 @@ function databaseUrl() {
   return "postgresql://abay_app:app@localhost:5433/abay?schema=public";
 }
 
+/*
+  The ledger cleanup needs the MIGRATOR role, not the application one.
+  Posted ledger history is immutable to the application role by GRANT and to
+  everyone else by trigger; only the table owner can disable that trigger for
+  a moment, and the owner is the migrator. Resolved the same way as
+  databaseUrl(): the environment first, then the one .env at the root.
+*/
+function directDatabaseUrl() {
+  if (process.env.DIRECT_DATABASE_URL) return process.env.DIRECT_DATABASE_URL;
+  try {
+    const file = readFileSync(path.resolve(__dirname, "../../../.env"), "utf8");
+    for (const raw of file.split(String.fromCharCode(10))) {
+      const line = raw.trim();
+      if (line.startsWith("DIRECT_DATABASE_URL=")) {
+        return line
+          .slice("DIRECT_DATABASE_URL=".length)
+          .trim()
+          .replace(/^["](.*)["]$/, "$1");
+      }
+    }
+  } catch {
+    // Falls through to the default below, which matches docker-compose.yml.
+  }
+  return "postgresql://abay_migrator:migrator@localhost:5433/abay?schema=public";
+}
+
 module.exports = async function teardown() {
   // Required lazily: a unit-only run has no reason to load Prisma at all.
   const { PrismaClient } = require("@prisma/client");
@@ -81,10 +107,12 @@ module.exports = async function teardown() {
       await db.adminUser.deleteMany({ where: { id: { in: testAdmins.map((a) => a.id) } } });
     }
 
+    const ledger = await clearTestLedgerRows();
+
     const cleared = test.length + testAdmins.length;
-    if (cleared > 0) {
+    if (cleared > 0 || ledger > 0) {
       console.log(
-        `[teardown] cleared ${test.length} test customer(s) and ${testAdmins.length} test admin(s)`,
+        `[teardown] cleared ${test.length} test customer(s), ${testAdmins.length} test admin(s) and ${ledger} test ledger transaction(s)`,
       );
     }
   } catch (error) {
@@ -96,3 +124,87 @@ module.exports = async function teardown() {
     await db.$disconnect();
   }
 };
+
+/*
+  Ledger rows the tests posted, and only those.
+
+  A test transaction is one whose correlation id starts with "test-", and a
+  test account is one whose owner id does - both by construction in
+  test/api/ledger.spec.ts, and neither a shape anything real produces. The
+  eleven platform accounts are never touched; they are the same rows in every
+  environment and the tests post against them like everything else will.
+
+  Deleting posted history takes the migrator disabling its own trigger, which
+  is the "deliberate act" that trigger's comment refers to, and is why this
+  runs as that role rather than the application's. Reversing transactions go
+  before the ones they reverse, because the self-reference is RESTRICT.
+
+  Afterwards every remaining balance is rebuilt from the entries that are
+  left: the platform accounts the tests moved money through would otherwise
+  keep a balance for history that no longer exists. The projection is a cache
+  of the entries (ADR-0009), and this is that fact being relied on.
+*/
+async function clearTestLedgerRows() {
+  const { PrismaClient } = require("@prisma/client");
+  const direct = new PrismaClient({ datasourceUrl: directDatabaseUrl() });
+  try {
+    const [{ n }] = await direct.$queryRawUnsafe(
+      "SELECT count(*)::int AS n FROM ledger_transactions WHERE correlation_id LIKE 'test-%'",
+    );
+    const [{ a }] = await direct.$queryRawUnsafe(
+      "SELECT count(*)::int AS a FROM ledger_accounts WHERE owner_id LIKE 'test-%'",
+    );
+    if (n === 0 && a === 0) return 0;
+
+    await direct.$executeRawUnsafe(
+      "ALTER TABLE ledger_entries DISABLE TRIGGER ledger_entries_no_delete",
+    );
+    await direct.$executeRawUnsafe(
+      "ALTER TABLE ledger_transactions DISABLE TRIGGER ledger_transactions_no_delete",
+    );
+    try {
+      await direct.$executeRawUnsafe(
+        "DELETE FROM ledger_entries WHERE transaction_id IN (SELECT id FROM ledger_transactions WHERE correlation_id LIKE 'test-%')",
+      );
+      await direct.$executeRawUnsafe(
+        "DELETE FROM ledger_transactions WHERE correlation_id LIKE 'test-%' AND reverses_transaction_id IS NOT NULL",
+      );
+      await direct.$executeRawUnsafe(
+        "DELETE FROM ledger_transactions WHERE correlation_id LIKE 'test-%'",
+      );
+    } finally {
+      await direct.$executeRawUnsafe(
+        "ALTER TABLE ledger_entries ENABLE TRIGGER ledger_entries_no_delete",
+      );
+      await direct.$executeRawUnsafe(
+        "ALTER TABLE ledger_transactions ENABLE TRIGGER ledger_transactions_no_delete",
+      );
+    }
+
+    await direct.$executeRawUnsafe(
+      "DELETE FROM ledger_account_balances WHERE account_id IN (SELECT id FROM ledger_accounts WHERE owner_id LIKE 'test-%')",
+    );
+    await direct.$executeRawUnsafe("DELETE FROM ledger_accounts WHERE owner_id LIKE 'test-%'");
+
+    await direct.$executeRawUnsafe(`
+      UPDATE ledger_account_balances b
+         SET balance = COALESCE(r.balance, 0),
+             entry_count = COALESCE(r.n, 0),
+             last_transaction_id = r.last_tx,
+             version = b.version + 1
+        FROM ledger_accounts a
+        LEFT JOIN (
+          SELECT e.account_id,
+                 SUM(CASE WHEN ac.type IN ('ASSET', 'EXPENSE') THEN e.signed_amount ELSE -e.signed_amount END) AS balance,
+                 COUNT(*)::int AS n,
+                 (array_agg(e.transaction_id ORDER BY e."createdAt" DESC, e.id DESC))[1] AS last_tx
+            FROM ledger_entries e
+            JOIN ledger_accounts ac ON ac.id = e.account_id
+           GROUP BY e.account_id
+        ) r ON r.account_id = a.id
+       WHERE b.account_id = a.id`);
+    return n;
+  } finally {
+    await direct.$disconnect();
+  }
+}

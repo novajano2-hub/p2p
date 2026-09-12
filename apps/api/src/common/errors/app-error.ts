@@ -59,6 +59,16 @@ export class AppError extends Error {
     return new AppError("CONFLICT", 409, message);
   }
 
+  /*
+    409: the request was well formed and the account is real; what it asked
+    for is not possible against the balance as it stands right now. The
+    amount available is deliberately not in the message - the caller who is
+    entitled to know reads it from the balance, and anyone else does not.
+  */
+  static insufficientFunds(message = "There is not enough in this account to do that.") {
+    return new AppError("INSUFFICIENT_FUNDS", 409, message);
+  }
+
   static rateLimited(message = "Too many requests. Try again shortly.") {
     return new AppError("RATE_LIMITED", 429, message);
   }
