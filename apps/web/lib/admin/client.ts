@@ -21,6 +21,8 @@ export type AdminIdentity = {
   email: string;
   name: string;
   roles: AdminRole[];
+  /** False until an authenticator app has been confirmed. The shell gates on it. */
+  mfaEnrolled: boolean;
 };
 
 export type KycDocumentKind = "FRONT" | "BACK" | "SELFIE";
@@ -69,7 +71,8 @@ export type KycRejectionReason = keyof typeof KYC_REJECTION_REASONS;
 
 export type Failure = {
   ok: false;
-  code: "AUTH" | "FORBIDDEN" | "CONFLICT" | "OTHER";
+  /** "MFA": the password was right and a 6-digit code is (also) needed. */
+  code: "AUTH" | "MFA" | "FORBIDDEN" | "CONFLICT" | "OTHER";
   message: string;
 };
 export type Result<T> = ({ ok: true } & T) | Failure;
@@ -86,8 +89,10 @@ const identitySchema = z.object({
   email: z.string(),
   name: z.string(),
   roles: z.array(role),
+  mfaEnrolled: z.boolean(),
 });
 const sessionSchema = z.object({ admin: identitySchema });
+const mfaSetupSchema = z.object({ secret: z.string(), otpauthUri: z.string() });
 
 const reviewItemSchema = z.object({
   id: z.string(),
@@ -177,6 +182,7 @@ async function send<T>(
     if (!parsed.success) return UNEXPECTED;
     const { code, message, details } = parsed.data.error;
     if (code === "UNAUTHENTICATED") return fail("AUTH", message);
+    if (code === "MFA_REQUIRED") return fail("MFA", message);
     if (code === "FORBIDDEN") return fail("FORBIDDEN", message);
     if (code === "CONFLICT") return fail("CONFLICT", message);
     if (code === "VALIDATION_FAILED") return fail("OTHER", details?.[0]?.message ?? message);
@@ -192,6 +198,8 @@ export const adminClient = {
   async login(input: {
     email: string;
     password: string;
+    /** Only once the server has answered MFA: the first attempt goes without. */
+    code?: string;
   }): Promise<Result<{ admin: AdminIdentity }>> {
     const result = await send("/auth/login", sessionSchema, {
       method: "POST",
@@ -202,6 +210,30 @@ export const adminClient = {
 
   async me(): Promise<Result<{ admin: AdminIdentity }>> {
     const result = await send("/auth/me", sessionSchema, { method: "GET" });
+    return result.ok ? { ok: true, admin: result.data.admin } : result;
+  },
+
+  /*
+    Enrollment. setup stages a fresh secret and hands back the one copy of it
+    this client will ever see; confirm proves an app really holds it. Neither
+    is reachable without a session, and the confirmed identity comes back so
+    the shell can drop its gate without asking again.
+  */
+  async mfaSetup(): Promise<Result<{ secret: string; otpauthUri: string }>> {
+    const result = await send("/auth/mfa/setup", mfaSetupSchema, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    return result.ok
+      ? { ok: true, secret: result.data.secret, otpauthUri: result.data.otpauthUri }
+      : result;
+  },
+
+  async mfaConfirm(code: string): Promise<Result<{ admin: AdminIdentity }>> {
+    const result = await send("/auth/mfa/confirm", sessionSchema, {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
     return result.ok ? { ok: true, admin: result.data.admin } : result;
   },
 

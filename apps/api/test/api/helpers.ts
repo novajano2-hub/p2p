@@ -2,6 +2,8 @@ import { type PrismaClient, type VerificationPurpose } from "@abay/database";
 import request from "supertest";
 
 import { csrfTokenFor } from "@/common/security/csrf";
+import { encryptField, fieldEncryptionKey } from "@/common/security/field-encryption";
+import { base32Decode, base32Encode, generateTotpSecret, totpAt } from "@/common/security/totp";
 import { ADMIN_SESSION_COOKIE } from "@/modules/admin/admin-session.service";
 
 /*
@@ -32,6 +34,33 @@ export function csrfFor(cookie: string): string {
   const token = pair.slice(separator + 1);
   return csrfTokenFor(name === ADMIN_SESSION_COOKIE ? "admin" : "customer", token);
 }
+
+/*
+  An already-enrolled second factor, for inserting an administrator straight
+  into the table the way the CLI does but one step further along - most specs
+  need "an administrator who can work", not the enrollment ceremony, which has
+  its own spec. The secret is random per call (two admins sharing one would be
+  a strange fixture), encrypted exactly as the API encrypts it, and returned in
+  the clear so the spec can compute sign-in codes with totpCodeFor.
+*/
+export function enrolledTotp(): {
+  secret: string;
+  fields: { totpSecret: string; totpEnrolledAt: Date };
+} {
+  const key = fieldEncryptionKey(process.env.FIELD_ENCRYPTION_KEY ?? "");
+  const secret = base32Encode(generateTotpSecret());
+  return {
+    secret,
+    fields: {
+      totpSecret: encryptField(secret, key, "admin-totp"),
+      totpEnrolledAt: new Date(),
+    },
+  };
+}
+
+/** The six digits an authenticator app would show right now for this secret. */
+export const totpCodeFor = (base32Secret: string, atMs = Date.now()): string =>
+  totpAt(base32Decode(base32Secret), atMs);
 
 /** A fresh address per run, so runs do not collide in a shared database. */
 export const uniqueEmail = (): string =>

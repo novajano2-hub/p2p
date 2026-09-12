@@ -31,6 +31,8 @@ process.env.GOOGLE_CLIENT_ID = "test-google-client-id";
 process.env.GOOGLE_CLIENT_SECRET = "test-google-client-secret";
 process.env.DATABASE_URL ??= "postgresql://abay_app:app@localhost:5433/abay?schema=public";
 process.env.REDIS_URL ??= "redis://localhost:6379";
+// Any fixed 32 bytes: tests only need encryption to round-trip, not to be secret.
+process.env.FIELD_ENCRYPTION_KEY ??= "0".repeat(63) + "1";
 // Tests talk to the app over plain HTTP, so the cookie cannot be Secure here.
 process.env.COOKIE_SECURE ??= "false";
 /*

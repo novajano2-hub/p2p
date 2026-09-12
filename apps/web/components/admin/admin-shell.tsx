@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useSyncExternalStore } from "react";
 
+import { MfaEnroll } from "@/components/admin/mfa-enroll";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { adminClient, type AdminIdentity } from "@/lib/admin/client";
 import {
@@ -81,6 +82,21 @@ export function AdminShell({ children }: { children: ReactNode }) {
           {state.message}
         </p>
       </Frame>
+    );
+  }
+
+  /*
+    Signed in, but without a second factor yet: the whole area is replaced by
+    enrollment. Not a banner over the queue - the API refuses everything but
+    enrollment for this session anyway, so showing the queue would be showing
+    a page of buttons that cannot work.
+  */
+  if (!state.admin.mfaEnrolled) {
+    return (
+      <MfaEnroll
+        email={state.admin.email}
+        onEnrolled={(admin) => setState({ status: "in", admin })}
+      />
     );
   }
 

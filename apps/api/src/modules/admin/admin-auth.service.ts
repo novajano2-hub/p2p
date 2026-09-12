@@ -5,6 +5,7 @@ import { type FastifyReply } from "fastify";
 
 import { AppError } from "@/common/errors/app-error";
 import { PrismaService } from "@/infra/prisma/prisma.service";
+import { AdminMfaService } from "@/modules/admin/admin-mfa.service";
 import { AdminSessionService } from "@/modules/admin/admin-session.service";
 import { burnTimeLikeAVerify, verifyPassword } from "@/modules/auth/tokens";
 import { AuditService } from "@/modules/audit/audit.service";
@@ -12,16 +13,20 @@ import { AuditService } from "@/modules/audit/audit.service";
 /*
   Signing in as an administrator.
 
-  Password only, and deliberately nothing else: no OAuth, no emailed code, no
-  self-service reset. Every one of those is a remotely reachable path into the
-  most privileged accounts on the platform, and an administrator who loses
-  their password is reset by another administrator out of band. Accounts are
-  issued with `npm run admin:create`; there is no route that creates one.
+  A password and, once enrolled, a code from an authenticator app - and
+  deliberately nothing else: no OAuth, no emailed code, no self-service
+  reset. Every one of those is a remotely reachable path into the most
+  privileged accounts on the platform, and an administrator who is locked
+  out is fixed by another administrator out of band. Accounts are issued
+  with `npm run admin`; there is no route that creates one.
 
-  What is missing and should not stay missing is a second factor. The threat
-  model asks for hardware-backed MFA on this realm (B7.3), and this is a
-  password and a short session. That is the next thing to build here, not an
-  optional extra.
+  The two factors are checked in strict order and the response gives away as
+  little as each stage allows. A wrong password answers exactly like an
+  unknown address; only a CORRECT password reveals that a code is also
+  needed, which is inherent to any second factor and is precisely the moment
+  the second factor starts mattering. A wrong code says so plainly - the
+  caller has already proven the password, so "which half was wrong" is no
+  longer a secret worth keeping from them.
 */
 
 const REJECTED = AppError.unauthenticated("Those credentials are not valid.");
@@ -37,12 +42,14 @@ export class AdminAuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sessions: AdminSessionService,
+    private readonly mfa: AdminMfaService,
     private readonly audit: AuditService,
   ) {}
 
   async login(
     email: string,
     password: string,
+    code: string | undefined,
     reply: FastifyReply,
     context: RequestContext,
   ): Promise<AdminIdentity> {
@@ -69,6 +76,30 @@ export class AdminAuthService {
       throw REJECTED;
     }
     if (admin.status !== "ACTIVE") throw REJECTED;
+
+    /*
+      The second factor, for accounts that have one. An account that does not
+      signs in on the password alone - and the guard then confines it to the
+      enrollment routes, so the password-only window is exactly as long as it
+      takes to scan a QR code, and closes itself.
+    */
+    if (admin.totpEnrolledAt) {
+      if (!code) throw AppError.mfaRequired();
+      if (!(await this.mfa.verifyLogin(admin, code))) {
+        // The same audit action as a wrong password: what matters to whoever
+        // is watching is "failed attempts against this named account".
+        await this.audit.record({
+          action: "admin.sign_in_failed",
+          actor: null,
+          subject: { type: "admin_user", id: admin.id },
+          correlationId: context.correlationId,
+          ip: context.ip ?? null,
+        });
+        throw AppError.unauthenticated(
+          "That code is not valid. Codes change every 30 seconds - enter the one showing now.",
+        );
+      }
+    }
 
     await this.sessions.issue(admin.id, reply, context);
     await this.prisma.client.adminUser.update({
@@ -99,5 +130,6 @@ export function toIdentity(admin: AdminUser): AdminIdentity {
     email: admin.email,
     name: admin.name,
     roles: admin.roles,
+    mfaEnrolled: admin.totpEnrolledAt !== null,
   };
 }

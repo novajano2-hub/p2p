@@ -42,6 +42,15 @@ export class AppError extends Error {
     return new AppError("CSRF_FAILED", 403, message);
   }
 
+  /*
+    401, same as a wrong password, because the request has not authenticated -
+    but its own code, because the client's next move is different: ask the
+    person for six digits and repeat, not tell them their password was wrong.
+  */
+  static mfaRequired(message = "Enter the 6-digit code from your authenticator app.") {
+    return new AppError("MFA_REQUIRED", 401, message);
+  }
+
   static notFound(message = "Not found.") {
     return new AppError("NOT_FOUND", 404, message);
   }

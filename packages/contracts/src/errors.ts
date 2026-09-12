@@ -16,6 +16,13 @@ export const errorCode = z.enum([
    * trusted to have come from the application at all.
    */
   "CSRF_FAILED",
+  /**
+   * The password was right and it is not enough: this account signs in with a
+   * second factor, and the request did not carry a (valid) code. The client's
+   * next move is to ask the person for the six digits and try again - which is
+   * why it is its own code rather than a flavour of UNAUTHENTICATED.
+   */
+  "MFA_REQUIRED",
   "NOT_FOUND",
   "CONFLICT",
   "RATE_LIMITED",

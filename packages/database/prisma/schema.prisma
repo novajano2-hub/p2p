@@ -406,6 +406,25 @@ model AdminUser {
   /// A session issued before this is stale, exactly as for a customer.
   passwordChangedAt DateTime? @map("password_changed_at")
 
+  /// The second factor (threat model B7.3). RFC 6238 TOTP; the value here is
+  /// the base32 secret AES-256-GCM-encrypted with FIELD_ENCRYPTION_KEY, never
+  /// the secret itself - a database read must not be enough to mint codes.
+  totpSecret String? @map("totp_secret")
+
+  /// A secret that has been shown as a QR but not yet proven with a code.
+  /// Promoted to totpSecret on confirmation; harmless while it sits here.
+  totpPendingSecret String? @map("totp_pending_secret")
+
+  /// Null means not enrolled - and an un-enrolled session can reach nothing
+  /// but the enrollment routes (AdminGuard), which is what makes MFA
+  /// mandatory rather than encouraged.
+  totpEnrolledAt DateTime? @map("totp_enrolled_at")
+
+  /// The 30-second step of the last accepted code. A code can never be
+  /// accepted twice (RFC 6238 section 5.2): each acceptance must claim a
+  /// strictly later step than this, atomically.
+  totpLastUsedStep BigInt? @map("totp_last_used_step")
+
   /// Least privilege (B7.1): capability is granted per action and never implied
   /// by being an administrator. An account with an empty list can sign in and
   /// do nothing, which is the correct default for a new one.

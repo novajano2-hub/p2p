@@ -47,6 +47,18 @@ const ADMIN_ROLES_KEY = "admin:roles";
 /** Names the capability a route needs. Without it, any signed-in administrator may call it. */
 export const RequireAdminRole = (...roles: AdminRole[]) => SetMetadata(ADMIN_ROLES_KEY, roles);
 
+const ALLOW_WITHOUT_MFA_KEY = "admin:allow-without-mfa";
+
+/**
+ * The short list a session may reach before its second factor is enrolled:
+ * the enrollment routes themselves, and the two that let a client find out
+ * where it stands and leave. Everything else refuses until enrollment is
+ * done, which is the whole of what makes MFA mandatory rather than nagged
+ * about - and why this is an explicit opt-OUT: a new route is protected by
+ * being written, not by being remembered.
+ */
+export const AllowWithoutMfa = () => SetMetadata(ALLOW_WITHOUT_MFA_KEY, true);
+
 type RequestWithAdmin = FastifyRequest & { adminSession?: AdminSessionContext };
 
 @Injectable()
@@ -70,6 +82,21 @@ export class AdminGuard implements CanActivate {
     }
 
     void http.getResponse<FastifyReply>().header(CSRF_HEADER, session.csrfToken);
+
+    /*
+      No second factor yet: the session is real but confined. Checked before
+      roles on purpose - an account's roles are irrelevant until the account
+      itself is finished being set up.
+    */
+    if (session.admin.totpEnrolledAt === null) {
+      const allowed = this.reflector.getAllAndOverride<boolean | undefined>(ALLOW_WITHOUT_MFA_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (!allowed) {
+        throw AppError.forbidden("Set up two-factor authentication to continue.");
+      }
+    }
 
     const required = this.reflector.getAllAndOverride<AdminRole[] | undefined>(ADMIN_ROLES_KEY, [
       context.getHandler(),
