@@ -122,6 +122,41 @@ export class LedgerService {
     return posted;
   }
 
+  /*
+    The same posting, inside a transaction the caller already holds. For the
+    state machines: a deposit's credit and its row's move to CREDITED must
+    commit together or not at all (state-machines.md, "universal rules"), so
+    the caller opens the transaction, locks its own row, and posts through
+    here. Two things the caller therefore owns: the network-free discipline
+    of that transaction (AT-19), and the lock that makes the idempotency key
+    unique - a repeated key is answered with the original, but a race on one
+    cannot be settled here, because a unique violation would abort the
+    caller's transaction. Locking the row the key is derived from is what
+    rules the race out.
+  */
+  async postIn(tx: Prisma.TransactionClient, request: PostingRequest): Promise<PostedTransaction> {
+    const posting = validatePosting(request);
+    const earlier = await tx.ledgerTransaction.findUnique({
+      where: { idempotencyKey: posting.idempotencyKey },
+      include: EXISTING_INCLUDE,
+    });
+    if (earlier) return this.replay(earlier, posting);
+    const posted = await this.postWithin(tx, posting);
+    this.logger.info(
+      {
+        event: "ledger.posted",
+        transactionId: posted.id,
+        reason: posting.reason,
+        referenceType: posting.reference.type,
+        referenceId: posting.reference.id,
+        correlationId: posting.correlationId,
+        lines: posted.lines.length,
+      },
+      "ledger transaction posted",
+    );
+    return posted;
+  }
+
   /** The current balance of an account, in its natural sense. Zero for one that does not exist yet. */
   async balance(code: string): Promise<bigint> {
     parseAccountCode(code);

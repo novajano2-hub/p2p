@@ -56,3 +56,14 @@ function assertDecimals(decimals: number): void {
     throw new InvalidAmountError("decimals must be an integer between 0 and 36");
   }
 }
+
+/** Millionths as "123.456789", for an email or a log line. Never for arithmetic. */
+export function formatUsdt(micro: bigint): string {
+  const negative = micro < 0n;
+  const magnitude = negative ? -micro : micro;
+  const whole = magnitude / 10n ** BigInt(LEDGER_DECIMALS);
+  const fraction = (magnitude % 10n ** BigInt(LEDGER_DECIMALS))
+    .toString()
+    .padStart(LEDGER_DECIMALS, "0");
+  return `${negative ? "-" : ""}${whole.toString()}.${fraction}`;
+}

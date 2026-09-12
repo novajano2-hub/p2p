@@ -84,6 +84,24 @@ module.exports = async function teardown() {
   try {
     const users = await db.user.findMany({ select: { id: true, email: true } });
     const test = users.filter((user) => TEST_USER.test(user.email));
+    const testUserIds = test.map((user) => user.id);
+
+    // What the deposit tests left, found before the customers go: a deposit
+    // cascades with its owner, but the ledger rows it posted do not.
+    const taggedTransfers = await db.mockChainTransfer.findMany({
+      where: { OR: [{ tag: { startsWith: "test-" } }, { tag: { startsWith: "custody:test-" } }] },
+      select: { txHash: true },
+    });
+    const testDeposits = await db.deposit.findMany({
+      where: {
+        OR: [
+          { userId: { in: testUserIds } },
+          { txHash: { in: taggedTransfers.map((t) => t.txHash) } },
+          { correlationId: { startsWith: "test-" } },
+        ],
+      },
+      select: { id: true },
+    });
 
     if (test.length > 0) {
       const ids = test.map((user) => user.id);
@@ -107,7 +125,10 @@ module.exports = async function teardown() {
       await db.adminUser.deleteMany({ where: { id: { in: testAdmins.map((a) => a.id) } } });
     }
 
-    const ledger = await clearTestLedgerRows();
+    const ledger = await clearTestLedgerRows({
+      depositIds: testDeposits.map((d) => d.id),
+      ownerIds: testUserIds,
+    });
 
     // Phase 3 rows the tests tagged as theirs. Deposits, withdrawals and
     // idempotency keys hang off the test customers deleted above and went
@@ -115,6 +136,8 @@ module.exports = async function teardown() {
     const outbox = await db.outboxEvent.deleteMany({
       where: { correlationId: { startsWith: "test-" } },
     });
+    // Deposits without an owner do not cascade with a customer.
+    await db.deposit.deleteMany({ where: { id: { in: testDeposits.map((d) => d.id) } } });
     const chain = await db.mockChainTransfer.deleteMany({
       where: { OR: [{ tag: { startsWith: "test-" } }, { tag: { startsWith: "custody:test-" } }] },
     });
@@ -155,65 +178,76 @@ module.exports = async function teardown() {
   keep a balance for history that no longer exists. The projection is a cache
   of the entries (ADR-0009), and this is that fact being relied on.
 */
-async function clearTestLedgerRows() {
+/** A SQL list of ids, each checked to be an id before it is interpolated. */
+function sqlList(ids) {
+  const safe = ids.filter((id) => /^[0-9a-fA-F-]{36}$/.test(id));
+  return safe.length > 0 ? safe.map((id) => `'${id}'`).join(", ") : "''";
+}
+
+async function clearTestLedgerRows({ depositIds = [], ownerIds = [] } = {}) {
   const { PrismaClient } = require("@prisma/client");
   const direct = new PrismaClient({ datasourceUrl: directDatabaseUrl() });
+  // Also any posting whose deposit is already gone: a run that was cut off
+  // before this ran would otherwise leave rows that make a rebuild impossible.
+  const testTx = `(correlation_id LIKE 'test-%'
+      OR (reference_type = 'deposit' AND reference_id IN (${sqlList(depositIds)}))
+      OR (reference_type = 'deposit' AND reference_id NOT IN (SELECT id FROM deposits)))`;
+  const testAccount = `(owner_id LIKE 'test-%' OR owner_id IN (${sqlList(ownerIds)}))`;
   try {
     const [{ n }] = await direct.$queryRawUnsafe(
-      "SELECT count(*)::int AS n FROM ledger_transactions WHERE correlation_id LIKE 'test-%'",
+      `SELECT count(*)::int AS n FROM ledger_transactions WHERE ${testTx}`,
     );
     const [{ a }] = await direct.$queryRawUnsafe(
-      "SELECT count(*)::int AS a FROM ledger_accounts WHERE owner_id LIKE 'test-%'",
+      `SELECT count(*)::int AS a FROM ledger_accounts WHERE ${testAccount}`,
     );
     if (n === 0 && a === 0) return 0;
 
-    await direct.$executeRawUnsafe(
-      "ALTER TABLE ledger_entries DISABLE TRIGGER ledger_entries_no_delete",
-    );
-    await direct.$executeRawUnsafe(
-      "ALTER TABLE ledger_transactions DISABLE TRIGGER ledger_transactions_no_delete",
-    );
-    try {
-      await direct.$executeRawUnsafe(
-        "DELETE FROM ledger_entries WHERE transaction_id IN (SELECT id FROM ledger_transactions WHERE correlation_id LIKE 'test-%')",
+    // One transaction, so that a failure part-way leaves the ledger as it
+    // was rather than half-cleared: DDL is transactional in PostgreSQL, so
+    // the disabled triggers come back either way.
+    await direct.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        "ALTER TABLE ledger_entries DISABLE TRIGGER ledger_entries_no_delete",
       );
-      await direct.$executeRawUnsafe(
-        "DELETE FROM ledger_transactions WHERE correlation_id LIKE 'test-%' AND reverses_transaction_id IS NOT NULL",
+      await tx.$executeRawUnsafe(
+        "ALTER TABLE ledger_transactions DISABLE TRIGGER ledger_transactions_no_delete",
       );
-      await direct.$executeRawUnsafe(
-        "DELETE FROM ledger_transactions WHERE correlation_id LIKE 'test-%'",
+      await tx.$executeRawUnsafe(
+        `DELETE FROM ledger_entries WHERE transaction_id IN (SELECT id FROM ledger_transactions WHERE ${testTx})`,
       );
-    } finally {
-      await direct.$executeRawUnsafe(
+      await tx.$executeRawUnsafe(
+        `DELETE FROM ledger_transactions WHERE ${testTx} AND reverses_transaction_id IS NOT NULL`,
+      );
+      await tx.$executeRawUnsafe(`DELETE FROM ledger_transactions WHERE ${testTx}`);
+      await tx.$executeRawUnsafe(
         "ALTER TABLE ledger_entries ENABLE TRIGGER ledger_entries_no_delete",
       );
-      await direct.$executeRawUnsafe(
+      await tx.$executeRawUnsafe(
         "ALTER TABLE ledger_transactions ENABLE TRIGGER ledger_transactions_no_delete",
       );
-    }
 
-    await direct.$executeRawUnsafe(
-      "DELETE FROM ledger_account_balances WHERE account_id IN (SELECT id FROM ledger_accounts WHERE owner_id LIKE 'test-%')",
-    );
-    await direct.$executeRawUnsafe("DELETE FROM ledger_accounts WHERE owner_id LIKE 'test-%'");
+      await tx.$executeRawUnsafe(
+        `DELETE FROM ledger_account_balances WHERE account_id IN (SELECT id FROM ledger_accounts WHERE ${testAccount})`,
+      );
+      await tx.$executeRawUnsafe(`DELETE FROM ledger_accounts WHERE ${testAccount}`);
 
-    await direct.$executeRawUnsafe(`
-      UPDATE ledger_account_balances b
-         SET balance = COALESCE(r.balance, 0),
-             entry_count = COALESCE(r.n, 0),
-             last_transaction_id = r.last_tx,
-             version = b.version + 1
-        FROM ledger_accounts a
-        LEFT JOIN (
-          SELECT e.account_id,
-                 SUM(CASE WHEN ac.type IN ('ASSET', 'EXPENSE') THEN e.signed_amount ELSE -e.signed_amount END) AS balance,
-                 COUNT(*)::int AS n,
-                 (array_agg(e.transaction_id ORDER BY e."createdAt" DESC, e.id DESC))[1] AS last_tx
-            FROM ledger_entries e
-            JOIN ledger_accounts ac ON ac.id = e.account_id
-           GROUP BY e.account_id
-        ) r ON r.account_id = a.id
-       WHERE b.account_id = a.id`);
+      await tx.$executeRawUnsafe(`
+        UPDATE ledger_account_balances b
+           SET balance = COALESCE(r.balance, 0),
+               entry_count = COALESCE(r.n, 0),
+               last_transaction_id = r.last_tx,
+               version = b.version + 1
+          FROM ledger_accounts a
+          LEFT JOIN (
+            SELECT e.account_id,
+                   SUM(CASE WHEN ac.type IN ('ASSET', 'EXPENSE') THEN e.signed_amount ELSE -e.signed_amount END) AS balance,
+                   COUNT(*)::int AS n,
+                   (array_agg(e.transaction_id ORDER BY e.id DESC))[1] AS last_tx
+              FROM ledger_entries e JOIN ledger_accounts ac ON ac.id = e.account_id
+             GROUP BY e.account_id
+          ) r ON r.account_id = a.id
+         WHERE b.account_id = a.id`);
+    });
     return n;
   } finally {
     await direct.$disconnect();

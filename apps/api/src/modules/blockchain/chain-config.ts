@@ -10,7 +10,7 @@ import { type Env } from "@/config/env";
 export interface ChainConfig {
   network: ChainNetwork;
   chainId: number;
-  token: { symbol: LedgerAsset; contract: string; decimals: number };
+  token: { symbol: LedgerAsset; contract: string; decimals: number; standard: string };
   finality: { confirmations: number; reorgDepth: number };
   deposit: { dust: bigint; reviewThreshold: bigint };
   withdrawal: {
@@ -23,10 +23,18 @@ export interface ChainConfig {
   };
 }
 
+const TOKEN_STANDARD: Record<ChainNetwork, string> = { BSC: "BEP20" };
+
 export const chainConfig = (env: Env): ChainConfig => ({
   network: env.CHAIN_NETWORK,
   chainId: env.CHAIN_ID,
-  token: { symbol: "USDT", contract: env.USDT_CONTRACT, decimals: env.USDT_DECIMALS },
+  token: {
+    symbol: "USDT",
+    contract: env.USDT_CONTRACT,
+    decimals: env.USDT_DECIMALS,
+    // The token standard a person checks against the app they send from.
+    standard: TOKEN_STANDARD[env.CHAIN_NETWORK],
+  },
   finality: { confirmations: env.DEPOSIT_CONFIRMATIONS, reorgDepth: env.REORG_DEPTH },
   deposit: { dust: env.DEPOSIT_DUST_MICRO, reviewThreshold: env.DEPOSIT_REVIEW_THRESHOLD_MICRO },
   withdrawal: {

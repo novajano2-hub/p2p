@@ -24,6 +24,7 @@ const REFRESH_MS = 45_000;
 const ICONS: Record<NotificationItem["type"], typeof CheckCircle> = {
   KYC_APPROVED: CheckCircle,
   KYC_REJECTED: WarningCircle,
+  DEPOSIT_CREDITED: CheckCircle,
 };
 
 const relativeTime = new Intl.RelativeTimeFormat("en-GB", { numeric: "auto" });

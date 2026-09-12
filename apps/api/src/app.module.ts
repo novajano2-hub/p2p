@@ -14,12 +14,14 @@ import { AdminModule } from "@/modules/admin/admin.module";
 import { AuthModule } from "@/modules/auth/auth.module";
 import { BlockchainModule } from "@/modules/blockchain/blockchain.module";
 import { CustodyModule } from "@/modules/custody/custody.module";
+import { DepositsModule } from "@/modules/deposits/deposits.module";
 import { HealthModule } from "@/modules/health/health.module";
 import { KycModule } from "@/modules/kyc/kyc.module";
 import { LedgerModule } from "@/modules/ledger/ledger.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
 import { OutboxModule } from "@/modules/outbox/outbox.module";
 import { RiskModule } from "@/modules/risk/risk.module";
+import { WalletsModule } from "@/modules/wallets/wallets.module";
 
 /*
   The HTTP application. Feature modules (auth, ledger, offers, trades, ...)
@@ -46,6 +48,8 @@ export class AppModule {
         BlockchainModule,
         CustodyModule,
         RiskModule,
+        WalletsModule,
+        DepositsModule,
         AdminModule,
       ],
       /*

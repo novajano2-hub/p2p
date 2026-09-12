@@ -23,7 +23,9 @@ async function bootstrap(): Promise<void> {
   });
   const logger = context.get(Logger);
   context.useLogger(logger);
-  logger.log("worker ready: kyc staging sweep and outbox publisher running");
+  logger.log(
+    "worker ready: kyc sweep, outbox publisher, chain observer and deposit confirmer running",
+  );
 
   const shutdown = (signal: NodeJS.Signals) => {
     logger.log(`${signal} received, stopping worker`);
