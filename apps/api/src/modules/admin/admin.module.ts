@@ -4,6 +4,8 @@ import { PrismaModule } from "@/infra/prisma/prisma.module";
 import { StorageModule } from "@/infra/storage/storage.module";
 import { AdminAuthService } from "@/modules/admin/admin-auth.service";
 import { AdminKycService } from "@/modules/admin/admin-kyc.service";
+import { AdminLedgerController } from "@/modules/admin/admin-ledger.controller";
+import { AdminLedgerService } from "@/modules/admin/admin-ledger.service";
 import { AdminMfaService } from "@/modules/admin/admin-mfa.service";
 import { AdminSessionService } from "@/modules/admin/admin-session.service";
 import { AdminAuthController, AdminKycController } from "@/modules/admin/admin.controller";
@@ -18,7 +20,14 @@ import { NotificationsModule } from "@/modules/notifications/notifications.modul
 */
 @Module({
   imports: [PrismaModule, StorageModule, AuditModule, NotificationsModule],
-  controllers: [AdminAuthController, AdminKycController],
-  providers: [AdminSessionService, AdminAuthService, AdminMfaService, AdminKycService, AdminGuard],
+  controllers: [AdminAuthController, AdminKycController, AdminLedgerController],
+  providers: [
+    AdminSessionService,
+    AdminAuthService,
+    AdminMfaService,
+    AdminKycService,
+    AdminLedgerService,
+    AdminGuard,
+  ],
 })
 export class AdminModule {}

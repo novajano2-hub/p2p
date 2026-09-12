@@ -25,6 +25,14 @@ export const errorCode = z.enum([
   "MFA_REQUIRED",
   "NOT_FOUND",
   "CONFLICT",
+  /**
+   * The account does not hold enough to do this. Its own code, not a flavour
+   * of CONFLICT, because it is the one refusal a trading interface has to
+   * handle specifically: show the balance, offer a smaller amount. The
+   * database's floor on the balance is what raises it (ledger invariant L5);
+   * the message never says how much is there, only that it is not enough.
+   */
+  "INSUFFICIENT_FUNDS",
   "RATE_LIMITED",
   "PAYLOAD_TOO_LARGE",
   "NOT_READY",

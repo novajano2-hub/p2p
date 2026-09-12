@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 
-export { Prisma, PrismaClient } from "@prisma/client";
+export { $Enums, Prisma, PrismaClient } from "@prisma/client";
 
 // Row types, so services can be typed without importing @prisma/client directly.
 export type {
@@ -17,6 +17,16 @@ export type {
   KycStatus,
   KycSubmission,
   KycSubmissionStatus,
+  LedgerAccount,
+  LedgerAccountBalance,
+  LedgerAccountScope,
+  LedgerAccountType,
+  LedgerActorType,
+  LedgerAsset,
+  LedgerDirection,
+  LedgerEntry,
+  LedgerReason,
+  LedgerTransaction,
   Notification,
   NotificationType,
   Session,

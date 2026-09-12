@@ -9,11 +9,11 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider          = "postgresql"
   // Runtime connections use the least-privilege role.
-  url       = env("DATABASE_URL")
+  url               = env("DATABASE_URL")
   // Migrations use the role that owns the schema. Prisma Migrate reads this one.
-  directUrl = env("DIRECT_DATABASE_URL")
+  directUrl         = env("DIRECT_DATABASE_URL")
   // A scratch database Prisma replays migrations into when authoring them.
   // Named explicitly so the migrator role does not need CREATEDB. Never points
   // at a database holding real rows: Prisma resets it.
@@ -63,11 +63,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  identities      AuthIdentity[]
-  sessions        Session[]
-  kycSubmissions  KycSubmission[]
-  kycDocuments    KycDocument[]
-  notifications   Notification[]
+  identities     AuthIdentity[]
+  sessions       Session[]
+  kycSubmissions KycSubmission[]
+  kycDocuments   KycDocument[]
+  notifications  Notification[]
 
   @@map("users")
 }
@@ -125,8 +125,8 @@ model KycSubmission {
   /// Personal data (docs/architecture/data-classification.md). Held because
   /// the law requires us to know who we are holding money for; never shown to
   /// a counterparty, and never leaves the server except to an administrator.
-  legalName      String   @map("legal_name")
-  dateOfBirth    DateTime @map("date_of_birth") @db.Date
+  legalName      String          @map("legal_name")
+  dateOfBirth    DateTime        @map("date_of_birth") @db.Date
   /// ISO 3166-1 alpha-2, upper case.
   country        String
   documentType   KycDocumentType @map("document_type")
@@ -299,7 +299,7 @@ model Session {
 
   /// Revocation is a write, not a delete: "when was this session ended, and was
   /// it ended deliberately" is a question incident review will ask.
-  revokedAt DateTime?      @map("revoked_at")
+  revokedAt     DateTime?         @map("revoked_at")
   revokedReason SessionEndReason? @map("revoked_reason")
 
   /// Personal data (docs/architecture/data-classification.md). Kept because
@@ -451,6 +451,8 @@ enum AdminRole {
   WITHDRAWAL_APPROVER
   /// Phase 2. Posts a typed, balanced correction. Never a "set balance".
   FINANCIAL_ADJUSTER
+  /// Phase 2. Reads accounts, balances and posted history. Moves nothing.
+  LEDGER_VIEWER
 
   @@map("admin_role")
 }
@@ -510,7 +512,7 @@ model AuditEvent {
   /// Null for something the system did on its own.
   actorAdminId String? @map("actor_admin_id")
   /// Copied at the time of writing, so the name survives the account.
-  actorEmail String? @map("actor_email")
+  actorEmail   String? @map("actor_email")
 
   /// What was acted on: "kyc_submission" and its id.
   subjectType String @map("subject_type")
@@ -537,4 +539,269 @@ model AuditEvent {
   @@index([actorAdminId, createdAt])
   @@index([action, createdAt])
   @@map("audit_events")
+}
+
+/**
+ * ---------------------------------------------------------------- the ledger
+ * Every amount of money the platform owes or controls, as an immutable
+ * double-entry record. docs/architecture/ledger-taxonomy.md is the document
+ * these models implement; read it before changing anything here.
+ * The shape in one sentence: a LedgerTransaction is one business event, it
+ * holds two or more LedgerEntry lines that must sum to zero, and
+ * LedgerAccountBalance is a rebuildable projection of those lines that exists
+ * so a balance can be read and locked without summing history.
+ */
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+
+  @@map("ledger_account_type")
+}
+
+/// One asset at launch. A second one is not a new value here but a decision
+/// about clearing between assets, which the taxonomy (L3) defers deliberately.
+enum LedgerAsset {
+  USDT
+
+  @@map("ledger_asset")
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+
+  @@map("ledger_direction")
+}
+
+/// Who a set of accounts belongs to. Also in the account's code; stored as a
+/// column so "every account of this user" is an index scan rather than a
+/// pattern match on a string.
+enum LedgerAccountScope {
+  USER
+  TRADE
+  PLATFORM
+
+  @@map("ledger_account_scope")
+}
+
+/// Who caused a transaction. SYSTEM is a worker acting on its own - a sweep,
+/// an expiry - and carries no actor id.
+enum LedgerActorType {
+  USER
+  ADMIN
+  SYSTEM
+
+  @@map("ledger_actor_type")
+}
+
+/// Why money moved, as a closed set rather than free text: this drives
+/// reporting and is what a support agent reads back. Growing it is a
+/// migration, which is the right amount of friction for a new way to move
+/// money. Values not yet reachable are declared now because the taxonomy
+/// already specifies them; the phase that implements each one is noted.
+enum LedgerReason {
+  /// Fixtures and local development only, never production (taxonomy 3.6).
+  OPENING_BALANCE
+
+  /// Phase 3 - deposits and treasury.
+  DEPOSIT_CREDITED
+  SWEEP_BROADCAST
+  SWEEP_CONFIRMED
+  UNIDENTIFIED_DEPOSIT_RECEIVED
+  UNIDENTIFIED_DEPOSIT_ATTRIBUTED
+
+  /// Phase 3 - withdrawals.
+  WITHDRAWAL_HELD
+  WITHDRAWAL_HOLD_RELEASED
+  WITHDRAWAL_BROADCAST
+  WITHDRAWAL_CONFIRMED
+
+  /// Phase 4 - escrow.
+  ESCROW_LOCKED
+  ESCROW_RELEASED
+  ESCROW_REFUNDED_EXPIRY
+  ESCROW_REFUNDED_CANCELLED
+  DISPUTE_RESOLVED_RELEASE
+  DISPUTE_RESOLVED_REFUND
+
+  /// Phase 3 - reconciliation. Posted by a human adjustment workflow after
+  /// investigation, never by the reconciler itself (ADR-0009).
+  RECONCILIATION_SURPLUS_RECORDED
+  RECONCILIATION_SHORTFALL_WRITTEN_OFF
+
+  @@map("ledger_reason")
+}
+
+/// One account in the chart of accounts (taxonomy 2, 3).
+///
+/// Platform accounts are seeded by the migration and are the same in every
+/// environment. User and trade accounts are created on first use, which is why
+/// `code` is unique: "get or create the escrow account for this trade" has to
+/// be one safe upsert, not a read followed by a race.
+model LedgerAccount {
+  id String @id @default(uuid(7))
+
+  /// {TYPE}:{SCOPE}:{OWNER}:{ASSET}:{PURPOSE}, e.g.
+  /// "LIAB:USER:0190...:USDT:AVAILABLE". Human-readable and the natural key;
+  /// the uuid is the one foreign keys use.
+  code String @unique
+
+  type  LedgerAccountType
+  scope LedgerAccountScope
+  asset LedgerAsset
+
+  /// The user or trade this belongs to; null for PLATFORM accounts.
+  ownerId String? @map("owner_id")
+
+  /// What this account is for, the last segment of the code: AVAILABLE,
+  /// ESCROW, TREASURY_HOT. Free text because purposes are added by new
+  /// features rather than chosen from a fixed list.
+  purpose String
+
+  createdAt DateTime @default(now())
+
+  balance LedgerAccountBalance?
+  entries LedgerEntry[]
+
+  @@index([scope, ownerId])
+  @@map("ledger_accounts")
+}
+
+/// One business event: a deposit credited, an escrow locked, a trade released.
+///
+/// Immutable once written, enforced by the database rather than by convention
+/// (../sql/ledger-immutability.sql). Correcting a mistake is a new transaction
+/// carrying `reversesTransactionId`, never an edit - which is what lets the
+/// history show that money went somewhere and came back, rather than showing
+/// that it was never there.
+model LedgerTransaction {
+  id String @id @default(uuid(7))
+
+  /// One asset per transaction (taxonomy L3). Denormalised onto the entries
+  /// too, so the balance invariant can be checked without a join.
+  asset LedgerAsset
+
+  reason LedgerReason
+
+  /// What business object caused this: "deposit", "trade", "withdrawal", and
+  /// its id. A string rather than an enum because the set grows with every
+  /// module, and a pointer is not a product decision the way a reason is.
+  referenceType String @map("reference_type")
+  referenceId   String @map("reference_id")
+
+  actorType LedgerActorType @map("actor_type")
+  /// The user or administrator; null when actorType is SYSTEM.
+  actorId   String?         @map("actor_id")
+
+  /// Ties the movement to the request and the log lines that caused it.
+  correlationId String @map("correlation_id")
+
+  /// Required, and unique: the database is what makes a retried deposit
+  /// webhook or a double-clicked release credit exactly once, rather than a
+  /// check in application code that a future refactor can lose.
+  idempotencyKey String @unique @map("idempotency_key")
+
+  /// Set when this transaction undoes an earlier one - an expiry refund, a
+  /// released hold. The original is never touched.
+  reversesTransactionId String?             @map("reverses_transaction_id")
+  reverses              LedgerTransaction?  @relation("LedgerReversal", fields: [reversesTransactionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reversedBy            LedgerTransaction[] @relation("LedgerReversal")
+
+  createdAt DateTime @default(now())
+
+  entries LedgerEntry[]
+
+  @@index([referenceType, referenceId])
+  @@index([reason, createdAt])
+  @@index([createdAt])
+  @@index([correlationId])
+  @@map("ledger_transactions")
+}
+
+/// One posting line: this account, this direction, this much.
+///
+/// `signedAmount` is `amount` for a debit and `-amount` for a credit, held as
+/// its own column so that "does this transaction balance" is a SUM with no
+/// CASE in it - the check that matters most should be the cheapest to write
+/// and the hardest to get subtly wrong. A CHECK constraint binds it to
+/// direction and amount so the two can never disagree.
+///
+/// `direction` is kept alongside rather than inferred from the sign because a
+/// zero-amount leg is legitimate and carries no sign: the fee leg is posted at
+/// zero while fees are switched off, so that turning them on is configuration
+/// rather than a change to the shape of a transaction (taxonomy JE-4).
+model LedgerEntry {
+  id String @id @default(uuid(7))
+
+  transactionId String            @map("transaction_id")
+  transaction   LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  accountId String        @map("account_id")
+  account   LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  direction    LedgerDirection
+  /// Micro-USDT. Never negative; direction carries the sense.
+  amount       BigInt
+  /// amount for DEBIT, -amount for CREDIT. CHECK-bound to the two above.
+  signedAmount BigInt          @map("signed_amount")
+
+  asset LedgerAsset
+
+  createdAt DateTime @default(now())
+
+  @@index([accountId, createdAt])
+  @@index([transactionId])
+  @@map("ledger_entries")
+}
+
+/// The current balance of one account: a projection of its entries, not a
+/// second source of truth (ADR-0009).
+///
+/// It exists for two reasons. Reading a balance must not mean summing every
+/// entry an account has ever had. And, more importantly, it is the row that
+/// gets locked: moving money out of an account means taking `SELECT ... FOR
+/// UPDATE` on this row first, which is what makes two concurrent trades
+/// against the same seller queue up instead of both seeing the same funds.
+///
+/// Maintained by a trigger on the entries rather than by the service, so a
+/// posting cannot fail to move the balance. If it is ever wrong it is
+/// rebuilt from the entries, which is what makes it safe for it to be
+/// writable at all - see the note on permissions in ../sql/ledger-immutability.sql.
+model LedgerAccountBalance {
+  accountId String        @id @map("account_id")
+  account   LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  asset LedgerAsset
+
+  /// Micro-USDT, in the account's NATURAL sense: a customer's available
+  /// balance of 100 USDT is +100,000,000, not negative, even though it is a
+  /// liability whose entries are credits. The floor below is therefore the
+  /// floor a person would expect.
+  balance BigInt @default(0)
+
+  /// Whether this balance may go below zero. False for everything a customer
+  /// or a trade owns and for platform assets; true only where a negative
+  /// position is meaningful (equity, revenue, expense). Derived from the
+  /// account's type when the account is created, and held here rather than on
+  /// the account because this is where the CHECK constraint that consumes it
+  /// lives - a constraint cannot read another table.
+  allowsNegative Boolean @map("allows_negative")
+
+  /// Cheap evidence for the rebuild test: how many entries this balance is
+  /// the sum of, and the last transaction to touch it.
+  entryCount        Int     @default(0) @map("entry_count")
+  lastTransactionId String? @map("last_transaction_id")
+
+  /// Bumped on every change. Not used for optimistic locking - ADR-0009
+  /// rejects that - but it makes "did this move" answerable without
+  /// comparing amounts.
+  version Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("ledger_account_balances")
 }

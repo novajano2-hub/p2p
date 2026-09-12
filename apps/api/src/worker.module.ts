@@ -6,6 +6,7 @@ import { type Env } from "@/config/env";
 import { PrismaModule } from "@/infra/prisma/prisma.module";
 import { RedisModule } from "@/infra/redis/redis.module";
 import { KycRetentionModule } from "@/modules/kyc/kyc-retention.module";
+import { LedgerModule } from "@/modules/ledger/ledger.module";
 import { KycSweepScheduler } from "@/modules/kyc/kyc-sweep.scheduler";
 
 /*
@@ -26,6 +27,7 @@ export class WorkerModule {
         PrismaModule,
         RedisModule,
         KycRetentionModule,
+        LedgerModule,
       ],
       providers: [KycSweepScheduler],
     };

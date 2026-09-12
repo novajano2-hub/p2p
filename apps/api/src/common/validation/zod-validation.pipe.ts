@@ -36,3 +36,8 @@ export class ZodValidationPipe<TSchema extends z.ZodType> implements PipeTransfo
 export function zodBody<TSchema extends z.ZodType>(schema: TSchema) {
   return new ZodValidationPipe(schema);
 }
+
+/** The same pipe on @Query(): the whole query string, parsed and coerced by one schema. */
+export function zodQuery<TSchema extends z.ZodType>(schema: TSchema) {
+  return new ZodValidationPipe(schema);
+}

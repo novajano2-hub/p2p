@@ -19,6 +19,7 @@ export const adminRole = z.enum([
   "DISPUTE_RESOLVER",
   "WITHDRAWAL_APPROVER",
   "FINANCIAL_ADJUSTER",
+  "LEDGER_VIEWER",
 ]);
 export type AdminRole = z.infer<typeof adminRole>;
 

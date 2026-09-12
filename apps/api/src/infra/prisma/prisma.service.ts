@@ -1,6 +1,7 @@
-import { createPrismaClient, type PrismaClient } from "@abay/database";
+import { createPrismaClient, type Prisma, type PrismaClient } from "@abay/database";
 import { Inject, Injectable, type OnModuleDestroy } from "@nestjs/common";
 
+import { withTransactionScope } from "@/common/io/transaction-scope";
 import { ENV } from "@/config/config.module";
 import { type Env } from "@/config/env";
 
@@ -21,6 +22,33 @@ export class PrismaService implements OnModuleDestroy {
     this.client = createPrismaClient(
       env.DATABASE_URL,
       env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+    );
+  }
+
+  /*
+    An interactive transaction that the rest of the process can see.
+
+    Every transaction that touches money should open through here rather than
+    through client.$transaction directly: the scope it enters is what lets an
+    outbound HTTP or storage call refuse to run while the row locks are held
+    (AT-19, common/io/transaction-scope.ts). The name is for the error message
+    that call would raise, and for nothing else.
+
+    The timeouts are longer than Prisma's defaults on purpose. A posting that
+    is queued behind another on the same balance row is waiting correctly, not
+    hanging, and the default five seconds would turn a busy account into
+    failed requests under exactly the load the row lock exists to serialise.
+  */
+  transaction<T>(
+    name: string,
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+    options: { maxWait?: number; timeout?: number } = {},
+  ): Promise<T> {
+    return withTransactionScope(name, () =>
+      this.client.$transaction(work, {
+        maxWait: options.maxWait ?? 10_000,
+        timeout: options.timeout ?? 30_000,
+      }),
     );
   }
 

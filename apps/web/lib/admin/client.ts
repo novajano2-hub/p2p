@@ -14,7 +14,11 @@ import { apiOrigin } from "@/lib/api-origin";
 const TIMEOUT_MS = 15_000;
 
 export type AdminRole =
-  "KYC_REVIEWER" | "DISPUTE_RESOLVER" | "WITHDRAWAL_APPROVER" | "FINANCIAL_ADJUSTER";
+  | "KYC_REVIEWER"
+  | "DISPUTE_RESOLVER"
+  | "WITHDRAWAL_APPROVER"
+  | "FINANCIAL_ADJUSTER"
+  | "LEDGER_VIEWER";
 
 export type AdminIdentity = {
   id: string;
@@ -82,6 +86,7 @@ const role = z.enum([
   "DISPUTE_RESOLVER",
   "WITHDRAWAL_APPROVER",
   "FINANCIAL_ADJUSTER",
+  "LEDGER_VIEWER",
 ]);
 
 const identitySchema = z.object({
@@ -152,7 +157,8 @@ const fail = (code: Failure["code"], message: string): Failure => ({ ok: false, 
 const OFFLINE = fail("OTHER", "We could not reach the server. Check your connection.");
 const UNEXPECTED = fail("OTHER", "Something went wrong. Please try again.");
 
-async function send<T>(
+/** One request to the admin API, parsed by a schema. Shared with lib/admin/ledger.ts. */
+export async function adminRequest<T>(
   path: string,
   schema: z.ZodType<T>,
   init: RequestInit,
@@ -201,7 +207,7 @@ export const adminClient = {
     /** Only once the server has answered MFA: the first attempt goes without. */
     code?: string;
   }): Promise<Result<{ admin: AdminIdentity }>> {
-    const result = await send("/auth/login", sessionSchema, {
+    const result = await adminRequest("/auth/login", sessionSchema, {
       method: "POST",
       body: JSON.stringify(input),
     });
@@ -209,7 +215,7 @@ export const adminClient = {
   },
 
   async me(): Promise<Result<{ admin: AdminIdentity }>> {
-    const result = await send("/auth/me", sessionSchema, { method: "GET" });
+    const result = await adminRequest("/auth/me", sessionSchema, { method: "GET" });
     return result.ok ? { ok: true, admin: result.data.admin } : result;
   },
 
@@ -220,7 +226,7 @@ export const adminClient = {
     the shell can drop its gate without asking again.
   */
   async mfaSetup(): Promise<Result<{ secret: string; otpauthUri: string }>> {
-    const result = await send("/auth/mfa/setup", mfaSetupSchema, {
+    const result = await adminRequest("/auth/mfa/setup", mfaSetupSchema, {
       method: "POST",
       body: JSON.stringify({}),
     });
@@ -230,7 +236,7 @@ export const adminClient = {
   },
 
   async mfaConfirm(code: string): Promise<Result<{ admin: AdminIdentity }>> {
-    const result = await send("/auth/mfa/confirm", sessionSchema, {
+    const result = await adminRequest("/auth/mfa/confirm", sessionSchema, {
       method: "POST",
       body: JSON.stringify({ code }),
     });
@@ -239,19 +245,21 @@ export const adminClient = {
 
   /** No payload to speak of, so not a Result: it worked, or here is why not. */
   async logout(): Promise<{ ok: true } | Failure> {
-    const result = await send("/auth/logout", z.undefined(), { method: "POST" });
+    const result = await adminRequest("/auth/logout", z.undefined(), { method: "POST" });
     return result.ok ? { ok: true } : result;
   },
 
   async queue(): Promise<Result<{ submissions: KycReviewItem[]; pending: number }>> {
-    const result = await send("/kyc/queue", queueSchema, { method: "GET" });
+    const result = await adminRequest("/kyc/queue", queueSchema, { method: "GET" });
     return result.ok
       ? { ok: true, submissions: result.data.submissions, pending: result.data.pending }
       : result;
   },
 
   async submission(id: string): Promise<Result<{ submission: KycReviewItem }>> {
-    const result = await send(`/kyc/submissions/${id}`, reviewItemSchema, { method: "GET" });
+    const result = await adminRequest(`/kyc/submissions/${id}`, reviewItemSchema, {
+      method: "GET",
+    });
     return result.ok ? { ok: true, submission: result.data } : result;
   },
 
@@ -272,7 +280,7 @@ export const adminClient = {
 
   /** Nothing to send: approving asks nothing of the administrator. */
   async approve(id: string): Promise<Result<{ submission: KycReviewItem }>> {
-    const result = await send(`/kyc/submissions/${id}/approve`, reviewItemSchema, {
+    const result = await adminRequest(`/kyc/submissions/${id}/approve`, reviewItemSchema, {
       method: "POST",
       body: JSON.stringify({}),
     });
@@ -283,7 +291,7 @@ export const adminClient = {
     id: string,
     reason: KycRejectionReason,
   ): Promise<Result<{ submission: KycReviewItem }>> {
-    const result = await send(`/kyc/submissions/${id}/reject`, reviewItemSchema, {
+    const result = await adminRequest(`/kyc/submissions/${id}/reject`, reviewItemSchema, {
       method: "POST",
       body: JSON.stringify({ reason }),
     });

@@ -19,6 +19,7 @@ import {
 } from "@/modules/auth/platform-id";
 import { SessionService } from "@/modules/auth/session.service";
 import { generateToken, hashToken } from "@/modules/auth/tokens";
+import { assertNoOpenTransaction } from "@/common/io/transaction-scope";
 
 /*
   Sign in with Google, as the server-side authorization-code flow with PKCE.
@@ -182,6 +183,7 @@ export class GoogleService {
     The claims are still checked one by one.
   */
   private async exchange(code: string, verifier: string) {
+    assertNoOpenTransaction("calling Google");
     let response: Response;
     try {
       response = await fetch(TOKEN_ENDPOINT, {

@@ -395,18 +395,84 @@ Two rows deserve attention:
 
 ## 6. Invariants this taxonomy makes checkable
 
-| #   | Invariant                                                          | How it is enforced                                                       |
-| --- | ------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| L1  | Every ledger transaction has ≥ 2 entries                           | Deferred constraint trigger                                              |
-| L2  | Debits = credits per `(transaction, asset)`                        | Deferred constraint trigger on `SUM(signed_amount) = 0`                  |
-| L3  | One asset per ledger transaction                                   | `CHECK` via trigger; multi-asset needs an explicit clearing model first  |
-| L4  | Entries are immutable                                              | `REVOKE UPDATE, DELETE` + raising trigger                                |
-| L5  | Customer and escrow balances never negative                        | `CHECK (balance >= 0)` on the projection where `allows_negative = false` |
-| L6  | Escrowed funds are not simultaneously available                    | Follows from L2 + per-trade accounts + row locking; asserted by AT-2     |
-| L7  | Settled trade escrow balance is exactly 0                          | Invariant test across all trades (AT-14)                                 |
-| L8  | Balances rebuilt from entries equal the projection                 | Rebuild-and-compare test (AT-11)                                         |
-| L9  | Σ controlled on-chain assets = Σ customer liabilities ± in-flight  | Reconciler; break detection tested by AT-12                              |
-| L10 | Every transaction carries reference, actor, reason, correlation ID | `NOT NULL` columns on `ledger_transaction`                               |
+| #   | Invariant                                                          | How it is enforced                                                                                                     | Status                                                                          |
+| --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| L1  | Every ledger transaction has ≥ 2 entries                           | Deferred constraint trigger `ledger_entries_balance_check`                                                             | **Built**                                                                       |
+| L2  | Debits = credits per `(transaction, asset)`                        | Same trigger, on `SUM(signed_amount) = 0`                                                                              | **Built**                                                                       |
+| L3  | One asset per ledger transaction                                   | Same trigger, on `COUNT(DISTINCT asset) = 1`                                                                           | **Built**                                                                       |
+| L4  | Entries are immutable                                              | `REVOKE UPDATE, DELETE, TRUNCATE` from `abay_app` **and** raising triggers that stop everyone else, superuser included | **Built**                                                                       |
+| L5  | Customer and escrow balances never negative                        | `CHECK (balance >= 0 OR allows_negative)` on the projection                                                            | **Built**                                                                       |
+| L6  | Escrowed funds are not simultaneously available                    | Follows from L2 + per-trade accounts + row locking; asserted by AT-2                                                   | **Row locking built** (`LedgerService`); the escrow assertion itself is Phase 4 |
+| L7  | Settled trade escrow balance is exactly 0                          | Invariant test across all trades (AT-14)                                                                               | Phase 4                                                                         |
+| L8  | Balances rebuilt from entries equal the projection                 | Rebuild-and-compare test (AT-11)                                                                                       | **Built** (`ledger-properties.spec.ts`, rebuild in a rolled-back transaction)   |
+| L9  | Σ controlled on-chain assets = Σ customer liabilities ± in-flight  | Reconciler; break detection tested by AT-12                                                                            | Phase 3                                                                         |
+| L10 | Every transaction carries reference, actor, reason, correlation ID | `NOT NULL` columns on `ledger_transactions`                                                                            | **Built**                                                                       |
+
+The built rows live in `packages/database/sql/` (`ledger-invariants.sql`,
+`ledger-immutability.sql`, `ledger-balance-projection.sql`,
+`ledger-chart-of-accounts.sql`), applied by migration `20260912090000_ledger`.
+
+**Stage 2 - the writer.** `apps/api/src/modules/ledger/ledger.service.ts` is the only
+code that posts. Its order of operations is the concurrency design in ADR-0009 made
+concrete: validate before any I/O, answer a repeated idempotency key with the original
+posting, resolve accounts (creating a customer's or a trade's on first use, atomically),
+`SELECT ... FOR UPDATE` every touched balance row in ascending account-id order, refuse an
+overdraw while those rows are locked and name the account, then write. Every account a
+posting touches is locked - the credited ones too - because the balance trigger updates
+each of them and two postings updating the same rows in opposite orders is a deadlock.
+Proven in `apps/api/test/api/ledger.spec.ts`: AT-15, AT-16, AT-19, and twenty concurrent
+spends against ten units of funds landing on exactly zero. Outbound adapters (email,
+object storage, Google) refuse to run inside any transaction opened through
+`PrismaService.transaction` (AT-19, `apps/api/src/common/io/transaction-scope.ts`).
+
+**Stage 3 - the properties.** `apps/api/test/api/ledger-properties.spec.ts` plays seeded
+random sequences of deposits, escrow locks, releases, refunds, withdrawal holds and hold
+releases - about a quarter of them deliberately unaffordable - first one at a time, where
+a model in memory predicts exactly which postings succeed, then in concurrent batches,
+where it follows the outcomes; after every step the database must equal the model and no
+customer or trade balance may be below zero (AT-18). The service is also bypassed with a
+balanced, overdrawing transaction written by hand, which the floor constraint refuses by
+name. Then every balance is zeroed and rebuilt from the entries alone inside a transaction
+that is rolled back, and the rebuild must equal the projection exactly (AT-11). An
+`afterEach` hook fails the file if any transaction in the database is unbalanced (AT-10).
+A failing run prints its seed; `LEDGER_PROPERTY_SEED=<seed>` replays it. The test earned its
+keep on its first day: it found a deadlock between two postings that each created the same
+two brand-new accounts (a customer's first hold and first hold-release) in opposite line
+orders, each waiting on the other's uncommitted unique key. `LedgerService` now resolves
+accounts in code order, one global order for everyone, for the same reason its
+`FOR UPDATE` is in id order.
+
+**Stage 4 - the viewer.** `apps/api/src/modules/admin/admin-ledger.*` and
+`apps/web/components/admin/ledger-*.tsx`: the ledger read by an administrator holding the
+`LEDGER_VIEWER` role, a role of its own because seeing a person's balance is a capability
+in its own right and an auditor should not need the power to move money in order to look.
+Every route is a GET. The overview re-verifies the four database-enforced invariants from
+the rows on every load (every transaction sums to zero; the projection equals a rebuild;
+no floor breached; assets + expenses = liabilities + equity + revenue) and shows the trial
+balance and the platform accounts. Accounts page by code; an account's statement carries a
+running balance computed as a window over its entries; the journal filters by reason,
+reference, correlation id and account, and a transaction shows its lines with what it
+reversed and what has since reversed it. Money crosses the wire only as integer strings of
+millionths (AT-21), and opening a customer's or a trade's account, or a transaction that
+touched one, writes `ledger.account_viewed` / `ledger.transaction_viewed` to the audit log,
+as opening an identity submission does.
+
+Three implementation notes where the code is more specific than this document was:
+
+- **`signed_amount` is a stored column**, not computed per query, bound to `direction` and
+  `amount` by a `CHECK` so the two cannot disagree. `direction` is kept alongside it
+  because a zero-amount leg — the fee leg while fees are off — has no sign to infer one
+  from.
+- **The balance projection is maintained by a trigger on the entries**, so a posting
+  cannot fail to move a balance, and the natural-sign arithmetic (debit-positive for
+  assets and expenses, credit-positive for the rest) exists in exactly one place.
+- **`allows_negative` lives on the balance row**, not on the account, because that is
+  where the `CHECK` that consumes it lives and a constraint cannot read another table. It
+  is derived from the account's type when the account is created. `ledger_account_balances`
+  deliberately keeps `UPDATE` for the application role: PostgreSQL requires that privilege
+  to take `SELECT ... FOR UPDATE`, which is the lock the whole concurrency design rests
+  on. What makes that safe is that the table is derived — the immutable thing is the
+  history, and a wrong balance is rebuilt rather than lost.
 
 ---
 
