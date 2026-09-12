@@ -72,6 +72,30 @@ to credited balance.
   deposit's lifecycle ends at `CREDITED`; where the coins subsequently sit is a treasury
   concern and must never affect a customer balance.
 
+**Built (Phase 3, stage 2).** `apps/api/src/modules/deposits/` implements this table as
+written, with the table itself in `deposit.machine.ts` and every transition checked
+against it before a write. Three things the code is more specific about than the text:
+
+- **Detection and classification are one transaction.** `DETECTED` exists for the length
+  of a transaction: the row is inserted (idempotent on the transfer), audited, and moved
+  to `CONFIRMING` or `UNATTRIBUTED` before the commit. Both the webhook and the observer
+  re-read the transfer from the chain first; a claim the chain does not have is
+  acknowledged and not recorded.
+- **"Absent for ≥ reorg-depth blocks"** is read as: the transfer is missing from the
+  canonical chain and the head has advanced `REORG_DEPTH` past the block it was in. A
+  transfer merely not yet indexed is left to wait.
+- **The roles are `DEPOSIT_REVIEWER` for all three human transitions** (approve, reject,
+  attribute), rather than `financial_adjuster` for attribution: deciding whose money a
+  deposit is belongs to one capability. Dual approval of a high-value attribution is
+  deferred to stage 5, where withdrawal approvals bring the mechanism. A rejected deposit
+  posts nothing, as the table says; the coins it leaves at our address surface as a
+  reconciliation surplus (stage 4) until a person attributes or returns them.
+
+Proven in `apps/api/test/api/deposits.spec.ts`: AT-1 (six deliveries around the credit,
+one JE-1), AT-20 (orphaned before finality; the credit stands after it), the held and
+unattributed paths through the admin routes, and the observer finding what no webhook
+mentioned.
+
 ---
 
 ## 2. Withdrawal

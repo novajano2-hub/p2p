@@ -113,6 +113,8 @@ model Notification {
 enum NotificationType {
   KYC_APPROVED
   KYC_REJECTED
+  /// A deposit reached finality and the balance moved.
+  DEPOSIT_CREDITED
 
   @@map("notification_type")
 }
@@ -911,6 +913,15 @@ model Deposit {
   /// JE-1 or JE-10, once posted. The credit's idempotency key is derived from the deposit id.
   ledgerTransactionId String? @map("ledger_transaction_id")
 
+  /// How it was first seen: "webhook" or "observer". Both paths verify against the chain.
+  detectedVia String @map("detected_via")
+
+  /// The administrator who decided a held or unattributed deposit, and why. The
+  /// audit event is the authoritative record; this is the copy the row carries.
+  decidedBy      String?   @map("decided_by")
+  decidedAt      DateTime? @map("decided_at")
+  decisionReason String?   @map("decision_reason")
+
   correlationId String    @map("correlation_id")
   detectedAt    DateTime  @default(now()) @map("detected_at")
   creditedAt    DateTime? @map("credited_at")
@@ -1106,6 +1117,16 @@ model IdempotencyKey {
 // once a real adapter is configured; never read by domain code, which only
 // ever sees the gateway and provider interfaces.
 // ---------------------------------------------------------------------------
+
+/// How far the chain observer has scanned, per network. Rescans overlap by the
+/// reorg depth, which is safe because detection is idempotent on the transfer.
+model ChainObserverCursor {
+  network   ChainNetwork @id
+  lastBlock BigInt       @map("last_block")
+  updatedAt DateTime     @updatedAt
+
+  @@map("chain_observer_cursors")
+}
 
 model MockChainHead {
   network   ChainNetwork @id

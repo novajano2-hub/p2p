@@ -52,6 +52,7 @@ export type {
   Withdrawal,
   WithdrawalApproval,
   WithdrawalStatus,
+  ChainObserverCursor,
 } from "@prisma/client";
 
 export type PrismaLogLevel = "query" | "info" | "warn" | "error";

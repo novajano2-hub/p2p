@@ -5,11 +5,16 @@ import { ConfigModule } from "@/config/config.module";
 import { type Env } from "@/config/env";
 import { PrismaModule } from "@/infra/prisma/prisma.module";
 import { RedisModule } from "@/infra/redis/redis.module";
+import { BlockchainModule } from "@/modules/blockchain/blockchain.module";
+import { DepositConfirmer } from "@/modules/deposits/deposit-confirmer";
+import { DepositObserver } from "@/modules/deposits/deposit-observer";
+import { DepositsModule } from "@/modules/deposits/deposits.module";
 import { KycRetentionModule } from "@/modules/kyc/kyc-retention.module";
 import { LedgerModule } from "@/modules/ledger/ledger.module";
 import { KycSweepScheduler } from "@/modules/kyc/kyc-sweep.scheduler";
 import { OutboxModule } from "@/modules/outbox/outbox.module";
 import { OutboxPublisher } from "@/modules/outbox/outbox.publisher";
+import { WalletsModule } from "@/modules/wallets/wallets.module";
 
 /*
   The worker process: the same modules as the API, minus HTTP. Its jobs are
@@ -33,8 +38,11 @@ export class WorkerModule {
         KycRetentionModule,
         LedgerModule,
         OutboxModule,
+        BlockchainModule,
+        WalletsModule,
+        DepositsModule,
       ],
-      providers: [KycSweepScheduler, OutboxPublisher],
+      providers: [KycSweepScheduler, OutboxPublisher, DepositObserver, DepositConfirmer],
     };
   }
 }

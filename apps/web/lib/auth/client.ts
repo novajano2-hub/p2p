@@ -70,7 +70,7 @@ export type KycResult =
 export type KycDocumentResult =
   { ok: true; document: KycDocument } | { ok: false; code: AuthErrorCode; message: string };
 
-export type NotificationType = "KYC_APPROVED" | "KYC_REJECTED";
+export type NotificationType = "KYC_APPROVED" | "KYC_REJECTED" | "DEPOSIT_CREDITED";
 
 /** What the account was told without doing anything on this device. */
 export type NotificationItem = {
@@ -166,7 +166,7 @@ export interface AuthClient {
   markAllNotificationsRead(): Promise<AuthResult>;
 }
 
-const notificationTypeSchema = z.enum(["KYC_APPROVED", "KYC_REJECTED"]);
+const notificationTypeSchema = z.enum(["KYC_APPROVED", "KYC_REJECTED", "DEPOSIT_CREDITED"]);
 const notificationItemSchema = z.object({
   id: z.string(),
   type: notificationTypeSchema,

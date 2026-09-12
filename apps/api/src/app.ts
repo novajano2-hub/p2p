@@ -36,6 +36,9 @@ export async function createApp(env: Env): Promise<NestFastifyApplication> {
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule.forRoot(env), adapter, {
     bufferLogs: true,
+    // Keeps the bytes of a JSON body as request.rawBody: a webhook signature
+    // is over what was sent, not over what a parser made of it.
+    rawBody: true,
   });
   app.useLogger(app.get(Logger));
   app.setGlobalPrefix("v1", { exclude: ["health", "ready"] });
