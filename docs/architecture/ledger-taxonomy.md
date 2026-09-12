@@ -395,18 +395,39 @@ Two rows deserve attention:
 
 ## 6. Invariants this taxonomy makes checkable
 
-| #   | Invariant                                                          | How it is enforced                                                       |
-| --- | ------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| L1  | Every ledger transaction has ≥ 2 entries                           | Deferred constraint trigger                                              |
-| L2  | Debits = credits per `(transaction, asset)`                        | Deferred constraint trigger on `SUM(signed_amount) = 0`                  |
-| L3  | One asset per ledger transaction                                   | `CHECK` via trigger; multi-asset needs an explicit clearing model first  |
-| L4  | Entries are immutable                                              | `REVOKE UPDATE, DELETE` + raising trigger                                |
-| L5  | Customer and escrow balances never negative                        | `CHECK (balance >= 0)` on the projection where `allows_negative = false` |
-| L6  | Escrowed funds are not simultaneously available                    | Follows from L2 + per-trade accounts + row locking; asserted by AT-2     |
-| L7  | Settled trade escrow balance is exactly 0                          | Invariant test across all trades (AT-14)                                 |
-| L8  | Balances rebuilt from entries equal the projection                 | Rebuild-and-compare test (AT-11)                                         |
-| L9  | Σ controlled on-chain assets = Σ customer liabilities ± in-flight  | Reconciler; break detection tested by AT-12                              |
-| L10 | Every transaction carries reference, actor, reason, correlation ID | `NOT NULL` columns on `ledger_transaction`                               |
+| #   | Invariant                                                          | How it is enforced                                                                                                     | Status                              |
+| --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| L1  | Every ledger transaction has ≥ 2 entries                           | Deferred constraint trigger `ledger_entries_balance_check`                                                             | **Built**                           |
+| L2  | Debits = credits per `(transaction, asset)`                        | Same trigger, on `SUM(signed_amount) = 0`                                                                              | **Built**                           |
+| L3  | One asset per ledger transaction                                   | Same trigger, on `COUNT(DISTINCT asset) = 1`                                                                           | **Built**                           |
+| L4  | Entries are immutable                                              | `REVOKE UPDATE, DELETE, TRUNCATE` from `abay_app` **and** raising triggers that stop everyone else, superuser included | **Built**                           |
+| L5  | Customer and escrow balances never negative                        | `CHECK (balance >= 0 OR allows_negative)` on the projection                                                            | **Built**                           |
+| L6  | Escrowed funds are not simultaneously available                    | Follows from L2 + per-trade accounts + row locking; asserted by AT-2                                                   | Stage 2 (locking), Phase 4 (escrow) |
+| L7  | Settled trade escrow balance is exactly 0                          | Invariant test across all trades (AT-14)                                                                               | Phase 4                             |
+| L8  | Balances rebuilt from entries equal the projection                 | Rebuild-and-compare test (AT-11)                                                                                       | Stage 3                             |
+| L9  | Σ controlled on-chain assets = Σ customer liabilities ± in-flight  | Reconciler; break detection tested by AT-12                                                                            | Phase 3                             |
+| L10 | Every transaction carries reference, actor, reason, correlation ID | `NOT NULL` columns on `ledger_transactions`                                                                            | **Built**                           |
+
+The built rows live in `packages/database/sql/` (`ledger-invariants.sql`,
+`ledger-immutability.sql`, `ledger-balance-projection.sql`,
+`ledger-chart-of-accounts.sql`), applied by migration `20260912090000_ledger`.
+
+Three implementation notes where the code is more specific than this document was:
+
+- **`signed_amount` is a stored column**, not computed per query, bound to `direction` and
+  `amount` by a `CHECK` so the two cannot disagree. `direction` is kept alongside it
+  because a zero-amount leg — the fee leg while fees are off — has no sign to infer one
+  from.
+- **The balance projection is maintained by a trigger on the entries**, so a posting
+  cannot fail to move a balance, and the natural-sign arithmetic (debit-positive for
+  assets and expenses, credit-positive for the rest) exists in exactly one place.
+- **`allows_negative` lives on the balance row**, not on the account, because that is
+  where the `CHECK` that consumes it lives and a constraint cannot read another table. It
+  is derived from the account's type when the account is created. `ledger_account_balances`
+  deliberately keeps `UPDATE` for the application role: PostgreSQL requires that privilege
+  to take `SELECT ... FOR UPDATE`, which is the lock the whole concurrency design rests
+  on. What makes that safe is that the table is derived — the immutable thing is the
+  history, and a wrong balance is rebuilt rather than lost.
 
 ---
 
