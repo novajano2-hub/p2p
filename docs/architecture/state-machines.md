@@ -150,6 +150,37 @@ the most states because it is the only place the platform gives up assets irreve
 - Every state that releases a hold does so **only** from a position where non-broadcast is
   certain. There is no path from `BROADCAST` or `BROADCAST_UNKNOWN` directly to a refund.
 
+**Built (Phase 3, stage 3).** `apps/api/src/modules/withdrawals/` implements this table as
+written, with the table itself in `withdrawal.machine.ts`. The four separations of
+ADR-0010 are four different callers: the HTTP handler only requests and holds (JE-7), the
+risk engine and then a person authorise, the worker signs through the custody provider,
+and confirmation settles. Six places the code is more specific than the text:
+
+- **Step-up is the account password, re-entered on the request.** Customers have no second
+  factor yet, so this is the strongest step-up available; it also gives the
+  security-change cooldown something to hang on, and a withdrawal is refused for 24 hours
+  after a password change. WebAuthn or customer TOTP would replace it, not remove it.
+- **The daily ceiling is the lower of the KYC tier and the configured maximum.** The
+  approval thresholds were moved below that ceiling (500 USDT for one approver, 1,500 for
+  two): above it they would be unreachable, because no customer could request enough to
+  trip them. **These figures need the owner's confirmation before real funds.**
+- **A withdrawal to one of our own attribution addresses is refused.** It would pay gas to
+  credit the customer straight back, and it confuses reconciliation.
+- **A withdrawal stuck in `SIGNING`** - a worker that died mid-call - is retried by asking
+  the provider again, which is safe exactly because the client reference makes the
+  provider idempotent. Without this the money would stay stuck forever.
+- **`BROADCAST_UNKNOWN` escalates to `MANUAL_INVESTIGATION` in the same transaction** that
+  records it. The state is real and audited, but nothing should ever sit in it waiting for
+  a second process to notice.
+- **Declaring a withdrawal never-sent takes two administrators**, recorded as
+  `FAILED_CONFIRMED` approvals distinct from the `SEND` ones, because it is the only
+  resolution here that gives money back.
+
+Proven in `apps/api/test/api/withdrawals.spec.ts`, AT-9 included: ten further worker
+passes after an ambiguous broadcast leave exactly one transfer on the chain, post no
+refund and no broadcast entry, keep the funds visibly held, and the two manual
+resolutions each produce exactly the right entries.
+
 ---
 
 ## 3. Trade

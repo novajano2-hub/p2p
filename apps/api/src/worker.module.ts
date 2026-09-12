@@ -15,6 +15,8 @@ import { KycSweepScheduler } from "@/modules/kyc/kyc-sweep.scheduler";
 import { OutboxModule } from "@/modules/outbox/outbox.module";
 import { OutboxPublisher } from "@/modules/outbox/outbox.publisher";
 import { WalletsModule } from "@/modules/wallets/wallets.module";
+import { WithdrawalProcessor } from "@/modules/withdrawals/withdrawal-processor";
+import { WithdrawalsModule } from "@/modules/withdrawals/withdrawals.module";
 
 /*
   The worker process: the same modules as the API, minus HTTP. Its jobs are
@@ -41,8 +43,15 @@ export class WorkerModule {
         BlockchainModule,
         WalletsModule,
         DepositsModule,
+        WithdrawalsModule,
       ],
-      providers: [KycSweepScheduler, OutboxPublisher, DepositObserver, DepositConfirmer],
+      providers: [
+        KycSweepScheduler,
+        OutboxPublisher,
+        DepositObserver,
+        DepositConfirmer,
+        WithdrawalProcessor,
+      ],
     };
   }
 }

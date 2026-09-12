@@ -191,8 +191,14 @@ export const envSchema = z
     WITHDRAWAL_MIN_MICRO: micro("1000000"),
     WITHDRAWAL_MAX_MICRO: micro("50000000000"),
     WITHDRAWAL_DAILY_MAX_MICRO: micro("100000000000"),
-    WITHDRAWAL_AUTO_APPROVE_MICRO: micro("2000000000"),
-    WITHDRAWAL_DUAL_APPROVAL_MICRO: micro("10000000000"),
+    /* Both are read against the customer's KYC daily ceiling, which is lower
+       (KYC_TIERS: 2,000 USDT verified, 100 unverified). Thresholds above that
+       ceiling would be unreachable - nobody could ever request enough to trip
+       them - so these sit below it: under 500 USDT goes straight through,
+       500 and over wants one administrator, 1,500 and over wants two. Figures
+       to confirm with the owner before real funds. */
+    WITHDRAWAL_AUTO_APPROVE_MICRO: micro("500000000"),
+    WITHDRAWAL_DUAL_APPROVAL_MICRO: micro("1500000000"),
     WITHDRAWAL_NEW_ADDRESS_COOLDOWN_HOURS: z.coerce.number().int().min(0).max(720).default(24),
 
     /* The adapters at the edge (ADR-0006). Only the deterministic mocks exist

@@ -16,4 +16,5 @@ export * from "./health";
 export * from "./kyc";
 export * from "./ledger";
 export * from "./deposits";
+export * from "./withdrawals";
 export * from "./auth";

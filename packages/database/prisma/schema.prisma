@@ -115,6 +115,10 @@ enum NotificationType {
   KYC_REJECTED
   /// A deposit reached finality and the balance moved.
   DEPOSIT_CREDITED
+  /// A withdrawal reached the chain and is confirmed.
+  WITHDRAWAL_SENT
+  /// A withdrawal did not go ahead; the hold was released back to available.
+  WITHDRAWAL_RETURNED
 
   @@map("notification_type")
 }
@@ -1011,13 +1015,26 @@ model WithdrawalApproval {
   withdrawalId String     @map("withdrawal_id")
   withdrawal   Withdrawal @relation(fields: [withdrawalId], references: [id], onDelete: Cascade)
 
-  adminId    String   @map("admin_id")
-  adminEmail String   @map("admin_email")
-  reason     String?
-  createdAt  DateTime @default(now())
+  adminId    String @map("admin_id")
+  adminEmail String @map("admin_email")
 
-  @@unique([withdrawalId, adminId])
+  /// Which question this administrator answered. SEND authorises the transfer;
+  /// FAILED_CONFIRMED attests that nothing ever reached the chain, which is the
+  /// one resolution that gives money back and so needs two people (ADR-0010).
+  decision WithdrawalDecision @default(SEND)
+
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([withdrawalId, adminId, decision])
   @@map("withdrawal_approvals")
+}
+
+enum WithdrawalDecision {
+  SEND
+  FAILED_CONFIRMED
+
+  @@map("withdrawal_decision")
 }
 
 enum SweepStatus {

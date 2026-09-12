@@ -12,7 +12,13 @@ import { z } from "zod";
   call site, not a new system.
 */
 
-export const notificationType = z.enum(["KYC_APPROVED", "KYC_REJECTED", "DEPOSIT_CREDITED"]);
+export const notificationType = z.enum([
+  "KYC_APPROVED",
+  "KYC_REJECTED",
+  "DEPOSIT_CREDITED",
+  "WITHDRAWAL_SENT",
+  "WITHDRAWAL_RETURNED",
+]);
 export type NotificationType = z.infer<typeof notificationType>;
 
 export const notificationItem = z.object({
