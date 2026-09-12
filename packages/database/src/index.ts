@@ -35,6 +35,23 @@ export type {
   UserStatus,
   VerificationPurpose,
   VerificationToken,
+  AddressStatus,
+  AttributionAddress,
+  ChainNetwork,
+  Deposit,
+  DepositStatus,
+  IdempotencyKey,
+  MockChainHead,
+  MockChainTransfer,
+  MockCustodyDirective,
+  MockTransferOutcome,
+  OutboxEvent,
+  OutboxStatus,
+  Sweep,
+  SweepStatus,
+  Withdrawal,
+  WithdrawalApproval,
+  WithdrawalStatus,
 } from "@prisma/client";
 
 export type PrismaLogLevel = "query" | "info" | "warn" | "error";

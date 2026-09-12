@@ -63,11 +63,15 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  identities     AuthIdentity[]
-  sessions       Session[]
-  kycSubmissions KycSubmission[]
-  kycDocuments   KycDocument[]
-  notifications  Notification[]
+  identities      AuthIdentity[]
+  sessions        Session[]
+  kycSubmissions  KycSubmission[]
+  kycDocuments    KycDocument[]
+  notifications   Notification[]
+  addresses       AttributionAddress[]
+  deposits        Deposit[]
+  withdrawals     Withdrawal[]
+  idempotencyKeys IdempotencyKey[]
 
   @@map("users")
 }
@@ -453,6 +457,8 @@ enum AdminRole {
   FINANCIAL_ADJUSTER
   /// Phase 2. Reads accounts, balances and posted history. Moves nothing.
   LEDGER_VIEWER
+  /// Phase 3. Decides a deposit held for review, and attributes one that arrived unmatched.
+  DEPOSIT_REVIEWER
 
   @@map("admin_role")
 }
@@ -804,4 +810,353 @@ model LedgerAccountBalance {
   updatedAt DateTime @updatedAt
 
   @@map("ledger_account_balances")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: money in and money out. Deposits and withdrawals are state machines
+// (docs/architecture/state-machines.md) whose every transition posts through
+// the ledger above; attribution addresses are how a deposit is known to be
+// somebody's (ADR-0002). Amounts here are the ledger's unit, millionths of a
+// USDT; the chain's own integer (18 decimals on BSC) is kept alongside as
+// text, for audit, and converted exactly once at the edge (ADR-0005).
+// ---------------------------------------------------------------------------
+
+/// The one network at launch. Decided 2026-09-12: BNB Smart Chain (ADR-0006).
+enum ChainNetwork {
+  BSC
+
+  @@map("chain_network")
+}
+
+enum AddressStatus {
+  ACTIVE
+  /// No longer handed out; deposits arriving here become UNATTRIBUTED.
+  RETIRED
+
+  @@map("address_status")
+}
+
+/// A customer's deposit address: theirs to receive at, the platform's to spend
+/// from. The key behind it lives in the custody provider, never here.
+model AttributionAddress {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  network ChainNetwork
+  asset   LedgerAsset
+  /// Lower-cased; compared lower-cased everywhere.
+  address String
+
+  /// The provider's own handles for the wallet the address belongs to.
+  custodyWalletRef  String  @map("custody_wallet_ref")
+  custodyAccountRef String? @map("custody_account_ref")
+
+  status AddressStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deposits Deposit[]
+  sweeps   Sweep[]
+
+  @@unique([network, address])
+  /// One live address per customer per network and asset.
+  @@unique([userId, network, asset])
+  @@map("attribution_addresses")
+}
+
+enum DepositStatus {
+  DETECTED
+  CONFIRMING
+  CREDITED
+  ORPHANED
+  MANUAL_REVIEW
+  UNATTRIBUTED
+  REJECTED
+
+  @@map("deposit_status")
+}
+
+/// One incoming transfer, from first sighting to credited balance.
+model Deposit {
+  id String @id @default(uuid(7))
+
+  network     ChainNetwork
+  txHash      String       @map("tx_hash")
+  logIndex    Int          @map("log_index")
+  blockNumber BigInt       @map("block_number")
+
+  fromAddress   String @map("from_address")
+  toAddress     String @map("to_address")
+  tokenContract String @map("token_contract")
+  /// The chain's integer, in the token's smallest unit. Text: it can exceed 64 bits.
+  rawAmount     String @map("raw_amount")
+
+  asset  LedgerAsset
+  /// In millionths: rawAmount scaled down, floored. What the ledger will credit.
+  amount BigInt
+
+  /// Null while unattributed.
+  addressId String?             @map("address_id")
+  address   AttributionAddress? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  userId    String?             @map("user_id")
+  user      User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status        DepositStatus @default(DETECTED)
+  confirmations Int           @default(0)
+  /// Why it is held or was refused; shown to an administrator, never guessed at.
+  reviewReason  String?       @map("review_reason")
+
+  /// JE-1 or JE-10, once posted. The credit's idempotency key is derived from the deposit id.
+  ledgerTransactionId String? @map("ledger_transaction_id")
+
+  correlationId String    @map("correlation_id")
+  detectedAt    DateTime  @default(now()) @map("detected_at")
+  creditedAt    DateTime? @map("credited_at")
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([network, txHash, logIndex])
+  @@index([status, updatedAt])
+  @@index([userId, detectedAt])
+  @@index([correlationId])
+  @@map("deposits")
+}
+
+enum WithdrawalStatus {
+  REQUESTED
+  RISK_REVIEW
+  APPROVED
+  REJECTED
+  CANCELLED
+  BUILDING
+  BUILD_FAILED
+  SIGNING
+  SIGN_REFUSED
+  BROADCAST
+  BROADCAST_UNKNOWN
+  MANUAL_INVESTIGATION
+  CONFIRMED
+  FAILED_CONFIRMED
+
+  @@map("withdrawal_status")
+}
+
+/// One outgoing transfer, from request to confirmed on-chain (ADR-0010).
+model Withdrawal {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  network     ChainNetwork
+  asset       LedgerAsset
+  /// Millionths. What leaves the customer's available balance at request.
+  amount      BigInt
+  /// Millionths. Zero at launch; posted as its own leg regardless (JE-7).
+  fee         BigInt       @default(0)
+  destination String
+
+  status WithdrawalStatus @default(REQUESTED)
+
+  riskScore         Int?     @map("risk_score")
+  riskReasons       String[] @map("risk_reasons")
+  /// How many distinct administrators must approve before it may proceed.
+  approvalsRequired Int      @default(0) @map("approvals_required")
+
+  txHash        String? @map("tx_hash")
+  providerRef   String? @map("provider_ref")
+  blockNumber   BigInt? @map("block_number")
+  confirmations Int     @default(0)
+  buildAttempts Int     @default(0) @map("build_attempts")
+  failureReason String? @map("failure_reason")
+
+  /// The ledger transactions each step posted: the hold (JE-7), the broadcast
+  /// (JE-8a), and the settlement - JE-8b when confirmed, JE-9 when the hold was released.
+  holdTransactionId      String? @map("hold_transaction_id")
+  broadcastTransactionId String? @map("broadcast_transaction_id")
+  settledTransactionId   String? @map("settled_transaction_id")
+
+  /// The Idempotency-Key the customer's client sent (ADR-0007).
+  clientKey     String @map("client_key")
+  correlationId String @map("correlation_id")
+
+  requestedAt DateTime  @default(now()) @map("requested_at")
+  broadcastAt DateTime? @map("broadcast_at")
+  settledAt   DateTime? @map("settled_at")
+  updatedAt   DateTime  @updatedAt
+
+  approvals WithdrawalApproval[]
+
+  @@unique([userId, clientKey])
+  @@index([status, updatedAt])
+  @@index([userId, requestedAt])
+  @@index([correlationId])
+  @@map("withdrawals")
+}
+
+/// One administrator's approval. Dual approval is two of these from two people.
+model WithdrawalApproval {
+  id           String     @id @default(uuid(7))
+  withdrawalId String     @map("withdrawal_id")
+  withdrawal   Withdrawal @relation(fields: [withdrawalId], references: [id], onDelete: Cascade)
+
+  adminId    String   @map("admin_id")
+  adminEmail String   @map("admin_email")
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@unique([withdrawalId, adminId])
+  @@map("withdrawal_approvals")
+}
+
+enum SweepStatus {
+  PENDING
+  BROADCAST
+  CONFIRMED
+  FAILED
+
+  @@map("sweep_status")
+}
+
+/// Moving what sits at an attribution address into treasury (JE-2). A treasury
+/// concern: nothing here ever changes a customer's balance.
+model Sweep {
+  id        String             @id @default(uuid(7))
+  addressId String             @map("address_id")
+  address   AttributionAddress @relation(fields: [addressId], references: [id], onDelete: Restrict)
+
+  network ChainNetwork
+  asset   LedgerAsset
+  amount  BigInt
+
+  status      SweepStatus @default(PENDING)
+  txHash      String?     @map("tx_hash")
+  providerRef String?     @map("provider_ref")
+  attempts    Int         @default(0)
+  lastError   String?     @map("last_error")
+
+  broadcastTransactionId String? @map("broadcast_transaction_id")
+  confirmedTransactionId String? @map("confirmed_transaction_id")
+
+  correlationId String   @map("correlation_id")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status, updatedAt])
+  @@map("sweeps")
+}
+
+enum OutboxStatus {
+  PENDING
+  SENT
+  /// Gave up after the last attempt. Visible to an administrator, never silently dropped.
+  FAILED
+
+  @@map("outbox_status")
+}
+
+/// An external effect, written in the same transaction as the change that
+/// caused it and delivered later by the worker (ADR-0007). Delivery is
+/// at-least-once; every handler is idempotent.
+model OutboxEvent {
+  id      String @id @default(uuid(7))
+  type    String
+  payload Json
+
+  status      OutboxStatus @default(PENDING)
+  attempts    Int          @default(0)
+  /// Not before this. Advanced on each failed attempt (backoff) and while a worker holds it (lease).
+  availableAt DateTime     @default(now()) @map("available_at")
+  sentAt      DateTime?    @map("sent_at")
+  lastError   String?      @map("last_error")
+
+  correlationId String   @map("correlation_id")
+  createdAt     DateTime @default(now())
+
+  @@index([status, availableAt])
+  @@index([correlationId])
+  @@map("outbox_events")
+}
+
+/// A claimed Idempotency-Key and the response it produced (ADR-0007). Claimed
+/// in the same transaction as the work, so a row exists only for work that
+/// committed; a repeat with the same body is answered from here.
+model IdempotencyKey {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  endpoint    String
+  key         String
+  requestHash String @map("request_hash")
+
+  responseStatus Int  @map("response_status")
+  responseBody   Json @map("response_body")
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, endpoint, key])
+  @@index([createdAt])
+  @@map("idempotency_keys")
+}
+
+// ---------------------------------------------------------------------------
+// The mock chain and custody provider (ADR-0006). Postgres-backed rather than
+// in-memory so the API, the worker and the test suite see one chain. Unused
+// once a real adapter is configured; never read by domain code, which only
+// ever sees the gateway and provider interfaces.
+// ---------------------------------------------------------------------------
+
+model MockChainHead {
+  network   ChainNetwork @id
+  height    BigInt       @default(0)
+  updatedAt DateTime     @updatedAt
+
+  @@map("mock_chain_heads")
+}
+
+model MockChainTransfer {
+  id String @id @default(uuid(7))
+
+  network     ChainNetwork
+  txHash      String       @map("tx_hash")
+  logIndex    Int          @map("log_index")
+  blockNumber BigInt       @map("block_number")
+
+  fromAddress   String @map("from_address")
+  toAddress     String @map("to_address")
+  tokenContract String @map("token_contract")
+  rawAmount     String @map("raw_amount")
+
+  /// Set when a simulated reorg drops it: the height at which it vanished.
+  orphanedAtBlock BigInt? @map("orphaned_at_block")
+  /// Free text for whoever minted it; the test suite tags its own rows.
+  tag             String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([network, txHash, logIndex])
+  @@index([network, toAddress, blockNumber])
+  @@index([network, fromAddress])
+  @@map("mock_chain_transfers")
+}
+
+enum MockTransferOutcome {
+  BROADCAST
+  REFUSED
+  /// The provider answers "unknown" although the transfer did go out.
+  UNKNOWN_BROADCAST
+  /// The provider answers "unknown" and nothing went out.
+  UNKNOWN_DROPPED
+
+  @@map("mock_transfer_outcome")
+}
+
+/// What the mock provider should do with a given client reference. Absent means BROADCAST.
+model MockCustodyDirective {
+  clientRef String              @id @map("client_ref")
+  outcome   MockTransferOutcome
+  createdAt DateTime            @default(now())
+
+  @@map("mock_custody_directives")
 }

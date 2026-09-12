@@ -73,7 +73,7 @@ etb-usdt-p2p/
 │       │       │   ├── blockchain.gateway.ts    # interface
 │       │       │   ├── mock/                    # deterministic; simulates reorgs,
 │       │       │   │                            # dupes, timeouts, unknown broadcast
-│       │       │   └── plasma/                  # Phase 6 only — UNVALIDATED
+│       │       │   └── bsc/                     # Phase 6 only: the real adapter
 │       │       ├── custody/
 │       │       │   ├── custody.provider.ts      # interface
 │       │       │   ├── mock/

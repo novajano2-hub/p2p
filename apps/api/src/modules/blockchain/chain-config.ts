@@ -1,0 +1,40 @@
+import { type ChainNetwork, type LedgerAsset } from "@abay/database";
+
+import { type Env } from "@/config/env";
+
+/*
+  What the domain knows about the network, read from configuration once.
+  Nothing in a deposit or a withdrawal names a chain, a contract or a
+  decimal count: it asks this.
+*/
+export interface ChainConfig {
+  network: ChainNetwork;
+  chainId: number;
+  token: { symbol: LedgerAsset; contract: string; decimals: number };
+  finality: { confirmations: number; reorgDepth: number };
+  deposit: { dust: bigint; reviewThreshold: bigint };
+  withdrawal: {
+    min: bigint;
+    max: bigint;
+    dailyMax: bigint;
+    autoApproveBelow: bigint;
+    dualApprovalFrom: bigint;
+    newAddressCooldownHours: number;
+  };
+}
+
+export const chainConfig = (env: Env): ChainConfig => ({
+  network: env.CHAIN_NETWORK,
+  chainId: env.CHAIN_ID,
+  token: { symbol: "USDT", contract: env.USDT_CONTRACT, decimals: env.USDT_DECIMALS },
+  finality: { confirmations: env.DEPOSIT_CONFIRMATIONS, reorgDepth: env.REORG_DEPTH },
+  deposit: { dust: env.DEPOSIT_DUST_MICRO, reviewThreshold: env.DEPOSIT_REVIEW_THRESHOLD_MICRO },
+  withdrawal: {
+    min: env.WITHDRAWAL_MIN_MICRO,
+    max: env.WITHDRAWAL_MAX_MICRO,
+    dailyMax: env.WITHDRAWAL_DAILY_MAX_MICRO,
+    autoApproveBelow: env.WITHDRAWAL_AUTO_APPROVE_MICRO,
+    dualApprovalFrom: env.WITHDRAWAL_DUAL_APPROVAL_MICRO,
+    newAddressCooldownHours: env.WITHDRAWAL_NEW_ADDRESS_COOLDOWN_HOURS,
+  },
+});

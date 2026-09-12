@@ -1,6 +1,7 @@
 import { Module, type DynamicModule } from "@nestjs/common";
 
 import { AppExceptionFilter } from "@/common/errors/app-exception.filter";
+import { IdempotencyModule } from "@/common/idempotency/idempotency.module";
 import { loggingModule } from "@/common/logging/logging.module";
 import { RateLimitGuard } from "@/common/rate-limit/rate-limit.guard";
 import { RateLimitService } from "@/common/rate-limit/rate-limit.service";
@@ -11,10 +12,14 @@ import { PrismaModule } from "@/infra/prisma/prisma.module";
 import { RedisModule } from "@/infra/redis/redis.module";
 import { AdminModule } from "@/modules/admin/admin.module";
 import { AuthModule } from "@/modules/auth/auth.module";
+import { BlockchainModule } from "@/modules/blockchain/blockchain.module";
+import { CustodyModule } from "@/modules/custody/custody.module";
 import { HealthModule } from "@/modules/health/health.module";
 import { KycModule } from "@/modules/kyc/kyc.module";
 import { LedgerModule } from "@/modules/ledger/ledger.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
+import { OutboxModule } from "@/modules/outbox/outbox.module";
+import { RiskModule } from "@/modules/risk/risk.module";
 
 /*
   The HTTP application. Feature modules (auth, ledger, offers, trades, ...)
@@ -36,6 +41,11 @@ export class AppModule {
         KycModule,
         LedgerModule,
         NotificationsModule,
+        OutboxModule,
+        IdempotencyModule,
+        BlockchainModule,
+        CustodyModule,
+        RiskModule,
         AdminModule,
       ],
       /*

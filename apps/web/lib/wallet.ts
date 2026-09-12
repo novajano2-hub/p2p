@@ -42,13 +42,23 @@ export type Network = {
 };
 
 /*
-  Plasma first because it is the target chain (ADR-0006, still UNVALIDATED -
-  see Q7 in docs/open-questions.md). The other three are where Ethiopian
-  customers most often already hold USDT, which is exactly the question Q7
-  asks; they are listed as unsupported rather than hidden so the gap is
-  visible on screen instead of only in a document.
+  BNB Smart Chain first because it is the network (ADR-0006, amended
+  2026-09-12): widely offered by the exchanges customers already use, cheap
+  to move on, and supported by every mainstream custody provider. The other
+  three are listed as unsupported rather than hidden so that the choice is
+  visible on screen, and so that turning one on is a flag, not a new screen.
 */
 export const NETWORKS: readonly Network[] = [
+  {
+    id: "bsc",
+    name: "BNB Smart Chain",
+    standard: "BEP20",
+    arrival: "About a minute",
+    confirmations: 15,
+    minDeposit: 1,
+    withdrawalFee: 0.29,
+    supported: true,
+  },
   {
     id: "plasma",
     name: "Plasma",
@@ -57,7 +67,7 @@ export const NETWORKS: readonly Network[] = [
     confirmations: 1,
     minDeposit: 1,
     withdrawalFee: 0,
-    supported: true,
+    supported: false,
   },
   {
     id: "tron",
@@ -67,16 +77,6 @@ export const NETWORKS: readonly Network[] = [
     confirmations: 20,
     minDeposit: 1,
     withdrawalFee: 1,
-    supported: false,
-  },
-  {
-    id: "bsc",
-    name: "BNB Smart Chain",
-    standard: "BEP20",
-    arrival: "About a minute",
-    confirmations: 15,
-    minDeposit: 1,
-    withdrawalFee: 0.29,
     supported: false,
   },
   {
@@ -96,7 +96,7 @@ export const DEFAULT_NETWORK: NetworkId = "plasma";
 export const networkById = (id: NetworkId): Network =>
   NETWORKS.find((network) => network.id === id) ?? NETWORKS[0]!;
 
-/** "Plasma (USDT0)". The pair a person checks against the app they are sending from. */
+/** "BNB Smart Chain (BEP20)". The pair a person checks against the app they are sending from. */
 export const networkLabel = (network: Network): string => `${network.name} (${network.standard})`;
 
 /* ------------------------------------------------------------------ money */
