@@ -20,7 +20,9 @@ import { KycModule } from "@/modules/kyc/kyc.module";
 import { LedgerModule } from "@/modules/ledger/ledger.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
 import { OutboxModule } from "@/modules/outbox/outbox.module";
+import { ReconciliationModule } from "@/modules/reconciliation/reconciliation.module";
 import { RiskModule } from "@/modules/risk/risk.module";
+import { SweepsModule } from "@/modules/sweeps/sweeps.module";
 import { WalletsModule } from "@/modules/wallets/wallets.module";
 import { WithdrawalsModule } from "@/modules/withdrawals/withdrawals.module";
 
@@ -52,6 +54,8 @@ export class AppModule {
         WalletsModule,
         DepositsModule,
         WithdrawalsModule,
+        SweepsModule,
+        ReconciliationModule,
         AdminModule,
       ],
       /*

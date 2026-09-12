@@ -157,13 +157,16 @@ describe("a cookie-authenticated mutation", () => {
 
   it("goes through with the token the API issued", async () => {
     const { cookie } = await registerFully(server(), db, uniqueEmail());
+    // Unique per run: a username is unique across the platform, so a fixed one
+    // here collides with whatever an interrupted earlier run left behind.
+    const username = `renamed_${Math.random().toString(36).slice(2, 8)}`;
     const response = await request(server())
       .patch("/v1/auth/me")
       .set("Cookie", cookie)
       .set("x-csrf-token", csrfFor(cookie))
-      .send({ username: "renamed_properly" })
+      .send({ username })
       .expect(200);
-    expect(response.body.user.username).toBe("renamed_properly");
+    expect(response.body.user.username).toBe(username);
   });
 });
 

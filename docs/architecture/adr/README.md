@@ -325,6 +325,16 @@ deposits and in-flight withdrawals, and raises a `reconciliation_break` row plus
 It never posts a correcting entry. Only an authorized human adjustment workflow does that,
 with a reason code and evidence. AT-12.
 
+_As built (Phase 3, stage 4)._ The comparison is made per position rather than as one
+global sum: customer deposit addresses, hot treasury and cold treasury are each held
+against their own ledger account, so a break names the account it is against and a person
+knows where to look. `IN_TRANSIT` is reported but not compared - coins mid-transaction sit
+at no address that can be asked. One OPEN break per account, enforced by a partial unique
+index: a difference that persists is the same problem seen again, not a new one every
+minute. A break is never closed by the reconciler even if the difference goes away on its
+own, because money that appears and then disappears is more alarming than money that
+merely appears. Resolving takes `FINANCIAL_ADJUSTER`; reading takes `LEDGER_VIEWER`.
+
 **Consequences.** Writes to a single very active account serialize. For customer accounts
 this is correct and desirable. If a platform account ever becomes a hotspot we split it
 rather than weakening the lock.

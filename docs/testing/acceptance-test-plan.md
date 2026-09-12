@@ -138,6 +138,12 @@ transfer the ledger does not know about. Assert: the reconciler produces a
 **the reconciler posted no ledger entries of its own**. Then post the corrective entry
 through the adjustment workflow and assert the break clears.
 
+_Built (Phase 3, stage 4)_ in `apps/api/test/api/reconciliation.spec.ts`. All three
+injections are exercised; the ledger transaction count is asserted unchanged across every
+reconciliation pass; and the write-off case additionally asserts that the sum of customer
+liabilities is identical before and after, because the one thing a platform loss must
+never do is quietly reduce the balances of people who did nothing wrong.
+
 ### AT-13 — Logs and error reports contain no secrets or sensitive payment details
 
 **Phase 1, re-run every phase · Integration**

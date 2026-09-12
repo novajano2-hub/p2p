@@ -100,6 +100,15 @@ module.exports = async function teardown() {
       },
       select: { id: true },
     });
+    /*
+      Sweeps hold their attribution address with onDelete: Restrict - a swept
+      address is not something a cascade should quietly remove - so they go
+      before the customers do, along with the breaks the reconciler raised.
+    */
+    const testSweeps = await db.sweep.findMany({
+      where: { address: { userId: { in: testUserIds } } },
+      select: { id: true },
+    });
     const testDeposits = await db.deposit.findMany({
       where: {
         OR: [
@@ -121,6 +130,10 @@ module.exports = async function teardown() {
         if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
       }
 
+      // Sweeps before customers: a sweep holds its attribution address with
+      // onDelete: Restrict, because a swept address is not something a cascade
+      // should quietly remove.
+      await db.sweep.deleteMany({ where: { id: { in: testSweeps.map((sweep) => sweep.id) } } });
       await db.verificationToken.deleteMany({
         where: { email: { in: test.map((user) => user.email) } },
       });
@@ -136,6 +149,7 @@ module.exports = async function teardown() {
     const ledger = await clearTestLedgerRows({
       depositIds: testDeposits.map((d) => d.id),
       withdrawalIds: testWithdrawals.map((w) => w.id),
+      sweepIds: testSweeps.map((s) => s.id),
       ownerIds: testUserIds,
     });
 
@@ -153,6 +167,31 @@ module.exports = async function teardown() {
           { tag: { startsWith: "test-" } },
           { tag: { startsWith: "custody:test-" } },
           { tag: { in: testWithdrawals.map((w) => `custody:${w.id}`) } },
+          { tag: { in: testSweeps.map((sweep) => `custody:sweep:${sweep.id}`) } },
+        ],
+      },
+    });
+    /*
+      A sweep's custody transfer is tagged with the sweep's id, so any tagged
+      transfer whose sweep no longer exists is a leftover - including from a
+      run that was cut off before this file knew to look for them.
+    */
+    await db.$executeRawUnsafe(
+      "DELETE FROM mock_chain_transfers WHERE tag LIKE 'custody:sweep:%' AND substring(tag from 15) NOT IN (SELECT id FROM sweeps)",
+    );
+    /*
+      Breaks raised by a test pass, and any whose adjustment entry the ledger
+      cleanup above has already removed - a resolved break pointing at a
+      transaction that no longer exists is a leftover by definition.
+    */
+    const liveTransactions = await db.ledgerTransaction.findMany({ select: { id: true } });
+    await db.reconciliationBreak.deleteMany({
+      where: {
+        OR: [
+          { correlationId: { startsWith: "test-" } },
+          {
+            adjustmentTransactionId: { not: null, notIn: liveTransactions.map((t) => t.id) },
+          },
         ],
       },
     });
@@ -205,7 +244,12 @@ function sqlList(ids) {
   return safe.length > 0 ? safe.map((id) => `'${id}'`).join(", ") : "''";
 }
 
-async function clearTestLedgerRows({ depositIds = [], withdrawalIds = [], ownerIds = [] } = {}) {
+async function clearTestLedgerRows({
+  depositIds = [],
+  withdrawalIds = [],
+  sweepIds = [],
+  ownerIds = [],
+} = {}) {
   const { PrismaClient } = require("@prisma/client");
   const direct = new PrismaClient({ datasourceUrl: directDatabaseUrl() });
   // Also any posting whose deposit is already gone: a run that was cut off
@@ -214,7 +258,10 @@ async function clearTestLedgerRows({ depositIds = [], withdrawalIds = [], ownerI
       OR (reference_type = 'deposit' AND reference_id IN (${sqlList(depositIds)}))
       OR (reference_type = 'withdrawal' AND reference_id IN (${sqlList(withdrawalIds)}))
       OR (reference_type = 'deposit' AND reference_id NOT IN (SELECT id FROM deposits))
-      OR (reference_type = 'withdrawal' AND reference_id NOT IN (SELECT id FROM withdrawals)))`;
+      OR (reference_type = 'sweep' AND reference_id IN (${sqlList(sweepIds)}))
+      OR (reference_type = 'withdrawal' AND reference_id NOT IN (SELECT id FROM withdrawals))
+      OR (reference_type = 'sweep' AND reference_id NOT IN (SELECT id FROM sweeps))
+      OR (reference_type = 'reconciliation_break' AND reference_id NOT IN (SELECT id FROM reconciliation_breaks)))`;
   const testAccount = `(owner_id LIKE 'test-%' OR owner_id IN (${sqlList(ownerIds)}))`;
   try {
     const [{ n }] = await direct.$queryRawUnsafe(

@@ -1074,6 +1074,70 @@ model Sweep {
   @@map("sweeps")
 }
 
+/// Which way a reconciliation difference runs.
+enum BreakKind {
+  /// The chain holds more than the ledger says it should.
+  SURPLUS
+  /// The chain holds less. The serious one.
+  SHORTFALL
+
+  @@map("break_kind")
+}
+
+enum BreakStatus {
+  OPEN
+  /// A person posted the adjustment that accounts for it.
+  RESOLVED
+  /// A person looked and found it explained; no entry was needed.
+  DISMISSED
+
+  @@map("break_status")
+}
+
+/// A difference between what the chain holds and what the ledger says it holds.
+///
+/// Raised by the reconciler, which never posts an entry of its own (ADR-0009).
+/// Clearing one is a person's act, through the adjustment workflow, with a
+/// reason recorded: JE-11 for a surplus, JE-12 for a written-off shortfall.
+model ReconciliationBreak {
+  id String @id @default(uuid(7))
+
+  network     ChainNetwork
+  asset       LedgerAsset
+  /// The ledger account the difference is against, by code.
+  accountCode String       @map("account_code")
+
+  kind   BreakKind
+  status BreakStatus @default(OPEN)
+
+  /// All in millionths. `difference` is always positive; `kind` carries the direction.
+  ledgerBalance BigInt @map("ledger_balance")
+  chainBalance  BigInt @map("chain_balance")
+  difference    BigInt
+
+  /// What the reconciler saw, kept so a person can check its arithmetic.
+  evidence Json
+
+  detectedAt DateTime @default(now()) @map("detected_at")
+  /// Bumped when a later pass sees the same open difference again.
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+
+  resolvedBy              String?   @map("resolved_by")
+  resolvedAt              DateTime? @map("resolved_at")
+  resolutionReason        String?   @map("resolution_reason")
+  /// The JE-11 or JE-12 a person posted. Null for a dismissed break.
+  adjustmentTransactionId String?   @map("adjustment_transaction_id")
+
+  correlationId String @map("correlation_id")
+
+  /// One OPEN break per account - a difference that persists is the same break
+  /// seen again, not a new one every minute - enforced by a partial unique index
+  /// the migration adds by hand, which Prisma's schema cannot express.
+  @@index([status, detectedAt])
+  @@index([accountCode, status])
+  @@map("reconciliation_breaks")
+}
+
 enum OutboxStatus {
   PENDING
   SENT

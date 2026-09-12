@@ -201,6 +201,16 @@ export const envSchema = z
     WITHDRAWAL_DUAL_APPROVAL_MICRO: micro("1500000000"),
     WITHDRAWAL_NEW_ADDRESS_COOLDOWN_HOURS: z.coerce.number().int().min(0).max(720).default(24),
 
+    /* Sweeping. Below this it costs more gas to move the coins than they are
+       worth moving, so they wait for the next deposit to join them. */
+    SWEEP_MIN_MICRO: micro("5000000"),
+
+    /* A reconciliation difference smaller than this is noise rather than a
+       break - rounding at the edge of a token's decimals, mostly. Zero would
+       be the strictest setting and is the right one while BSC is the only
+       network; it is configurable because a network that rounds would need it. */
+    RECONCILIATION_TOLERANCE_MICRO: micro("0"),
+
     /* The adapters at the edge (ADR-0006). Only the deterministic mocks exist
        until Phase 6; a real one is a new value here and a new file there. */
     BLOCKCHAIN_GATEWAY: z.enum(["mock"]).default("mock"),
