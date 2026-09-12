@@ -9,11 +9,13 @@ import { AdminLedgerController } from "@/modules/admin/admin-ledger.controller";
 import { AdminLedgerService } from "@/modules/admin/admin-ledger.service";
 import { AdminMfaService } from "@/modules/admin/admin-mfa.service";
 import { AdminSessionService } from "@/modules/admin/admin-session.service";
+import { AdminWithdrawalsController } from "@/modules/admin/admin-withdrawals.controller";
 import { AdminAuthController, AdminKycController } from "@/modules/admin/admin.controller";
 import { AdminGuard } from "@/modules/admin/admin.guard";
 import { AuditModule } from "@/modules/audit/audit.module";
 import { DepositsModule } from "@/modules/deposits/deposits.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
+import { WithdrawalsModule } from "@/modules/withdrawals/withdrawals.module";
 
 /*
   The admin realm. Note what it does NOT import: AuthModule. The customer's
@@ -21,12 +23,20 @@ import { NotificationsModule } from "@/modules/notifications/notifications.modul
   is the separation the whole design rests on (open-questions Q2).
 */
 @Module({
-  imports: [PrismaModule, StorageModule, AuditModule, NotificationsModule, DepositsModule],
+  imports: [
+    PrismaModule,
+    StorageModule,
+    AuditModule,
+    NotificationsModule,
+    DepositsModule,
+    WithdrawalsModule,
+  ],
   controllers: [
     AdminAuthController,
     AdminKycController,
     AdminLedgerController,
     AdminDepositsController,
+    AdminWithdrawalsController,
   ],
   providers: [
     AdminSessionService,

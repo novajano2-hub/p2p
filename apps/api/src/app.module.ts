@@ -22,6 +22,7 @@ import { NotificationsModule } from "@/modules/notifications/notifications.modul
 import { OutboxModule } from "@/modules/outbox/outbox.module";
 import { RiskModule } from "@/modules/risk/risk.module";
 import { WalletsModule } from "@/modules/wallets/wallets.module";
+import { WithdrawalsModule } from "@/modules/withdrawals/withdrawals.module";
 
 /*
   The HTTP application. Feature modules (auth, ledger, offers, trades, ...)
@@ -50,6 +51,7 @@ export class AppModule {
         RiskModule,
         WalletsModule,
         DepositsModule,
+        WithdrawalsModule,
         AdminModule,
       ],
       /*

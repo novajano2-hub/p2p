@@ -92,6 +92,14 @@ module.exports = async function teardown() {
       where: { OR: [{ tag: { startsWith: "test-" } }, { tag: { startsWith: "custody:test-" } }] },
       select: { txHash: true },
     });
+    // A withdrawal's custody transfer is tagged with the withdrawal's own id,
+    // which is a uuid rather than a "test-" name, so it is found this way.
+    const testWithdrawals = await db.withdrawal.findMany({
+      where: {
+        OR: [{ userId: { in: testUserIds } }, { correlationId: { startsWith: "test-" } }],
+      },
+      select: { id: true },
+    });
     const testDeposits = await db.deposit.findMany({
       where: {
         OR: [
@@ -127,6 +135,7 @@ module.exports = async function teardown() {
 
     const ledger = await clearTestLedgerRows({
       depositIds: testDeposits.map((d) => d.id),
+      withdrawalIds: testWithdrawals.map((w) => w.id),
       ownerIds: testUserIds,
     });
 
@@ -139,7 +148,19 @@ module.exports = async function teardown() {
     // Deposits without an owner do not cascade with a customer.
     await db.deposit.deleteMany({ where: { id: { in: testDeposits.map((d) => d.id) } } });
     const chain = await db.mockChainTransfer.deleteMany({
-      where: { OR: [{ tag: { startsWith: "test-" } }, { tag: { startsWith: "custody:test-" } }] },
+      where: {
+        OR: [
+          { tag: { startsWith: "test-" } },
+          { tag: { startsWith: "custody:test-" } },
+          { tag: { in: testWithdrawals.map((w) => `custody:${w.id}`) } },
+        ],
+      },
+    });
+    // Directives are keyed by the withdrawal they were staged for, so any whose
+    // withdrawal no longer exists was a test's and is safe to drop.
+    const liveWithdrawals = await db.withdrawal.findMany({ select: { id: true } });
+    await db.mockCustodyDirective.deleteMany({
+      where: { clientRef: { notIn: liveWithdrawals.map((w) => w.id) } },
     });
     await db.mockCustodyDirective.deleteMany({ where: { clientRef: { startsWith: "test-" } } });
 
@@ -184,14 +205,16 @@ function sqlList(ids) {
   return safe.length > 0 ? safe.map((id) => `'${id}'`).join(", ") : "''";
 }
 
-async function clearTestLedgerRows({ depositIds = [], ownerIds = [] } = {}) {
+async function clearTestLedgerRows({ depositIds = [], withdrawalIds = [], ownerIds = [] } = {}) {
   const { PrismaClient } = require("@prisma/client");
   const direct = new PrismaClient({ datasourceUrl: directDatabaseUrl() });
   // Also any posting whose deposit is already gone: a run that was cut off
   // before this ran would otherwise leave rows that make a rebuild impossible.
   const testTx = `(correlation_id LIKE 'test-%'
       OR (reference_type = 'deposit' AND reference_id IN (${sqlList(depositIds)}))
-      OR (reference_type = 'deposit' AND reference_id NOT IN (SELECT id FROM deposits)))`;
+      OR (reference_type = 'withdrawal' AND reference_id IN (${sqlList(withdrawalIds)}))
+      OR (reference_type = 'deposit' AND reference_id NOT IN (SELECT id FROM deposits))
+      OR (reference_type = 'withdrawal' AND reference_id NOT IN (SELECT id FROM withdrawals)))`;
   const testAccount = `(owner_id LIKE 'test-%' OR owner_id IN (${sqlList(ownerIds)}))`;
   try {
     const [{ n }] = await direct.$queryRawUnsafe(
