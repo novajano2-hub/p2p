@@ -72,6 +72,15 @@ to credited balance.
   deposit's lifecycle ends at `CREDITED`; where the coins subsequently sit is a treasury
   concern and must never affect a customer balance.
 
+**Screens (Phase 3, stage 5).** The three human transitions have an interface at
+`/admin/deposits`, in two queues rather than one list: "held for review" asks should this
+be credited, "nobody to credit" asks whose is this, and mixing them makes a reviewer skip
+rows of the other job. One decision worth recording: an unattributed deposit that landed
+on an address we issued **names the customer it was issued to**, resolved through the
+address rather than the deposit, so the commonest case - a retired address, or an account
+suspended between issuing and arrival - is a decision read off the screen rather than a
+guess. Attribution to anybody else goes through a search (see data-classification.md).
+
 **Built (Phase 3, stage 2).** `apps/api/src/modules/deposits/` implements this table as
 written, with the table itself in `deposit.machine.ts` and every transition checked
 against it before a write. Three things the code is more specific about than the text:
@@ -149,6 +158,16 @@ the most states because it is the only place the platform gives up assets irreve
   by the escrow-style balance floor.
 - Every state that releases a hold does so **only** from a position where non-broadcast is
   certain. There is no path from `BROADCAST` or `BROADCAST_UNKNOWN` directly to a refund.
+
+**Screens (Phase 3, stage 5).** `/admin/withdrawals`, in two queues: money held waiting
+for approval, and transfers whose broadcast outcome nobody can be sure of. The second one
+is shaped by what it costs to be wrong. The two outcomes are offered as a deliberate
+choice, not a dropdown default; "it is on the chain" demands the transaction hash;
+"nothing was ever sent" says in the screen's own words that it gives the money back, that
+a mistake means the customer was paid twice, and that nothing else in the system will
+catch it before the next reconciliation. The screen also tells the approver to decide
+against a block explorer and not against a support reply, which is the rule ADR-0010
+states and the one a tired person is most likely to break.
 
 **Built (Phase 3, stage 3).** `apps/api/src/modules/withdrawals/` implements this table as
 written, with the table itself in `withdrawal.machine.ts`. The four separations of

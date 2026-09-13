@@ -4,6 +4,7 @@ import { PrismaModule } from "@/infra/prisma/prisma.module";
 import { AuditModule } from "@/modules/audit/audit.module";
 import { AuthModule } from "@/modules/auth/auth.module";
 import { BlockchainModule } from "@/modules/blockchain/blockchain.module";
+import { CustomersModule } from "@/modules/customers/customers.module";
 import { CustodyWebhookController } from "@/modules/deposits/custody-webhook.controller";
 import { DepositService } from "@/modules/deposits/deposit.service";
 import { DepositsController } from "@/modules/deposits/deposits.controller";
@@ -29,6 +30,7 @@ import { WalletsModule } from "@/modules/wallets/wallets.module";
     BlockchainModule,
     RiskModule,
     WalletsModule,
+    CustomersModule,
   ],
   controllers: [DepositsController, CustodyWebhookController],
   providers: [DepositService],

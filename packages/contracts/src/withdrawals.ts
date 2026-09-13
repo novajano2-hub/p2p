@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { adminCustomerSummary } from "./admin";
 import { chainNetwork } from "./deposits";
 import { microAmount } from "./ledger";
 
@@ -105,6 +106,8 @@ export type WithdrawalApprovalView = z.infer<typeof withdrawalApprovalView>;
 
 export const adminWithdrawalItem = withdrawalView.extend({
   userId: z.string(),
+  /** Who is sending it, so the approver is not deciding about a uuid. */
+  customer: adminCustomerSummary.nullable(),
   riskScore: z.number().int().nullable(),
   riskReasons: z.array(z.string()),
   approvalsRequired: z.number().int().nonnegative(),

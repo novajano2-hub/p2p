@@ -67,3 +67,24 @@ export function Input({ className, ...props }: InputProps) {
     />
   );
 }
+
+export type TextareaProps = ComponentPropsWithRef<"textarea">;
+
+/** The same control, for the few places a sentence is wanted rather than a word. */
+export function Textarea({ className, rows = 3, ...props }: TextareaProps) {
+  return (
+    <textarea
+      rows={rows}
+      className={cn(
+        "rounded-control bg-surface text-foreground w-full resize-y border px-3.5 py-2.5 text-[15px] leading-relaxed",
+        "placeholder:text-muted-foreground/70",
+        "transition-[border-color,box-shadow] duration-150 ease-out",
+        "focus:border-primary focus:ring-primary/25 focus:ring-2 focus:outline-none",
+        "disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed",
+        "border-border aria-invalid:border-destructive aria-invalid:focus:ring-destructive/25",
+        className,
+      )}
+      {...props}
+    />
+  );
+}

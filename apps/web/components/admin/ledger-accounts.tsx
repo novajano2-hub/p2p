@@ -20,7 +20,7 @@ import {
   TD,
   TD_NUM,
   TH,
-} from "@/components/admin/ledger-bits";
+} from "@/components/admin/admin-bits";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";

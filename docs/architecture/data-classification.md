@@ -18,7 +18,7 @@
 | Deposit address (public key)                                                                  | INTERNAL       | PostgreSQL                  | Public on-chain, but linking it to a user identity is CONFIDENTIAL                                                                     |
 | Ledger accounts, transactions, entries                                                        | INTERNAL       | PostgreSQL                  | Aggregate is INTERNAL; a specific user's rows are CONFIDENTIAL                                                                         |
 | Trade history, balances, transaction history                                                  | CONFIDENTIAL   | PostgreSQL                  | Object-level authorization on every read — AT-6                                                                                        |
-| Email address, phone number                                                                   | CONFIDENTIAL   | PostgreSQL                  | Partially masked in admin views                                                                                                        |
+| Email address, phone number                                                                   | CONFIDENTIAL   | PostgreSQL                  | Shown whole to the roles that decide about a named customer, never to others; every lookup by name is audited (see below)              |
 | Session identifiers                                                                           | CONFIDENTIAL   | Cookie + PostgreSQL/Redis   | HTTP-only, `Secure`, `SameSite`; rotated on privilege change                                                                           |
 | Audit events                                                                                  | CONFIDENTIAL   | PostgreSQL, append-only     | Retained independently of the records they describe                                                                                    |
 | **ETB payment instructions** (bank name, account number, account holder, mobile-money number) | **RESTRICTED** | PostgreSQL, field-encrypted | The highest-value user data here. Visible to a counterparty only for the duration of an active trade, snapshotted onto that trade      |
@@ -28,6 +28,27 @@
 | Password hashes (Argon2id)                                                                    | RESTRICTED     | PostgreSQL                  | Never logged, never returned by any endpoint, never in a shared type                                                                   |
 | MFA seeds / passkey credentials                                                               | **SECRET**     | PostgreSQL, encrypted       | Treated as key material                                                                                                                |
 | **Blockchain private keys**                                                                   | **SECRET**     | **Custody provider only**   | **Never present in this system in any form, at any time.** Not in code, database, logs, queues, environment, CI or a developer machine |
+
+### Customer identity in the administration screens (Phase 3, stage 5)
+
+The row above used to say email addresses were "partially masked in admin views". They
+were not, and on reflection they should not be: an administrator deciding whose stray
+deposit this is, or whether to authorise a transfer, is being asked to be sure about a
+person, and a masked address is weaker evidence for that while stopping nothing - the
+same administrator can open the identity submission and read a passport.
+
+So the rule is capability and record rather than masking:
+
+- `GET /v1/admin/customers?q=` answers to an account number, a username or an email, and
+  never to an internal id: a directory that resolves uuids is one that can be walked.
+- It is open only to `DEPOSIT_REVIEWER`, `WITHDRAWAL_APPROVER` and `KYC_REVIEWER` - the
+  three roles that already decide about named customers. `LEDGER_VIEWER` is refused,
+  which is the point of the ledger's own pseudonymity.
+- It returns six fields and no more: id, account number, username, email, account status,
+  verification status. Not a balance, not a document, not a trade.
+- Every search writes `customer.searched` to the audit log with the term and how many
+  matched. Being able to look up any customer by name is exactly the power that should
+  leave a trail.
 
 ## 3. Secret inventory
 

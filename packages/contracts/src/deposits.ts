@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { adminCustomerSummary } from "./admin";
 import { microAmount } from "./ledger";
 
 /*
@@ -69,6 +70,14 @@ export const adminDepositItem = depositView.extend({
   /** The chain's own integer, in the token's decimals. */
   rawAmount: z.string(),
   userId: z.string().nullable(),
+  /*
+    Who this is, in words rather than a uuid. Resolved from the owning
+    account when there is one and otherwise from the address the transfer
+    landed on - an unattributed deposit that arrived at an address we once
+    issued still names the person it was issued to, which is the single most
+    useful fact on the screen where somebody has to decide whose it is.
+  */
+  customer: adminCustomerSummary.nullable(),
   detectedVia: z.string(),
   /** Why it is held, or why it could not be attributed. */
   reviewReason: z.string().nullable(),

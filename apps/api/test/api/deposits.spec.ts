@@ -508,6 +508,56 @@ describe("the rare ones: a person decides", () => {
     expect(await balanceOf(owner.userId)).toBe(3n * USDT);
   });
 
+  it("names the customer on the queue, including the one a stray deposit was issued to", async () => {
+    const reviewer = await makeAdmin(["DEPOSIT_REVIEWER"]);
+
+    // Held: the deposit knows its owner outright.
+    const held = await heldDeposit(10_000n);
+    const heldWho = await db.user.findUniqueOrThrow({ where: { id: held.userId } });
+
+    // Unattributed at an address we issued, then retired: the deposit has no
+    // owner, but the address still names the person it was given to. That is
+    // the fact that turns attributing it from a guess into a decision.
+    const stray = await customer();
+    await db.attributionAddress.updateMany({
+      where: { userId: stray.userId },
+      data: { status: "RETIRED" },
+    });
+    const minted = await mint(stray.address, 4n);
+    await deliver(minted.txHash).expect(200);
+    const strayRow = await depositRow(minted.txHash);
+    expect(strayRow.status).toBe("UNATTRIBUTED");
+    expect(strayRow.userId).toBeNull();
+    const strayWho = await db.user.findUniqueOrThrow({ where: { id: stray.userId } });
+
+    const queue = await request(server())
+      .get("/v1/admin/deposits/queue")
+      .set("Cookie", reviewer.cookie)
+      .expect(200);
+    const rows = (queue.body as { deposits: AdminDepositItem[] }).deposits;
+
+    expect(rows.find((row) => row.id === held.row.id)?.customer).toMatchObject({
+      userId: held.userId,
+      platformId: heldWho.platformId,
+      username: heldWho.username,
+    });
+    expect(rows.find((row) => row.id === strayRow.id)?.customer).toMatchObject({
+      userId: stray.userId,
+      platformId: strayWho.platformId,
+    });
+
+    // A transfer to an address we never issued names nobody, and must not
+    // borrow a name from anywhere.
+    const nowhere = await mint(`0x${"7".repeat(40)}`, 2n);
+    await deliver(nowhere.txHash).expect(200);
+    const nowhereRow = await depositRow(nowhere.txHash);
+    const one = await request(server())
+      .get(`/v1/admin/deposits/${nowhereRow.id}`)
+      .set("Cookie", reviewer.cookie)
+      .expect(200);
+    expect((one.body as AdminDepositItem).customer).toBeNull();
+  });
+
   it("refuses the queue to an administrator without the role", async () => {
     const kyc = await makeAdmin(["KYC_REVIEWER", "LEDGER_VIEWER"]);
     await request(server()).get("/v1/admin/deposits/queue").set("Cookie", kyc.cookie).expect(403);

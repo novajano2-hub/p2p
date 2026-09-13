@@ -158,6 +158,21 @@ const SECTIONS: readonly { href: string; label: string; match: (pathname: string
     match: (pathname) => pathname === "/admin" || pathname.startsWith("/admin/submissions"),
   },
   {
+    href: "/admin/deposits",
+    label: "Deposits",
+    match: (pathname) => pathname.startsWith("/admin/deposits"),
+  },
+  {
+    href: "/admin/withdrawals",
+    label: "Withdrawals",
+    match: (pathname) => pathname.startsWith("/admin/withdrawals"),
+  },
+  {
+    href: "/admin/reconciliation",
+    label: "Reconciliation",
+    match: (pathname) => pathname.startsWith("/admin/reconciliation"),
+  },
+  {
     href: "/admin/ledger",
     label: "Ledger",
     match: (pathname) => pathname.startsWith("/admin/ledger"),
@@ -167,7 +182,10 @@ const SECTIONS: readonly { href: string; label: string; match: (pathname: string
 function SectionNav() {
   const pathname = usePathname();
   return (
-    <nav aria-label="Areas" className="ml-1 flex items-center gap-0.5 md:ml-3">
+    <nav
+      aria-label="Areas"
+      className="ml-1 flex [scrollbar-width:none] items-center gap-0.5 overflow-x-auto md:ml-3 [&::-webkit-scrollbar]:hidden"
+    >
       {SECTIONS.map(({ href, label, match }) => {
         const active = match(pathname);
         return (

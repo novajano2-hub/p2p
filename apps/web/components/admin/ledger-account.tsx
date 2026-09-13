@@ -22,7 +22,7 @@ import {
   TD,
   TD_NUM,
   TH,
-} from "@/components/admin/ledger-bits";
+} from "@/components/admin/admin-bits";
 import { AppLink } from "@/components/ui/app-link";
 import { ledgerClient, type LedgerAccount, type LedgerStatementRow } from "@/lib/admin/ledger";
 

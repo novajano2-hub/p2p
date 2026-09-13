@@ -1,4 +1,5 @@
 import {
+  type AdminCustomerSummary,
   type AdminDepositItem,
   type AdminDepositQueueResponse,
   type DepositView,
@@ -22,6 +23,7 @@ import {
   type ChainTransfer,
 } from "@/modules/blockchain/blockchain.gateway";
 import { chainConfig, type ChainConfig } from "@/modules/blockchain/chain-config";
+import { CustomerDirectoryService } from "@/modules/customers/customer-directory.service";
 import { depositCreditedEmail } from "@/modules/deposits/deposit-mail";
 import {
   assertDepositTransition,
@@ -99,6 +101,7 @@ export class DepositService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly outbox: OutboxService,
+    private readonly customers: CustomerDirectoryService,
     @Inject(BLOCKCHAIN_GATEWAY) private readonly gateway: BlockchainGateway,
     @Inject(RISK_ENGINE) private readonly risk: RiskEngine,
     @Inject(ENV) private readonly env: Env,
@@ -658,13 +661,59 @@ export class DepositService {
       orderBy: { detectedAt: "asc" },
       take: 200,
     });
-    return { deposits: rows.map((row) => this.toAdminItem(row)), waiting: rows.length };
+    const owners = await this.ownersOf(rows);
+    return {
+      deposits: rows.map((row) => this.toAdminItem(row, owners.get(row.id) ?? null)),
+      waiting: rows.length,
+    };
   }
 
   async adminItem(id: string): Promise<AdminDepositItem> {
     const row = await this.prisma.client.deposit.findUnique({ where: { id } });
     if (!row) throw AppError.notFound("There is no such deposit.");
-    return this.toAdminItem(row);
+    const owners = await this.ownersOf([row]);
+    return this.toAdminItem(row, owners.get(row.id) ?? null);
+  }
+
+  /*
+    Who each of these deposits belongs to, by deposit id.
+
+    Two ways in. A deposit that was accepted names its owner outright. One
+    that was not may still have landed on an address we issued - a retired
+    address, or an account that had been suspended by the time the coins
+    arrived - and in that case the address names the person as surely as the
+    deposit would have. Surfacing that is the difference between an
+    administrator reading a decision off the screen and guessing at one.
+  */
+  private async ownersOf(
+    rows: readonly Deposit[],
+  ): Promise<Map<string, AdminCustomerSummary | null>> {
+    const unowned = [
+      ...new Set(
+        rows.flatMap((row) =>
+          row.userId === null && row.addressId !== null ? [row.addressId] : [],
+        ),
+      ),
+    ];
+    const addresses =
+      unowned.length === 0
+        ? []
+        : await this.prisma.client.attributionAddress.findMany({
+            where: { id: { in: unowned } },
+            select: { id: true, userId: true },
+          });
+    const addressOwner = new Map(addresses.map((row) => [row.id, row.userId]));
+
+    const ownerOf = (row: Deposit): string | null =>
+      row.userId ?? (row.addressId === null ? null : (addressOwner.get(row.addressId) ?? null));
+
+    const summaries = await this.customers.summaries(rows.map(ownerOf));
+    return new Map(
+      rows.map((row) => {
+        const userId = ownerOf(row);
+        return [row.id, userId === null ? null : (summaries.get(userId) ?? null)];
+      }),
+    );
   }
 
   private toView(row: Deposit): DepositView {
@@ -681,9 +730,10 @@ export class DepositService {
     };
   }
 
-  private toAdminItem(row: Deposit): AdminDepositItem {
+  private toAdminItem(row: Deposit, customer: AdminCustomerSummary | null): AdminDepositItem {
     return {
       ...this.toView(row),
+      customer,
       logIndex: row.logIndex,
       blockNumber: row.blockNumber.toString(),
       fromAddress: row.fromAddress,
