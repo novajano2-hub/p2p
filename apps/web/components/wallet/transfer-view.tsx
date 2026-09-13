@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Lightning } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { PageHeader, Panel } from "@/components/app/panel";
@@ -18,7 +18,9 @@ import {
 } from "@/components/wallet/shared";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
-import { ASSET, formatAmount, transferForm, type TransferForm } from "@/lib/wallet";
+import { formatMicro, toMicro } from "@/lib/money";
+import { ASSET, transferForm, type TransferForm } from "@/lib/wallet";
+import { walletClient } from "@/lib/wallet/client";
 
 /*
   Moving USDT to another BIRQ account by its ID.
@@ -33,11 +35,25 @@ import { ASSET, formatAmount, transferForm, type TransferForm } from "@/lib/wall
   and it does not tell the sender anything about the person behind it.
 */
 
-const AVAILABLE = 0;
-
 export function TransferView() {
   const { user } = useSession();
   const [notice, setNotice] = useState<string | null>(null);
+  /*
+    The balance is real even though the button is not. The figure beside an
+    amount field is a statement about somebody's money, and there is no
+    version of showing a wrong one that is better than showing none.
+  */
+  const [available, setAvailable] = useState("0");
+
+  useEffect(() => {
+    let live = true;
+    void walletClient.balance().then((result) => {
+      if (live && result.ok) setAvailable(result.balance.available);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const {
     register,
@@ -52,7 +68,7 @@ export function TransferView() {
 
   // useWatch rather than watch(): the function watch() returns cannot be
   // memoized, so the React Compiler gives up on the whole component.
-  const typed = Number(useWatch({ control, name: "amount" }) || 0);
+  const typed = toMicro(useWatch({ control, name: "amount" }) ?? "") ?? "0";
 
   return (
     <>
@@ -109,7 +125,7 @@ export function TransferView() {
             <Field
               label={`How much ${ASSET.symbol}`}
               error={errors.amount?.message}
-              hint={`Available: ${formatAmount(AVAILABLE)} ${ASSET.symbol}`}
+              hint={`Available: ${formatMicro(available)} ${ASSET.symbol}`}
             >
               {(a11y) => (
                 <Controller
@@ -122,7 +138,7 @@ export function TransferView() {
                       invalid={a11y["aria-invalid"]}
                       value={field.value}
                       onChange={field.onChange}
-                      available={AVAILABLE}
+                      available={available}
                     />
                   )}
                 />

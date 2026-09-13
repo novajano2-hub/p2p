@@ -15,6 +15,7 @@ export * from "./notifications";
 export * from "./health";
 export * from "./kyc";
 export * from "./ledger";
+export * from "./wallet";
 export * from "./deposits";
 export * from "./withdrawals";
 export * from "./reconciliation";

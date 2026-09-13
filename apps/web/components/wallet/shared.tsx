@@ -13,22 +13,29 @@ import {
   subscribeBalanceHidden,
 } from "@/lib/balance-visibility";
 import { cn } from "@/lib/cn";
-import { ASSET, NETWORKS, formatAmount, networkLabel, type NetworkId } from "@/lib/wallet";
+import { formatMicro, plainMicro } from "@/lib/money";
+import { ASSET, NETWORKS, networkLabel, type NetworkId } from "@/lib/wallet";
 
-/* The pieces the three wallet screens share. */
+/* The pieces the wallet screens share. */
 
 /** Whether figures are masked right now. One preference across the whole app. */
 export function useBalanceHidden(): boolean {
   return useSyncExternalStore(subscribeBalanceHidden, readBalanceHidden, getServerBalanceHidden);
 }
 
-/** Masked or not, in one place, so no screen forgets. */
+/**
+ * An amount, masked or not, in one place so no screen forgets.
+ *
+ * `value` is an integer string of millionths, exactly as the API sent it.
+ * Six decimal places always, because the ledger keeps six and a wallet that
+ * rounds to two is a wallet that hides money from the person who owns it.
+ */
 export function Amount({
   value,
   className,
   unit = ASSET.symbol,
 }: {
-  value: number;
+  value: string;
   className?: string | undefined;
   unit?: string | null;
 }) {
@@ -36,7 +43,7 @@ export function Amount({
   return (
     <span className="inline-flex items-baseline gap-1.5">
       <span className={cn("tabular-nums", hidden && "tracking-widest", className)}>
-        {hidden ? MASKED_AMOUNT : formatAmount(value)}
+        {hidden ? MASKED_AMOUNT : formatMicro(value)}
       </span>
       {unit ? <span className="text-muted-foreground text-[13px] font-medium">{unit}</span> : null}
     </span>
@@ -57,10 +64,10 @@ export function BackLink({ children = "Wallet" }: { children?: ReactNode }) {
 }
 
 /*
-  Said once on every wallet screen, plainly. Nothing here can move money: the
-  ledger arrives in Phase 2 and custody in Phase 6. A wallet that looks
-  operational before it is would be the one screen in this app where being
-  vague could cost somebody real money.
+  Still said on the one screen it is still true of. Transfers between BIRQ
+  accounts move a ledger balance from one customer to another, and that is a
+  Phase 4 conversation with trades; deposits and withdrawals are real now and
+  no longer carry this.
 */
 export function NotOpenNotice({ what }: { what: string }) {
   return (
@@ -71,8 +78,7 @@ export function NotOpenNotice({ what }: { what: string }) {
       <Lock size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
       <p>
         <span className="text-foreground font-medium">{what} are not open yet.</span> This screen is
-        the finished layout, waiting on custody. Nothing on it can move funds, and no address here
-        is real.
+        the finished layout. Nothing on it can move funds.
       </p>
     </div>
   );
@@ -117,24 +123,24 @@ export function SummaryRow({
   The network, chosen the way every exchange this audience uses presents it:
   the chain and its token standard together, the arrival time beside it, and
   the ones we do not accept visibly refused rather than quietly missing.
+
+  `detail` is the live sentence for the one network we accept - the minimum,
+  the confirmations, the fee - passed in by the screen that fetched it, so no
+  figure on this control is a copy of one the server keeps.
 */
 export function NetworkPicker({
   value,
   onChange,
-  purpose,
+  detail,
 }: {
   value: NetworkId;
   onChange: (id: NetworkId) => void;
-  purpose: "deposit" | "withdrawal";
+  detail: string;
 }) {
   return (
     <RadioGroup
       legend="Network"
-      hint={
-        purpose === "deposit"
-          ? "Must match the network you are sending from. Sending on any other network loses the funds permanently."
-          : "The network the funds arrive on. Check that the receiving wallet supports it."
-      }
+      hint="Must match the wallet at the other end. USDT sent on any other network cannot be recovered."
     >
       {NETWORKS.map((network) => (
         <Radio
@@ -145,22 +151,10 @@ export function NetworkPicker({
           disabled={!network.supported}
           onChange={() => onChange(network.id)}
           label={networkLabel(network)}
-          description={
-            network.supported
-              ? purpose === "deposit"
-                ? `Arrives in ${network.arrival.toLowerCase()}, after ${network.confirmations} confirmation${network.confirmations === 1 ? "" : "s"}.`
-                : `Minimum ${formatAmount(network.minDeposit)} ${ASSET.symbol}.`
-              : "Not supported yet."
-          }
+          description={network.supported ? detail : "Not supported yet."}
           meta={
             network.supported ? (
-              purpose === "deposit" ? (
-                network.arrival
-              ) : network.withdrawalFee === 0 ? (
-                "No network fee"
-              ) : (
-                `${formatAmount(network.withdrawalFee)} ${ASSET.symbol} fee`
-              )
+              network.arrival
             ) : (
               <span className="bg-status-neutral text-status-neutral-fg rounded-full px-2 py-0.5 text-[12px] font-medium">
                 Soon
@@ -175,9 +169,13 @@ export function NetworkPicker({
 
 /*
   An amount, with the asset pinned to the right of the field and a Max that
-  fills in the whole available balance. Max matters more than it looks: it is
+  fills in the whole spendable balance. Max matters more than it looks: it is
   the difference between someone withdrawing their balance and someone
   discovering they cannot because they typed one place too many.
+
+  `available` is millionths, and Max writes back the exact figure rather than
+  a rounded one - a Max that under-fills strands the remainder, and one that
+  over-fills is refused by the server after the password has been typed.
 */
 export function AmountField({
   value,
@@ -189,7 +187,7 @@ export function AmountField({
 }: {
   value: string;
   onChange: (value: string) => void;
-  available: number;
+  available: string;
   id?: string | undefined;
   describedBy?: string | undefined;
   invalid?: true | undefined;
@@ -210,7 +208,7 @@ export function AmountField({
       <div className="absolute inset-y-0 right-3.5 flex items-center gap-2">
         <button
           type="button"
-          onClick={() => onChange(available > 0 ? available.toFixed(2) : "0")}
+          onClick={() => onChange(plainMicro(available))}
           className="text-primary hover:text-primary-hover text-[13px] font-semibold transition-colors duration-150"
         >
           Max

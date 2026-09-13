@@ -1,6 +1,7 @@
 import {
   type AdminWithdrawalItem,
   type AdminWithdrawalQueueResponse,
+  type WalletBalanceResponse,
   type WithdrawalLimitsResponse,
   type WithdrawalView,
 } from "@abay/contracts";
@@ -238,6 +239,50 @@ describe("asking to withdraw", () => {
       fee: "0",
     });
     expect(await pending(userId)).toBe(0n);
+  });
+
+  it("reports the three balances the wallet is made of, and moves one to the other", async () => {
+    const { cookie, userId } = await funded(50n);
+
+    const before = (
+      await request(server()).get("/v1/wallet/balance").set("Cookie", cookie).expect(200)
+    ).body as WalletBalanceResponse;
+    expect(before).toEqual({
+      asset: "USDT",
+      available: (50n * USDT).toString(),
+      // Nothing can be in escrow until trades exist.
+      escrowed: "0",
+      pendingWithdrawal: "0",
+      total: (50n * USDT).toString(),
+    });
+
+    await ask(cookie, { amount: 10n, destination: OUTSIDE("ba") }).expect(201);
+
+    const after = (
+      await request(server()).get("/v1/wallet/balance").set("Cookie", cookie).expect(200)
+    ).body as WalletBalanceResponse;
+    expect(after).toEqual({
+      asset: "USDT",
+      available: (40n * USDT).toString(),
+      escrowed: "0",
+      pendingWithdrawal: (10n * USDT).toString(),
+      total: (50n * USDT).toString(),
+    });
+    // The point of the third figure: a hold moves money between the two
+    // columns and changes nothing about how much the customer has.
+    expect(after.total).toBe(before.total);
+    expect(await pending(userId)).toBe(10n * USDT);
+  });
+
+  it("shows nobody else's balance", async () => {
+    const mine = await funded(50n);
+    const theirs = await funded(7n);
+    const body = (
+      await request(server()).get("/v1/wallet/balance").set("Cookie", theirs.cookie).expect(200)
+    ).body as WalletBalanceResponse;
+    expect(body.available).toBe((7n * USDT).toString());
+    expect(mine.userId).not.toBe(theirs.userId);
+    await request(server()).get("/v1/wallet/balance").expect(401);
   });
 
   it("takes the amount out of available and holds it, and tells the customer where it is", async () => {

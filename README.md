@@ -53,6 +53,16 @@ Then open http://localhost:3000 (web) and http://127.0.0.1:3001/health (API).
 `npm run dev` builds the shared packages first, then starts both apps. To run one:
 `npm run dev -w web` or `npm run dev -w api`.
 
+**The workers are a separate process, and `npm run dev` does not start them.** An API
+process runs no timers on purpose, so without this nothing on a timer happens locally: a
+deposit is never credited, a withdrawal is never built or broadcast, nothing is swept,
+and the outbox never drains. In another terminal:
+
+```bash
+npm run dev:worker -w api   # chain observer, deposit confirmer, withdrawal
+                            # processor, treasury sweeps, outbox publisher
+```
+
 Database migrations use the schema-owning role (`DIRECT_DATABASE_URL`); the running API uses
 a role that cannot alter the schema (`DATABASE_URL`). Both are created by
 `packages/database/sql/roles.sql` on first `docker compose up`.

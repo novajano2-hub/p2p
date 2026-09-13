@@ -5,6 +5,7 @@
   "description": "BIRQ API. NestJS on Fastify; the HTTP server and the workers share one codebase.",
   "scripts": {
     "dev": "nest start --watch",
+    "dev:worker": "nest start --watch --entryFile worker",
     "build": "nest build",
     "start": "node dist/main.js",
     "start:worker": "node dist/worker.js",

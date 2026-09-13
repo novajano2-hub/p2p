@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 import { AppLink } from "@/components/ui/app-link";
 import { Button } from "@/components/ui/button";
 import { type LedgerReason, type LedgerScope } from "@/lib/admin/ledger";
-import { formatMicro } from "@/lib/admin/money";
+import { formatMicro } from "@/lib/money";
 import { cn } from "@/lib/cn";
 
 /*

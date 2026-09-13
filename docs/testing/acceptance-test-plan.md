@@ -217,6 +217,16 @@ currency metadata; a lint rule forbids `number` in money positions; round-trip
 parse/format tests across the full `bigint` range, including values that would lose
 precision as IEEE-754 doubles.
 
+_Built (Phase 3, stage 6), the browser's half._ Until the wallet screens were wired up
+the browser only ever displayed money; now it parses what a person typed into millionths
+and does arithmetic on it, so AT-21 applies to that code as much as to the server's.
+`apps/web/lib/money.ts` is the only place in the browser that turns digits into millionths
+or back, it is all `BigInt`, and `apps/web/lib/money.spec.ts` round-trips it including
+past 2^53 - where `Number("2.3") * 1e6` is 2299999.9999999995 and a float implementation
+starts quietly deciding things about somebody's balance. No component below that module
+sees a number. Still outstanding: the OpenAPI schema assertion and the lint rule that
+would forbid `number` in a money position mechanically.
+
 ### AT-22 — Landing page is accessible and has no client-side money logic
 
 **Phase 0.5 · E2E**
