@@ -81,6 +81,7 @@ etb-usdt-p2p/
 │       │       ├── deposits/  withdrawals/
 │       │       ├── offers/  trades/  escrow/  disputes/
 │       │       ├── risk/            # RiskEngine interface + permissive mock
+│       │       ├── customers/       # who a customer is, in the fields an admin needs
 │       │       ├── notifications/  outbox/  audit/
 │       │       ├── reconciliation/  # read-only; raises breaks, never posts
 │       │       └── admin/           # isolated controllers + role guards

@@ -1,5 +1,6 @@
 import {
   KYC_TIERS,
+  type AdminCustomerSummary,
   type AdminWithdrawalItem,
   type AdminWithdrawalQueueResponse,
   type CreateWithdrawalRequest,
@@ -32,6 +33,7 @@ import {
   type BlockchainGateway,
 } from "@/modules/blockchain/blockchain.gateway";
 import { chainConfig, type ChainConfig } from "@/modules/blockchain/chain-config";
+import { CustomerDirectoryService } from "@/modules/customers/customer-directory.service";
 import { CUSTODY_PROVIDER, type CustodyProvider } from "@/modules/custody/custody.provider";
 import { confirmationsOf } from "@/modules/deposits/deposit.machine";
 import { accounts } from "@/modules/ledger/account-code";
@@ -118,6 +120,7 @@ export class WithdrawalService {
     private readonly notifications: NotificationsService,
     private readonly outbox: OutboxService,
     private readonly idempotency: IdempotencyService,
+    private readonly customers: CustomerDirectoryService,
     @Inject(BLOCKCHAIN_GATEWAY) private readonly gateway: BlockchainGateway,
     @Inject(CUSTODY_PROVIDER) private readonly custody: CustodyProvider,
     @Inject(RISK_ENGINE) private readonly risk: RiskEngine,
@@ -1142,11 +1145,12 @@ export class WithdrawalService {
       include: { approvals: { orderBy: { createdAt: "asc" } } },
       take: 200,
     });
+    const customers = await this.customers.summaries(rows.map((r) => r.userId));
+    const item = (r: (typeof rows)[number]): AdminWithdrawalItem =>
+      this.toAdminItem(r, customers.get(r.userId) ?? null);
     return {
-      review: rows.filter((r) => r.status === "RISK_REVIEW").map((r) => this.toAdminItem(r)),
-      investigation: rows
-        .filter((r) => r.status === "MANUAL_INVESTIGATION")
-        .map((r) => this.toAdminItem(r)),
+      review: rows.filter((r) => r.status === "RISK_REVIEW").map(item),
+      investigation: rows.filter((r) => r.status === "MANUAL_INVESTIGATION").map(item),
     };
   }
 
@@ -1156,7 +1160,7 @@ export class WithdrawalService {
       include: { approvals: { orderBy: { createdAt: "asc" } } },
     });
     if (!row) throw AppError.notFound("There is no such withdrawal.");
-    return this.toAdminItem(row);
+    return this.toAdminItem(row, await this.customers.summary(row.userId));
   }
 
   /* ------------------------------------------------------------- plumbing */
@@ -1187,10 +1191,14 @@ export class WithdrawalService {
     };
   }
 
-  private toAdminItem(row: WithdrawalRow): AdminWithdrawalItem {
+  private toAdminItem(
+    row: WithdrawalRow,
+    customer: AdminCustomerSummary | null,
+  ): AdminWithdrawalItem {
     return {
       ...this.toView(row),
       userId: row.userId,
+      customer,
       riskScore: row.riskScore,
       riskReasons: row.riskReasons,
       approvalsRequired: row.approvalsRequired,

@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { PrismaModule } from "@/infra/prisma/prisma.module";
 import { StorageModule } from "@/infra/storage/storage.module";
 import { AdminAuthService } from "@/modules/admin/admin-auth.service";
+import { AdminCustomersController } from "@/modules/admin/admin-customers.controller";
 import { AdminDepositsController } from "@/modules/admin/admin-deposits.controller";
 import { AdminKycService } from "@/modules/admin/admin-kyc.service";
 import { AdminReconciliationController } from "@/modules/admin/admin-reconciliation.controller";
@@ -14,6 +15,7 @@ import { AdminWithdrawalsController } from "@/modules/admin/admin-withdrawals.co
 import { AdminAuthController, AdminKycController } from "@/modules/admin/admin.controller";
 import { AdminGuard } from "@/modules/admin/admin.guard";
 import { AuditModule } from "@/modules/audit/audit.module";
+import { CustomersModule } from "@/modules/customers/customers.module";
 import { DepositsModule } from "@/modules/deposits/deposits.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
 import { ReconciliationModule } from "@/modules/reconciliation/reconciliation.module";
@@ -31,6 +33,7 @@ import { WithdrawalsModule } from "@/modules/withdrawals/withdrawals.module";
     StorageModule,
     AuditModule,
     NotificationsModule,
+    CustomersModule,
     DepositsModule,
     WithdrawalsModule,
     SweepsModule,
@@ -43,6 +46,7 @@ import { WithdrawalsModule } from "@/modules/withdrawals/withdrawals.module";
     AdminDepositsController,
     AdminWithdrawalsController,
     AdminReconciliationController,
+    AdminCustomersController,
   ],
   providers: [
     AdminSessionService,

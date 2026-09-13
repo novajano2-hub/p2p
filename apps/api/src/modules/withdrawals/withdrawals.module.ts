@@ -6,6 +6,7 @@ import { AuditModule } from "@/modules/audit/audit.module";
 import { AuthModule } from "@/modules/auth/auth.module";
 import { BlockchainModule } from "@/modules/blockchain/blockchain.module";
 import { CustodyModule } from "@/modules/custody/custody.module";
+import { CustomersModule } from "@/modules/customers/customers.module";
 import { LedgerModule } from "@/modules/ledger/ledger.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
 import { OutboxModule } from "@/modules/outbox/outbox.module";
@@ -30,6 +31,7 @@ import { WithdrawalService } from "@/modules/withdrawals/withdrawal.service";
     BlockchainModule,
     CustodyModule,
     RiskModule,
+    CustomersModule,
   ],
   controllers: [WithdrawalsController],
   providers: [WithdrawalService],

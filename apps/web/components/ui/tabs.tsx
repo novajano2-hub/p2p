@@ -26,10 +26,13 @@ export function Tabs({
   items,
   defaultTab,
   className,
+  label = "Sections",
 }: {
   items: readonly TabItem[];
   defaultTab?: string;
   className?: string;
+  /** What this set of tabs is, for a screen reader announcing the list. */
+  label?: string;
 }) {
   const [active, setActive] = useState(defaultTab ?? items[0]?.id ?? "");
   const baseId = useId();
@@ -62,7 +65,7 @@ export function Tabs({
       <div
         ref={listRef}
         role="tablist"
-        aria-label="Settings sections"
+        aria-label={label}
         onKeyDown={onKeyDown}
         className="border-border mb-5 flex gap-1 overflow-x-auto border-b sm:gap-2"
       >

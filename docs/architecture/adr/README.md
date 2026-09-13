@@ -335,6 +335,15 @@ minute. A break is never closed by the reconciler even if the difference goes aw
 own, because money that appears and then disappears is more alarming than money that
 merely appears. Resolving takes `FINANCIAL_ADJUSTER`; reading takes `LEDGER_VIEWER`.
 
+_Screens (Phase 3, stage 5)._ `/admin/reconciliation` runs a pass when it is opened and
+shows each position as a subtraction - ledger, chain, difference - rather than as a single
+verdict, so the arithmetic can be redone by hand before anybody acts on it. The break
+screen offers only the resolution that matches the direction of the break, plus "it was
+explained": you cannot book a shortfall as a windfall there, and the API refuses it too.
+Writing off names the figure it is writing off and says in the screen's own words that the
+platform is taking that loss. Reading is `LEDGER_VIEWER`'s and resolving is
+`FINANCIAL_ADJUSTER`'s, so an auditor who can see every break can post nothing.
+
 **Consequences.** Writes to a single very active account serialize. For customer accounts
 this is correct and desirable. If a platform account ever becomes a hotspot we split it
 rather than weakening the lock.

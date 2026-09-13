@@ -135,3 +135,40 @@ export const kycRejectRequest = z.object({
   reason: kycRejectionReason,
 });
 export type KycRejectRequest = z.infer<typeof kycRejectRequest>;
+
+/* --------------------------------------------------------------- customers */
+
+/*
+  A customer, as an administrator deciding something about their money needs
+  to see them. Deliberately four fields: enough to be sure this is the right
+  person, and nothing about their identity documents, their balance or their
+  trading. Anyone who needs those has a role that opens the screen that shows
+  them.
+*/
+export const adminCustomerSummary = z.object({
+  userId: z.string(),
+  /** "BQ-" and eight digits: what a person quotes to support. */
+  platformId: z.string(),
+  username: z.string(),
+  email: z.string(),
+  status: z.enum(["ACTIVE", "SUSPENDED", "CLOSED"]),
+  kycStatus: kycStatus,
+});
+export type AdminCustomerSummary = z.infer<typeof adminCustomerSummary>;
+
+/**
+ * Finding a customer by something a human actually has: their account
+ * number, their username, or their email. Never by internal id - if you
+ * already have the id you are not searching.
+ */
+export const adminCustomerSearchQuery = z.object({
+  q: z.string().trim().min(2).max(120),
+});
+export type AdminCustomerSearchQuery = z.infer<typeof adminCustomerSearchQuery>;
+
+export const adminCustomerSearchResponse = z.object({
+  customers: z.array(adminCustomerSummary),
+  /** True when more matched than were returned: narrow the search. */
+  truncated: z.boolean(),
+});
+export type AdminCustomerSearchResponse = z.infer<typeof adminCustomerSearchResponse>;

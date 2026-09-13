@@ -37,7 +37,7 @@ export function SettingsPanel() {
   return (
     <>
       <PageHeader title="Settings" />
-      <Tabs items={items} />
+      <Tabs items={items} label="Settings sections" />
     </>
   );
 }

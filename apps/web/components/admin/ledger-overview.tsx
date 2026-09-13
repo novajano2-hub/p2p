@@ -17,7 +17,7 @@ import {
   TD,
   TD_NUM,
   TH,
-} from "@/components/admin/ledger-bits";
+} from "@/components/admin/admin-bits";
 import { ButtonLink } from "@/components/ui/button";
 import { ledgerClient, type LedgerOverview as Overview } from "@/lib/admin/ledger";
 
