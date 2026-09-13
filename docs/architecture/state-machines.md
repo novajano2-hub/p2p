@@ -72,7 +72,16 @@ to credited balance.
   deposit's lifecycle ends at `CREDITED`; where the coins subsequently sit is a treasury
   concern and must never affect a customer balance.
 
-**Screens (Phase 3, stage 5).** The three human transitions have an interface at
+**The customer's side (Phase 3, stage 6).** `/wallet/deposit` issues the address, shows
+it as a QR and as text to copy, and lists the customer's own deposits with where each one
+has got to. Every figure beside it - the minimum, the confirmations - is fetched from the
+API rather than kept as a second copy in the browser, because a promise the interface
+makes and the server does not enforce is one that can quietly stop being true. The states
+are said in words about the money rather than about the machine: `MANUAL_REVIEW` reads
+"being checked - a person is looking at this one, usually a matter of hours", not "held
+by risk".
+
+**Screens (Phase 3, stage 5).** The three human transitions have an interface at**Screens (Phase 3, stage 5).** The three human transitions have an interface at
 `/admin/deposits`, in two queues rather than one list: "held for review" asks should this
 be credited, "nobody to credit" asks whose is this, and mixing them makes a reviewer skip
 rows of the other job. One decision worth recording: an unattributed deposit that landed
@@ -159,7 +168,19 @@ the most states because it is the only place the platform gives up assets irreve
 - Every state that releases a hold does so **only** from a position where non-broadcast is
   certain. There is no path from `BROADCAST` or `BROADCAST_UNKNOWN` directly to a refund.
 
-**Screens (Phase 3, stage 5).** `/admin/withdrawals`, in two queues: money held waiting
+**The customer's side (Phase 3, stage 6).** `/wallet/withdraw` asks for address, network,
+amount and then the password, in that order and for that reason: the address is what gets
+pasted and is worth checking twice, the network has to agree with it, the amount is quoted
+against limits the server owns, and the password is last because it is the act of consent
+rather than a field on the way past. The Idempotency-Key is minted once per intent and
+kept only across a failure where the browser cannot know whether the request landed.
+
+One thing the stage abstraction could not carry: whether a withdrawal may still be called
+off. `REQUESTED` and `RISK_REVIEW` can be cancelled and `APPROVED` cannot, but `REQUESTED`
+and `APPROVED` are both stage `PENDING` - so the view carries `cancellable` from the
+server instead of the browser inferring it, which it cannot do correctly.
+
+**Screens (Phase 3, stage 5).** `/admin/withdrawals`, in two queues: money held waiting**Screens (Phase 3, stage 5).** `/admin/withdrawals`, in two queues: money held waiting
 for approval, and transfers whose broadcast outcome nobody can be sure of. The second one
 is shaped by what it costs to be wrong. The two outcomes are offered as a deliberate
 choice, not a dropdown default; "it is on the chain" demands the transaction hash;
@@ -182,7 +203,8 @@ and confirmation settles. Six places the code is more specific than the text:
 - **The daily ceiling is the lower of the KYC tier and the configured maximum.** The
   approval thresholds were moved below that ceiling (500 USDT for one approver, 1,500 for
   two): above it they would be unreachable, because no customer could request enough to
-  trip them. **These figures need the owner's confirmation before real funds.**
+  trip them. **Owner's decision, 2026-09-13: these stand as they are while the chain is
+  mocked, and are to be revisited as a blocking question before real funds move.**
 - **A withdrawal to one of our own attribution addresses is refused.** It would pay gas to
   credit the customer straight back, and it confuses reconciliation.
 - **A withdrawal stuck in `SIGNING`** - a worker that died mid-call - is retried by asking

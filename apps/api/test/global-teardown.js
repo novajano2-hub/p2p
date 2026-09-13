@@ -179,6 +179,16 @@ module.exports = async function teardown() {
     await db.$executeRawUnsafe(
       "DELETE FROM mock_chain_transfers WHERE tag LIKE 'custody:sweep:%' AND substring(tag from 15) NOT IN (SELECT id FROM sweeps)",
     );
+    // The same for a withdrawal's custody transfer, which is tagged with the
+    // withdrawal's id. A run cut off before this file ran - or a row made by
+    // hand in development - leaves exactly these, and the list above only
+    // knows about the withdrawals it managed to find.
+    await db.$executeRawUnsafe(
+      `DELETE FROM mock_chain_transfers
+        WHERE tag LIKE 'custody:%'
+          AND tag NOT LIKE 'custody:sweep:%'
+          AND substring(tag from 9) NOT IN (SELECT id FROM withdrawals)`,
+    );
     /*
       Breaks raised by a test pass, and any whose adjustment entry the ledger
       cleanup above has already removed - a resolved break pointing at a

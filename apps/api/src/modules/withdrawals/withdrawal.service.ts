@@ -1186,6 +1186,7 @@ export class WithdrawalService {
       confirmations: row.confirmations,
       confirmationsRequired: this.chain.finality.confirmations,
       message: messageFor(row.status, row.failureReason),
+      cancellable: CANCELLABLE.includes(row.status),
       requestedAt: row.requestedAt.toISOString(),
       settledAt: row.settledAt?.toISOString() ?? null,
     };

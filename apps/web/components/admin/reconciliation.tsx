@@ -19,7 +19,7 @@ import {
   TH,
 } from "@/components/admin/admin-bits";
 import { ActionButton, NeedsRole, useAdmin } from "@/components/admin/admin-shell";
-import { isZeroMicro } from "@/lib/admin/money";
+import { isZeroMicro } from "@/lib/money";
 import {
   reconciliationClient,
   type ReconciliationBreak,

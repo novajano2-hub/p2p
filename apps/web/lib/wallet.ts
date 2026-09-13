@@ -1,117 +1,65 @@
 import { z } from "zod";
 
 /*
-  What the wallet screens know before there is an API behind them.
+  The words the wallet screens use. Not the numbers.
 
-  Everything here is presentation: the networks a deposit can arrive on, the
-  words each screen uses, and the shape of the two forms. No balance, no
-  address and no fee in this file is real, and nothing on these screens can
-  move anything - the ledger is Phase 2 and custody is Phase 6.
+  Every figure that used to live here - minimum deposit, confirmations,
+  withdrawal fee - now comes from the API, because the API is what enforces
+  them and a second copy in the browser is a promise that can quietly stop
+  being true. What is left is presentation: what each network is called, what
+  its token standard is, roughly how long it takes, and which ones we do not
+  accept yet.
 
-  PLACEHOLDER FIGURES, like KYC_TIERS in @abay/contracts: the minimums, the
-  confirmation counts and the withdrawal fees are here so the interface can
-  state a number rather than be vague, and so there is one place to correct
-  once the custody provider is chosen and the network is settled.
+  The unsupported ones are listed rather than hidden so the choice is visible
+  on screen and turning one on is a flag rather than a new screen. Their ids
+  are the API's spelling of a network, so nothing has to be translated between
+  the two.
 */
 
-/** The one asset at launch. A second one is a Phase 2 conversation, not a config change. */
+/** The one asset at launch. A second one is a design conversation, not a config change. */
 export const ASSET = { symbol: "USDT", name: "Tether USD" } as const;
 
-export type NetworkId = "plasma" | "tron" | "bsc" | "ethereum";
+export type NetworkId = "BSC" | "PLASMA" | "TRON" | "ETHEREUM";
 
-export type Network = {
+export interface Network {
   id: NetworkId;
   /** What every other exchange calls it, so a withdrawal screen elsewhere matches this one. */
   name: string;
   /** The token standard. The part people actually check before they send. */
   standard: string;
-  /** Roughly how long a deposit takes to arrive. */
+  /** Roughly how long a transfer takes to arrive. Prose, not a promise. */
   arrival: string;
-  /** Blocks before a deposit is credited. */
-  confirmations: number;
-  /** Smallest deposit that will be credited, in USDT. */
-  minDeposit: number;
-  /** What the network charges to send out, in USDT. Zero where gas is sponsored. */
-  withdrawalFee: number;
-  /**
-   * Whether BIRQ accepts this network. One at launch (docs/architecture:
-   * "no second asset or second network"); the rest are listed so the choice
-   * is visible and so turning one on is a flag, not a new screen.
-   */
+  /** Whether BIRQ accepts this network. Exactly one is true (ADR-0006, amended 2026-09-12). */
   supported: boolean;
-};
+}
 
-/*
-  BNB Smart Chain first because it is the network (ADR-0006, amended
-  2026-09-12): widely offered by the exchanges customers already use, cheap
-  to move on, and supported by every mainstream custody provider. The other
-  three are listed as unsupported rather than hidden so that the choice is
-  visible on screen, and so that turning one on is a flag, not a new screen.
-*/
 export const NETWORKS: readonly Network[] = [
   {
-    id: "bsc",
+    id: "BSC",
     name: "BNB Smart Chain",
     standard: "BEP20",
     arrival: "About a minute",
-    confirmations: 15,
-    minDeposit: 1,
-    withdrawalFee: 0.29,
     supported: true,
   },
+  { id: "PLASMA", name: "Plasma", standard: "USDT0", arrival: "Under a minute", supported: false },
+  { id: "TRON", name: "Tron", standard: "TRC20", arrival: "About a minute", supported: false },
   {
-    id: "plasma",
-    name: "Plasma",
-    standard: "USDT0",
-    arrival: "Under a minute",
-    confirmations: 1,
-    minDeposit: 1,
-    withdrawalFee: 0,
-    supported: false,
-  },
-  {
-    id: "tron",
-    name: "Tron",
-    standard: "TRC20",
-    arrival: "About a minute",
-    confirmations: 20,
-    minDeposit: 1,
-    withdrawalFee: 1,
-    supported: false,
-  },
-  {
-    id: "ethereum",
+    id: "ETHEREUM",
     name: "Ethereum",
     standard: "ERC20",
     arrival: "A few minutes",
-    confirmations: 12,
-    minDeposit: 10,
-    withdrawalFee: 3.5,
     supported: false,
   },
 ];
 
-export const DEFAULT_NETWORK: NetworkId = "plasma";
+/** The one we accept. Never a network the picker would then refuse. */
+export const DEFAULT_NETWORK: NetworkId = "BSC";
 
-export const networkById = (id: NetworkId): Network =>
+export const networkById = (id: string): Network =>
   NETWORKS.find((network) => network.id === id) ?? NETWORKS[0]!;
 
 /** "BNB Smart Chain (BEP20)". The pair a person checks against the app they are sending from. */
 export const networkLabel = (network: Network): string => `${network.name} (${network.standard})`;
-
-/* ------------------------------------------------------------------ money */
-
-const amount = new Intl.NumberFormat("en-US", {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-const birr = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-
-/** "1,250.00". Two places, grouped, always both places so a column lines up. */
-export const formatAmount = (value: number): string => amount.format(value);
-
-/** "≈ 71,000 ETB". A rough conversion, never a price to trade on. */
-export const formatEtb = (value: number): string => `${birr.format(value)} ETB`;
 
 /* ------------------------------------------------------------------ forms */
 
@@ -122,28 +70,17 @@ export const platformIdSchema = z
   .toUpperCase()
   .regex(/^BQ-\d{8}$/, { error: "Enter a BIRQ ID, like BQ-12345678" });
 
-/** A positive amount with at most two decimal places. */
-const amountSchema = z
+/*
+  Six decimal places, not two: the ledger keeps millionths and a form that
+  silently drops the rest is a form that loses somebody's money. The value is
+  never parsed as a number here - lib/money.ts turns it into millionths.
+*/
+export const amountSchema = z
   .string()
   .trim()
   .min(1, { error: "Enter an amount" })
-  .regex(/^\d+(\.\d{1,2})?$/, { error: "Enter an amount, to at most two decimal places" })
-  .refine((value) => Number(value) > 0, { error: "Enter an amount greater than zero" });
-
-/*
-  Deliberately loose. Address shapes differ per chain and a regex that is
-  almost right rejects real addresses; the API validates against the chain
-  itself, which is the only check that means anything.
-*/
-export const withdrawForm = z.object({
-  address: z
-    .string()
-    .trim()
-    .min(20, { error: "Enter the address you are withdrawing to" })
-    .max(120, { error: "That address is too long" }),
-  amount: amountSchema,
-});
-export type WithdrawForm = z.infer<typeof withdrawForm>;
+  .regex(/^\d+(\.\d{1,6})?$/, { error: "Enter an amount, to at most six decimal places" })
+  .refine((value) => /[1-9]/.test(value), { error: "Enter an amount greater than zero" });
 
 export const transferForm = z.object({
   recipient: platformIdSchema,
@@ -151,3 +88,20 @@ export const transferForm = z.object({
   note: z.string().trim().max(140, { error: "Keep the note under 140 characters" }).optional(),
 });
 export type TransferForm = z.infer<typeof transferForm>;
+
+/*
+  The address shape is the chain's, and this one chain has exactly one: 0x and
+  forty hex digits. Checked here because a mistyped address is the single
+  most expensive mistake available on these screens, and because the server
+  refuses the same shape - so a form that accepted more would only be
+  postponing the refusal until after the password had been typed.
+*/
+export const withdrawForm = z.object({
+  address: z
+    .string()
+    .trim()
+    .regex(/^0x[0-9a-fA-F]{40}$/, { error: "That is not a valid address for this network" }),
+  amount: amountSchema,
+  password: z.string().min(1, { error: "Enter your password to confirm" }),
+});
+export type WithdrawForm = z.infer<typeof withdrawForm>;

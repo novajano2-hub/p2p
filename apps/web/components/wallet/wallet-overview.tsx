@@ -8,14 +8,23 @@ import {
   Eye,
   EyeSlash,
 } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
 
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
-import { Amount, NotOpenNotice, useBalanceHidden } from "@/components/wallet/shared";
+import {
+  ActivityList,
+  fromDeposit,
+  fromWithdrawal,
+  type Activity,
+} from "@/components/wallet/activity";
+import { Amount, useBalanceHidden } from "@/components/wallet/shared";
 import { AppLink } from "@/components/ui/app-link";
 import { ButtonLink } from "@/components/ui/button";
 import { MASKED_AMOUNT, setBalanceHidden } from "@/lib/balance-visibility";
 import { walletRoutes } from "@/lib/app-nav";
-import { ASSET, formatEtb } from "@/lib/wallet";
+import { formatMicro } from "@/lib/money";
+import { ASSET } from "@/lib/wallet";
+import { walletClient, type WalletBalance } from "@/lib/wallet/client";
 import { cn } from "@/lib/cn";
 
 /*
@@ -23,15 +32,17 @@ import { cn } from "@/lib/cn";
   I have, what can I do with it, where is the rest of it, and what happened
   recently.
 
-  Every figure is zero because every figure is true. The ledger that fills
-  these in is Phase 2; until it exists a new account holds nothing, and the
-  screen says so rather than inventing a balance to look impressive.
+  Three figures rather than one, because "how much do I have" has three
+  answers and a person acting on the wrong one is a person surprised. All
+  three come from the ledger on every load: there is no cached balance column
+  anywhere in this system, on purpose, so there is nothing here that can drift
+  from the entries that made it.
+
+  No estimated birr value. There is no price feed yet, and a figure beside
+  somebody's balance that is quietly wrong is worse than no figure at all.
 */
 
-const BALANCE = { available: 0, escrow: 0 };
-const ETB_ESTIMATE = 0;
-
-const actions = [
+const ACTIONS = [
   {
     href: walletRoutes.deposit,
     title: "Deposit",
@@ -52,9 +63,40 @@ const actions = [
   },
 ] as const;
 
+const ZERO: WalletBalance = {
+  asset: ASSET.symbol,
+  available: "0",
+  escrowed: "0",
+  pendingWithdrawal: "0",
+  total: "0",
+};
+
 export function WalletOverview() {
   const hidden = useBalanceHidden();
-  const total = BALANCE.available + BALANCE.escrow;
+  const [balance, setBalance] = useState<WalletBalance>(ZERO);
+  const [activity, setActivity] = useState<Activity[]>([]);
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const [held, deposits, withdrawals] = await Promise.all([
+        walletClient.balance(),
+        walletClient.deposits(),
+        walletClient.withdrawals(),
+      ]);
+      if (!live) return;
+      if (held.ok) setBalance(held.balance);
+      const rows: Activity[] = [
+        ...(deposits.ok ? deposits.deposits.map((d) => fromDeposit(d)) : []),
+        ...(withdrawals.ok ? withdrawals.withdrawals.map((w) => fromWithdrawal(w)) : []),
+      ];
+      rows.sort((a, b) => b.at.localeCompare(a.at));
+      setActivity(rows.slice(0, 10));
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
 
   return (
     <>
@@ -62,8 +104,6 @@ export function WalletOverview() {
         title="Wallet"
         description={`Your ${ASSET.symbol}: what you can trade with, what is locked, and how to move it.`}
       />
-
-      <NotOpenNotice what="Deposits, withdrawals and transfers" />
 
       <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
         <Panel className="lg:col-span-3">
@@ -88,12 +128,12 @@ export function WalletOverview() {
                     hidden && "tracking-widest",
                   )}
                 >
-                  {hidden ? MASKED_AMOUNT : total.toFixed(2)}
+                  {hidden ? MASKED_AMOUNT : formatMicro(balance.total)}
                 </span>
                 <span className="text-muted-foreground text-base font-medium">{ASSET.symbol}</span>
               </p>
               <p className="text-muted-foreground mt-1.5 text-[13px]">
-                {hidden ? MASKED_AMOUNT : `≈ ${formatEtb(ETB_ESTIMATE)}`}
+                Everything BIRQ holds for you, wherever it currently is.
               </p>
             </div>
 
@@ -114,32 +154,33 @@ export function WalletOverview() {
             <div>
               <dt className="text-muted-foreground text-[12px]">Available</dt>
               <dd className="text-foreground mt-1 font-sans text-lg font-bold">
-                <Amount value={BALANCE.available} />
+                <Amount value={balance.available} />
               </dd>
             </div>
             <div>
               <dt className="text-muted-foreground text-[12px]">In escrow</dt>
               <dd className="text-foreground mt-1 font-sans text-lg font-bold">
-                <Amount value={BALANCE.escrow} />
+                <Amount value={balance.escrowed} />
               </dd>
             </div>
             <div className="col-span-2 sm:col-span-1">
-              <dt className="text-muted-foreground text-[12px]">Estimated value</dt>
-              <dd className="text-foreground mt-1 font-sans text-lg font-bold tabular-nums">
-                {hidden ? MASKED_AMOUNT : formatEtb(ETB_ESTIMATE)}
+              <dt className="text-muted-foreground text-[12px]">Withdrawing</dt>
+              <dd className="text-foreground mt-1 font-sans text-lg font-bold">
+                <Amount value={balance.pendingWithdrawal} />
               </dd>
             </div>
           </dl>
 
           <p className="text-muted-foreground mt-4 text-[12px] leading-relaxed">
-            Escrow holds what is committed to trades in progress. It is yours, and it comes back to
-            available when the trade settles or is cancelled.
+            Escrow holds what is committed to trades in progress. Withdrawing holds what is on its
+            way out. Both are yours, and both come back to available if the thing they are held for
+            does not happen.
           </p>
         </Panel>
 
         <div className="lg:col-span-3">
           <ul className="grid gap-3 sm:grid-cols-3" aria-label="Move funds">
-            {actions.map(({ href, title, description, Icon }) => (
+            {ACTIONS.map(({ href, title, description, Icon }) => (
               <li key={href}>
                 <AppLink
                   href={href}
@@ -176,10 +217,10 @@ export function WalletOverview() {
               </div>
               <div className="text-right">
                 <p className="text-foreground font-sans text-[15px] font-bold">
-                  <Amount value={BALANCE.available + BALANCE.escrow} unit={null} />
+                  <Amount value={balance.total} unit={null} />
                 </p>
-                <p className="text-muted-foreground text-[12px] tabular-nums">
-                  {hidden ? MASKED_AMOUNT : `≈ ${formatEtb(ETB_ESTIMATE)}`}
+                <p className="text-muted-foreground text-[12px]">
+                  {hidden ? MASKED_AMOUNT : `${formatMicro(balance.available)} available`}
                 </p>
               </div>
             </li>
@@ -191,11 +232,15 @@ export function WalletOverview() {
         </Panel>
 
         <Panel title="Recent activity" className="lg:col-span-3">
-          <EmptyState
-            icon={ClockCounterClockwise}
-            title="Nothing yet"
-            description="Deposits, withdrawals, transfers and trades will be listed here, newest first."
-          />
+          {activity.length === 0 ? (
+            <EmptyState
+              icon={ClockCounterClockwise}
+              title="Nothing yet"
+              description="Deposits and withdrawals are listed here, newest first, with where each one has got to."
+            />
+          ) : (
+            <ActivityList items={activity} />
+          )}
         </Panel>
       </div>
     </>

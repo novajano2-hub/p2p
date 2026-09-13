@@ -72,6 +72,14 @@ export const withdrawalView = z.object({
   confirmationsRequired: z.number().int().positive(),
   /** Why it stopped, in words for the person it happened to. Null while it is fine. */
   message: z.string().nullable(),
+  /*
+    Whether the customer may still call this one off. The server says so
+    rather than the browser working it out: the rule is about the internal
+    status and `stage` deliberately cannot express it - one stage covers both
+    a withdrawal waiting for a person, which can be cancelled, and one already
+    approved, which cannot.
+  */
+  cancellable: z.boolean(),
   requestedAt: z.string(),
   settledAt: z.string().nullable(),
 });

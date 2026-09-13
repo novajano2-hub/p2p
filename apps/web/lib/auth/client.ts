@@ -38,8 +38,15 @@ const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 export type AuthErrorCode =
   | "INVALID_CREDENTIALS"
   | "INVALID_CODE"
+  /** A field was wrong. Distinct from INVALID_CREDENTIALS: nothing was rejected about who you are. */
+  | "VALIDATION"
   | "RATE_LIMITED"
   | "CONFLICT"
+  /** Signed in, and not allowed to do this one. Verification, or a security cooldown. */
+  | "FORBIDDEN"
+  /** The balance will not cover it. Its own code so a screen can point at the amount. */
+  | "INSUFFICIENT_FUNDS"
+  | "NOT_FOUND"
   | "NOT_AVAILABLE"
   | "NETWORK"
   | "SERVER";
@@ -260,7 +267,7 @@ function csrfHeader(method: string | undefined): Record<string, string> {
   return unsafe && csrfToken ? { "x-csrf-token": csrfToken } : {};
 }
 
-type Failure = { ok: false; code: AuthErrorCode; message: string };
+export type Failure = { ok: false; code: AuthErrorCode; message: string };
 
 const failure = (code: AuthErrorCode, message: string): Failure => ({ ok: false, code, message });
 
@@ -284,7 +291,7 @@ const EXPIRED = (what: string) =>
   and a displayable failure otherwise; it never throws, so no caller needs a
   try/catch around a form submission.
 */
-async function send<T>(
+export async function send<T>(
   path: string,
   schema: z.ZodType<T>,
   init: RequestInit,
@@ -360,7 +367,13 @@ function failureFrom(status: number, text: string): Failure {
     case "RATE_LIMITED":
       return failure("RATE_LIMITED", message);
     case "VALIDATION_FAILED":
-      return failure("INVALID_CREDENTIALS", details?.[0]?.message ?? message);
+      return failure("VALIDATION", details?.[0]?.message ?? message);
+    case "FORBIDDEN":
+      return failure("FORBIDDEN", message);
+    case "INSUFFICIENT_FUNDS":
+      return failure("INSUFFICIENT_FUNDS", message);
+    case "NOT_FOUND":
+      return failure("NOT_FOUND", message);
     case "PAYLOAD_TOO_LARGE":
       return PHOTO_TOO_LARGE;
     case "NOT_READY":
@@ -381,7 +394,9 @@ function failureFrom(status: number, text: string): Failure {
 
 /** A code rejection, whatever the reason, is one message on the server; it stays one here. */
 const asCodeFailure = (result: Failure): Failure =>
-  result.code === "INVALID_CREDENTIALS" ? failure("INVALID_CODE", result.message) : result;
+  result.code === "INVALID_CREDENTIALS" || result.code === "VALIDATION"
+    ? failure("INVALID_CODE", result.message)
+    : result;
 
 /** 202 Accepted, with a body this client has no use for. */
 const ignored = z.unknown();
