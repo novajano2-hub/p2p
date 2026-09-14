@@ -138,9 +138,23 @@ async function sellOffer(
   return response.body as OfferView;
 }
 
+/**
+ * Every page of the marketplace, not only the first: other test files leave
+ * their offers listed until the teardown, and at the same price those sort
+ * ahead of ours.
+ */
 async function listed(who: Api, want: "BUY" | "SELL", extra = ""): Promise<MarketplaceOffer[]> {
-  const response = await who.get(`/v1/offers?want=${want}${extra}`).expect(200);
-  return (response.body as { offers: MarketplaceOffer[] }).offers;
+  const offers: MarketplaceOffer[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 40; page++) {
+    const after = cursor ? `&cursor=${cursor}` : "";
+    const response = await who.get(`/v1/offers?want=${want}&limit=50${extra}${after}`).expect(200);
+    const body = response.body as { offers: MarketplaceOffer[]; nextCursor: string | null };
+    offers.push(...body.offers);
+    cursor = body.nextCursor;
+    if (!cursor) break;
+  }
+  return offers;
 }
 
 /* ------------------------------------------------------ payment methods */
