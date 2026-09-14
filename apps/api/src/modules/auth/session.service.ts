@@ -81,7 +81,19 @@ export class SessionService {
   async resolve(request: FastifyRequest): Promise<AuthenticatedSession | null> {
     const token = request.cookies?.[SESSION_COOKIE];
     if (!token) return null;
+    return this.resolveToken(token);
+  }
 
+  /**
+   * The same, from the cookie's raw value: for a WebSocket upgrade, which
+   * arrives as a bare HTTP request with none of Fastify's machinery around
+   * it. With `touch: false` the check does not count as activity - a socket
+   * re-checking its session every minute must not keep an idle one alive.
+   */
+  async resolveToken(
+    token: string,
+    options: { touch?: boolean } = {},
+  ): Promise<AuthenticatedSession | null> {
     const session = await this.prisma.client.session.findUnique({
       where: { tokenHash: hashToken(token) },
       include: { user: { include: { identities: true } } },
@@ -111,7 +123,7 @@ export class SessionService {
 
     // Sliding idle window. Written at most once a minute: every authenticated
     // request does not need to be a write.
-    if (now - session.lastUsedAt.getTime() > 60_000) {
+    if (options.touch !== false && now - session.lastUsedAt.getTime() > 60_000) {
       await this.prisma.client.session.update({
         where: { id: session.id },
         data: { lastUsedAt: new Date(now) },

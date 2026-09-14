@@ -25,6 +25,7 @@ import { v7 as uuidv7 } from "uuid";
 
 import { AppError } from "@/common/errors/app-error";
 import { IdempotencyService, requestHash } from "@/common/idempotency/idempotency.service";
+import { afterCommit } from "@/common/io/transaction-scope";
 import { amountForFiat, fiatForAmount, formatEtb } from "@/common/money/fiat";
 import { formatUsdt } from "@/common/money/units";
 import { ENV } from "@/config/config.module";
@@ -33,6 +34,7 @@ import { type Mail } from "@/infra/mail/mailer";
 import { PrismaService } from "@/infra/prisma/prisma.service";
 import { AuditService } from "@/modules/audit/audit.service";
 import { verifyPassword } from "@/modules/auth/tokens";
+import { appendMessage } from "@/modules/chat/chat-append";
 import { accounts } from "@/modules/ledger/account-code";
 import { InsufficientFundsError } from "@/modules/ledger/ledger.errors";
 import { LedgerService, type PostedTransaction } from "@/modules/ledger/ledger.service";
@@ -46,6 +48,7 @@ import {
   TRADE_SNAPSHOT_PURPOSE,
 } from "@/modules/payment-methods/payment-details.cipher";
 import { PaymentMethodService } from "@/modules/payment-methods/payment-method.service";
+import { RealtimeService } from "@/modules/realtime/realtime.service";
 import { tradeMail, type TradeMailKind } from "@/modules/trades/trade-mail";
 import {
   assertTradeTransition,
@@ -95,6 +98,7 @@ type Tx = Prisma.TransactionClient;
 const WITH = {
   dispute: true,
   events: { where: { kind: "MARKED_PAID" as const }, take: 1 },
+  reads: true,
 } satisfies Prisma.TradeInclude;
 
 type TradeRow = Prisma.TradeGetPayload<{ include: typeof WITH }>;
@@ -121,6 +125,7 @@ export class TradeService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly outbox: OutboxService,
+    private readonly realtime: RealtimeService,
     @Inject(ENV) private readonly env: Env,
     private readonly logger: PinoLogger,
   ) {
@@ -306,6 +311,7 @@ export class TradeService {
             correlationId: context.correlationId,
           },
         });
+        this.changed({ id, buyerId, sellerId }, "AWAITING_FIAT_PAYMENT");
         await tx.tradeEvent.create({
           data: {
             tradeId: id,
@@ -319,6 +325,16 @@ export class TradeService {
           },
         });
         await this.bumpStats(tx, [buyerId, sellerId], { tradesTotal: 1 });
+        // The advertiser's standing first word, as the first line of the chat.
+        if (offer.autoReply) {
+          await appendMessage(tx, {
+            tradeId: id,
+            senderId: offer.userId,
+            kind: "TEXT",
+            body: offer.autoReply,
+            clientMessageId: `auto-reply:${id}`,
+          });
+        }
         await this.audit.record(
           {
             action: "trade.created",
@@ -395,6 +411,7 @@ export class TradeService {
         where: { id },
         data: { status: "BUYER_MARKED_PAID", paidAt: now },
       });
+      this.changed(trade, "BUYER_MARKED_PAID");
       await tx.tradeEvent.create({
         data: {
           tradeId: id,
@@ -786,6 +803,26 @@ export class TradeService {
   /* ------------------------------------------------------------- plumbing */
 
   /**
+   * Both parties' open sockets learn the trade changed - once the change is
+   * durable, never before, and never from inside the transaction (AT-19).
+   * The frame carries the status and nothing else; a client refetches.
+   */
+  private changed(
+    trade: { id: string; buyerId: string; sellerId: string },
+    status: TradeStatus,
+  ): void {
+    void afterCommit(() =>
+      this.realtime.tradeChanged({
+        id: trade.id,
+        buyerId: trade.buyerId,
+        sellerId: trade.sellerId,
+        status,
+        updatedAt: new Date(),
+      }),
+    );
+  }
+
+  /**
    * Which rail the trade will use. On a SELL offer the buyer picks one of
    * the seller's kinds, defaulting to the first; on a BUY offer the taker
    * is the seller and names one of their own methods, which must be of a
@@ -947,6 +984,7 @@ export class TradeService {
         settlementTransactionId: posted.id,
       },
     });
+    this.changed(trade, settlement.to);
     return posted;
   }
 
@@ -1104,6 +1142,13 @@ export class TradeService {
             resolvedAt: dispute.resolvedAt?.toISOString() ?? null,
           }
         : null,
+      chat: {
+        lastSeq: row.chatSeq,
+        unread: Math.max(
+          0,
+          row.chatSeq - (row.reads.find((read) => read.userId === viewerId)?.lastReadSeq ?? 0),
+        ),
+      },
       actions: {
         canMarkPaid: role === "BUYER" && row.status === "AWAITING_FIAT_PAYMENT",
         canCancel: role === "BUYER" && row.status === "AWAITING_FIAT_PAYMENT",

@@ -21,5 +21,6 @@ export * from "./withdrawals";
 export * from "./payment-methods";
 export * from "./offers";
 export * from "./trades";
+export * from "./chat";
 export * from "./reconciliation";
 export * from "./auth";

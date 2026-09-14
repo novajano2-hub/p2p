@@ -13,6 +13,7 @@ import { RedisModule } from "@/infra/redis/redis.module";
 import { AdminModule } from "@/modules/admin/admin.module";
 import { AuthModule } from "@/modules/auth/auth.module";
 import { BlockchainModule } from "@/modules/blockchain/blockchain.module";
+import { ChatModule } from "@/modules/chat/chat.module";
 import { CustodyModule } from "@/modules/custody/custody.module";
 import { DepositsModule } from "@/modules/deposits/deposits.module";
 import { HealthModule } from "@/modules/health/health.module";
@@ -22,6 +23,7 @@ import { NotificationsModule } from "@/modules/notifications/notifications.modul
 import { OffersModule } from "@/modules/offers/offers.module";
 import { OutboxModule } from "@/modules/outbox/outbox.module";
 import { PaymentMethodsModule } from "@/modules/payment-methods/payment-methods.module";
+import { RealtimeGatewayModule } from "@/modules/realtime/realtime-gateway.module";
 import { ReconciliationModule } from "@/modules/reconciliation/reconciliation.module";
 import { RiskModule } from "@/modules/risk/risk.module";
 import { SweepsModule } from "@/modules/sweeps/sweeps.module";
@@ -60,6 +62,8 @@ export class AppModule {
         PaymentMethodsModule,
         OffersModule,
         TradesModule,
+        ChatModule,
+        RealtimeGatewayModule,
         SweepsModule,
         ReconciliationModule,
         AdminModule,
