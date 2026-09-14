@@ -9,6 +9,7 @@ import { type AuthenticatedSession } from "@/modules/auth/session.service";
 import { chainConfig, type ChainConfig } from "@/modules/blockchain/chain-config";
 import { accounts } from "@/modules/ledger/account-code";
 import { LedgerService } from "@/modules/ledger/ledger.service";
+import { TradeService } from "@/modules/trades/trade.service";
 import { AddressService } from "@/modules/wallets/address.service";
 
 /** The customer's own wallet. Their address, and nothing about anyone else's. */
@@ -20,6 +21,7 @@ export class WalletController {
   constructor(
     private readonly addresses: AddressService,
     private readonly ledger: LedgerService,
+    private readonly trades: TradeService,
     @Inject(ENV) env: Env,
   ) {
     this.chain = chainConfig(env);
@@ -51,18 +53,17 @@ export class WalletController {
     from any cached column: the ledger is the only thing that knows, and a
     balance that agrees with it by construction cannot drift from it.
 
-    Escrow is zero because there is nothing to be in escrow yet - a trade
-    escrow account is keyed by the trade, and trades arrive in Phase 4. The
-    field is here rather than added later because the screen has to name the
-    third number, and naming it as zero is true today.
+    Escrow is the sum of the per-trade escrow accounts of this customer's
+    open trades as the seller (ledger-taxonomy.md 3.1): money that is still
+    theirs, committed to a trade, and not spendable until it closes.
   */
   @Get("balance")
   async balance(@CurrentSession() session: AuthenticatedSession): Promise<WalletBalanceResponse> {
-    const [available, pendingWithdrawal] = await Promise.all([
+    const [available, pendingWithdrawal, escrowed] = await Promise.all([
       this.ledger.balance(accounts.userAvailable(session.user.id)),
       this.ledger.balance(accounts.userPendingWithdrawal(session.user.id)),
+      this.trades.escrowedFor(session.user.id),
     ]);
-    const escrowed = 0n;
     return {
       asset: this.chain.token.symbol,
       available: available.toString(),

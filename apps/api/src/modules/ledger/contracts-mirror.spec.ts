@@ -10,6 +10,8 @@ import {
   offerStatus,
   paymentMethodKind,
   paymentMethodStatus,
+  tradeEventKind,
+  tradeStatus,
 } from "@abay/contracts";
 import { $Enums } from "@abay/database";
 
@@ -31,6 +33,8 @@ const mirrors: [string, readonly string[], Record<string, string>][] = [
   ["paymentMethodStatus", paymentMethodStatus.options, $Enums.PaymentMethodStatus],
   ["offerSide", offerSide.options, $Enums.OfferSide],
   ["offerStatus", offerStatus.options, $Enums.OfferStatus],
+  ["tradeStatus", tradeStatus.options, $Enums.TradeStatus],
+  ["tradeEventKind", tradeEventKind.options, $Enums.TradeEventKind],
 ];
 
 describe("contract enumerations mirror the schema's", () => {

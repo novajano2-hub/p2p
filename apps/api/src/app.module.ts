@@ -25,6 +25,7 @@ import { PaymentMethodsModule } from "@/modules/payment-methods/payment-methods.
 import { ReconciliationModule } from "@/modules/reconciliation/reconciliation.module";
 import { RiskModule } from "@/modules/risk/risk.module";
 import { SweepsModule } from "@/modules/sweeps/sweeps.module";
+import { TradesModule } from "@/modules/trades/trades.module";
 import { WalletsModule } from "@/modules/wallets/wallets.module";
 import { WithdrawalsModule } from "@/modules/withdrawals/withdrawals.module";
 
@@ -58,6 +59,7 @@ export class AppModule {
         WithdrawalsModule,
         PaymentMethodsModule,
         OffersModule,
+        TradesModule,
         SweepsModule,
         ReconciliationModule,
         AdminModule,

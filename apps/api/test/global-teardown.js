@@ -109,6 +109,18 @@ module.exports = async function teardown() {
       where: { address: { userId: { in: testUserIds } } },
       select: { id: true },
     });
+    // A trade's escrow account is owned by the trade id, and its postings
+    // reference the trade, so neither is reached by the owner-id rule below.
+    const testTrades = await db.trade.findMany({
+      where: {
+        OR: [
+          { buyerId: { in: testUserIds } },
+          { sellerId: { in: testUserIds } },
+          { correlationId: { startsWith: "test-" } },
+        ],
+      },
+      select: { id: true },
+    });
     const testDeposits = await db.deposit.findMany({
       where: {
         OR: [
@@ -150,6 +162,7 @@ module.exports = async function teardown() {
       depositIds: testDeposits.map((d) => d.id),
       withdrawalIds: testWithdrawals.map((w) => w.id),
       sweepIds: testSweeps.map((s) => s.id),
+      tradeIds: testTrades.map((t) => t.id),
       ownerIds: testUserIds,
     });
 
@@ -258,6 +271,7 @@ async function clearTestLedgerRows({
   depositIds = [],
   withdrawalIds = [],
   sweepIds = [],
+  tradeIds = [],
   ownerIds = [],
 } = {}) {
   const { PrismaClient } = require("@prisma/client");
@@ -271,8 +285,12 @@ async function clearTestLedgerRows({
       OR (reference_type = 'sweep' AND reference_id IN (${sqlList(sweepIds)}))
       OR (reference_type = 'withdrawal' AND reference_id NOT IN (SELECT id FROM withdrawals))
       OR (reference_type = 'sweep' AND reference_id NOT IN (SELECT id FROM sweeps))
+      OR (reference_type = 'trade' AND reference_id IN (${sqlList(tradeIds)}))
+      OR (reference_type = 'trade' AND reference_id NOT IN (SELECT id FROM trades))
       OR (reference_type = 'reconciliation_break' AND reference_id NOT IN (SELECT id FROM reconciliation_breaks)))`;
-  const testAccount = `(owner_id LIKE 'test-%' OR owner_id IN (${sqlList(ownerIds)}))`;
+  const testAccount = `(owner_id LIKE 'test-%' OR owner_id IN (${sqlList(ownerIds)})
+      OR owner_id IN (${sqlList(tradeIds)})
+      OR (scope = 'TRADE' AND owner_id NOT IN (SELECT id FROM trades)))`;
   try {
     const [{ n }] = await direct.$queryRawUnsafe(
       `SELECT count(*)::int AS n FROM ledger_transactions WHERE ${testTx}`,
