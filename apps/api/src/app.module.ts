@@ -19,7 +19,9 @@ import { HealthModule } from "@/modules/health/health.module";
 import { KycModule } from "@/modules/kyc/kyc.module";
 import { LedgerModule } from "@/modules/ledger/ledger.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
+import { OffersModule } from "@/modules/offers/offers.module";
 import { OutboxModule } from "@/modules/outbox/outbox.module";
+import { PaymentMethodsModule } from "@/modules/payment-methods/payment-methods.module";
 import { ReconciliationModule } from "@/modules/reconciliation/reconciliation.module";
 import { RiskModule } from "@/modules/risk/risk.module";
 import { SweepsModule } from "@/modules/sweeps/sweeps.module";
@@ -54,6 +56,8 @@ export class AppModule {
         WalletsModule,
         DepositsModule,
         WithdrawalsModule,
+        PaymentMethodsModule,
+        OffersModule,
         SweepsModule,
         ReconciliationModule,
         AdminModule,

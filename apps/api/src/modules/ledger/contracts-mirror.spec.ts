@@ -6,6 +6,10 @@ import {
   ledgerAsset,
   ledgerDirection,
   ledgerReason,
+  offerSide,
+  offerStatus,
+  paymentMethodKind,
+  paymentMethodStatus,
 } from "@abay/contracts";
 import { $Enums } from "@abay/database";
 
@@ -23,6 +27,10 @@ const mirrors: [string, readonly string[], Record<string, string>][] = [
   ["ledgerDirection", ledgerDirection.options, $Enums.LedgerDirection],
   ["ledgerActorType", ledgerActorType.options, $Enums.LedgerActorType],
   ["ledgerReason", ledgerReason.options, $Enums.LedgerReason],
+  ["paymentMethodKind", paymentMethodKind.options, $Enums.PaymentMethodKind],
+  ["paymentMethodStatus", paymentMethodStatus.options, $Enums.PaymentMethodStatus],
+  ["offerSide", offerSide.options, $Enums.OfferSide],
+  ["offerStatus", offerStatus.options, $Enums.OfferStatus],
 ];
 
 describe("contract enumerations mirror the schema's", () => {

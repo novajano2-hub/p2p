@@ -211,6 +211,29 @@ export const envSchema = z
        network; it is configurable because a network that rounds would need it. */
     RECONCILIATION_TOLERANCE_MICRO: micro("0"),
 
+    /* ---------------------------------------------------------- trading */
+
+    /* The platform's cut of a trade, in basis points of the USDT amount,
+       paid by the buyer out of the escrow at release (ledger-taxonomy.md
+       JE-4, open-questions Q3). Zero at launch - the owner's decision - and
+       the fee leg is posted at zero regardless, so switching it on is this
+       one value. */
+    TRADE_FEE_BPS: z.coerce.number().int().min(0).max(1_000).default(0),
+    /** Below this a trade is not worth the escrow rows it creates. */
+    TRADE_MIN_AMOUNT_MICRO: micro("1000000"),
+    /* How many trades one account may have open at once, on either side.
+       Binance limits this too: an account running twenty orders at once is
+       a script, not a person. */
+    TRADE_MAX_OPEN_PER_USER: z.coerce.number().int().min(1).max(100).default(10),
+    /* After "I have paid", how long both sides must wait before either may
+       open a dispute. A bank transfer takes minutes to land; an appeal
+       opened in the first one is noise for the resolver. */
+    TRADE_DISPUTE_COOLDOWN_MINUTES: z.coerce.number().int().min(0).max(1_440).default(10),
+    /** How long after a trade closes its chat still accepts messages. */
+    TRADE_CHAT_AFTER_CLOSE_HOURS: z.coerce.number().int().min(0).max(720).default(24),
+    /** Live or paused offers one account may have. */
+    OFFER_MAX_PER_USER: z.coerce.number().int().min(1).max(100).default(5),
+
     /* The adapters at the edge (ADR-0006). Only the deterministic mocks exist
        until Phase 6; a real one is a new value here and a new file there. */
     BLOCKCHAIN_GATEWAY: z.enum(["mock"]).default("mock"),

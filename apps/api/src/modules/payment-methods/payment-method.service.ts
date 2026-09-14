@@ -1,0 +1,204 @@
+import {
+  ETHIOPIAN_BANKS,
+  PAYMENT_METHOD_KINDS,
+  PAYMENT_METHODS_MAX,
+  type CreatePaymentMethodRequest,
+  type PaymentInstructions,
+  type PaymentMethodDetailView,
+  type PaymentMethodView,
+} from "@abay/contracts";
+import { type PaymentMethod, type Prisma } from "@abay/database";
+import { Injectable } from "@nestjs/common";
+import { PinoLogger } from "nestjs-pino";
+
+import { AppError } from "@/common/errors/app-error";
+import { PrismaService } from "@/infra/prisma/prisma.service";
+import {
+  PAYMENT_METHOD_PURPOSE,
+  PaymentDetailsCipher,
+} from "@/modules/payment-methods/payment-details.cipher";
+
+/*
+  A customer's ways of receiving birr.
+
+  Three rules shape this service. The details are written once and never
+  edited - a changed number is a new method, so a trade that snapshotted the
+  old one still says where its buyer was told to pay. A method is archived,
+  never deleted, for the same reason. And ownership is part of every lookup:
+  somebody else's id and an id that never existed answer the same 404.
+*/
+
+/** Digits of the number a list shows, enough to tell two apart, too few to use. */
+const HINT_DIGITS = 4;
+
+/** A Prisma client or an open transaction. Trades pass theirs. */
+type Reader = Pick<Prisma.TransactionClient, "paymentMethod">;
+
+@Injectable()
+export class PaymentMethodService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cipher: PaymentDetailsCipher,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(PaymentMethodService.name);
+  }
+
+  /** The owner's live methods, newest first. Labels and hints only. */
+  async list(userId: string): Promise<PaymentMethodView[]> {
+    const rows = await this.prisma.client.paymentMethod.findMany({
+      where: { userId, status: "ACTIVE" },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map(toView);
+  }
+
+  /** One of the owner's methods, whole - archived ones included, so history can be read. */
+  async get(userId: string, id: string): Promise<PaymentMethodDetailView> {
+    const row = await this.prisma.client.paymentMethod.findFirst({ where: { id, userId } });
+    if (!row) throw AppError.notFound("There is no such payment method.");
+    return {
+      ...toView(row),
+      instructions: this.cipher.decrypt(row.detailsEncrypted, PAYMENT_METHOD_PURPOSE),
+    };
+  }
+
+  async create(
+    userId: string,
+    input: CreatePaymentMethodRequest,
+  ): Promise<PaymentMethodDetailView> {
+    const live = await this.prisma.client.paymentMethod.count({
+      where: { userId, status: "ACTIVE" },
+    });
+    if (live >= PAYMENT_METHODS_MAX) {
+      throw AppError.conflict(
+        `You can keep up to ${PAYMENT_METHODS_MAX} payment methods. Remove one first.`,
+      );
+    }
+
+    const instructions = toInstructions(input);
+    const hint = instructions.accountNumber.slice(-HINT_DIGITS);
+    const institution =
+      instructions.kind === "BANK_TRANSFER" && instructions.bankName
+        ? instructions.bankName
+        : PAYMENT_METHOD_KINDS[instructions.kind].label;
+
+    const row = await this.prisma.client.paymentMethod.create({
+      data: {
+        userId,
+        kind: instructions.kind,
+        bankCode: instructions.bankCode,
+        label: `${institution} ····${hint}`,
+        hint,
+        detailsEncrypted: this.cipher.encrypt(instructions, PAYMENT_METHOD_PURPOSE),
+      },
+    });
+
+    // The kind, and that one arrived. Never the number, never the name.
+    this.logger.info(
+      { event: "payment_method.added", userId, kind: row.kind },
+      "payment method added",
+    );
+    return { ...toView(row), instructions };
+  }
+
+  /*
+    Archiving. Refused while an offer still names the method: taking a rail
+    away from a live advertisement silently would leave a buyer with nowhere
+    to pay. Open trades are unaffected either way, because they carry their
+    own snapshot.
+  */
+  async archive(userId: string, id: string): Promise<void> {
+    const row = await this.prisma.client.paymentMethod.findFirst({
+      where: { id, userId },
+      include: {
+        offers: {
+          where: { offer: { status: { in: ["ACTIVE", "PAUSED"] } } },
+          select: { offerId: true },
+        },
+      },
+    });
+    if (!row) throw AppError.notFound("There is no such payment method.");
+    if (row.status === "ARCHIVED") return;
+    if (row.offers.length > 0) {
+      throw AppError.conflict(
+        "This payment method is on one of your offers. Remove it there first.",
+      );
+    }
+    await this.prisma.client.paymentMethod.update({
+      where: { id },
+      data: { status: "ARCHIVED", archivedAt: new Date() },
+    });
+    this.logger.info(
+      { event: "payment_method.archived", userId, kind: row.kind },
+      "payment method archived",
+    );
+  }
+
+  /**
+   * The owner's live methods among a set of ids, for an offer naming them.
+   * Anything not theirs or not live is simply absent from the answer.
+   */
+  async ownedActive(
+    userId: string,
+    ids: readonly string[],
+    reader: Reader = this.prisma.client,
+  ): Promise<PaymentMethod[]> {
+    if (ids.length === 0) return [];
+    return reader.paymentMethod.findMany({
+      where: { id: { in: [...new Set(ids)] }, userId, status: "ACTIVE" },
+    });
+  }
+
+  /**
+   * The instructions behind a method, for the trade that is about to snapshot
+   * them. Inside the caller's transaction, because the snapshot and the
+   * trade commit together.
+   */
+  async instructions(
+    reader: Reader,
+    id: string,
+  ): Promise<{ method: PaymentMethod; instructions: PaymentInstructions } | null> {
+    const method = await reader.paymentMethod.findUnique({ where: { id } });
+    if (!method) return null;
+    return {
+      method,
+      instructions: this.cipher.decrypt(method.detailsEncrypted, PAYMENT_METHOD_PURPOSE),
+    };
+  }
+}
+
+/* --------------------------------------------------------------- plumbing */
+
+function toInstructions(input: CreatePaymentMethodRequest): PaymentInstructions {
+  if (input.kind === "BANK_TRANSFER") {
+    return {
+      kind: input.kind,
+      bankCode: input.bankCode,
+      bankName: ETHIOPIAN_BANKS[input.bankCode],
+      accountHolder: input.accountHolder,
+      accountNumber: input.accountNumber,
+      branch: input.branch && input.branch.length > 0 ? input.branch : null,
+    };
+  }
+  return {
+    kind: input.kind,
+    bankCode: null,
+    bankName: null,
+    accountHolder: input.accountHolder,
+    accountNumber: input.phone,
+    branch: null,
+  };
+}
+
+export function toView(row: PaymentMethod): PaymentMethodView {
+  return {
+    id: row.id,
+    kind: row.kind,
+    bankCode: row.bankCode as PaymentMethodView["bankCode"],
+    label: row.label,
+    hint: row.hint,
+    status: row.status,
+    createdAt: row.createdAt.toISOString(),
+  };
+}

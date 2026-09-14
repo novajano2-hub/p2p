@@ -18,6 +18,14 @@ export const notificationType = z.enum([
   "DEPOSIT_CREDITED",
   "WITHDRAWAL_SENT",
   "WITHDRAWAL_RETURNED",
+  /* Phase 4: a trade needing attention, and how it ended. Each links to the trade. */
+  "TRADE_OPENED",
+  "TRADE_PAID",
+  "TRADE_RELEASED",
+  "TRADE_CANCELLED",
+  "TRADE_EXPIRED",
+  "DISPUTE_OPENED",
+  "DISPUTE_RESOLVED",
 ]);
 export type NotificationType = z.infer<typeof notificationType>;
 
