@@ -17,6 +17,8 @@ import { OutboxPublisher } from "@/modules/outbox/outbox.publisher";
 import { ReconciliationModule } from "@/modules/reconciliation/reconciliation.module";
 import { SweepsModule } from "@/modules/sweeps/sweeps.module";
 import { TreasuryWorker } from "@/modules/sweeps/treasury.worker";
+import { TradeExpirer } from "@/modules/trades/trade-expirer";
+import { TradesModule } from "@/modules/trades/trades.module";
 import { WalletsModule } from "@/modules/wallets/wallets.module";
 import { WithdrawalProcessor } from "@/modules/withdrawals/withdrawal-processor";
 import { WithdrawalsModule } from "@/modules/withdrawals/withdrawals.module";
@@ -49,6 +51,7 @@ export class WorkerModule {
         WithdrawalsModule,
         SweepsModule,
         ReconciliationModule,
+        TradesModule,
       ],
       providers: [
         KycSweepScheduler,
@@ -57,6 +60,7 @@ export class WorkerModule {
         DepositConfirmer,
         WithdrawalProcessor,
         TreasuryWorker,
+        TradeExpirer,
       ],
     };
   }

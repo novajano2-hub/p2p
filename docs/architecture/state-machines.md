@@ -276,6 +276,54 @@ the platform; the ETB side is entirely outside it.
 - Escrow is funded by whoever gives up USDT (ADR-0004), which on a _buy_ offer is the
   accepting user rather than the publisher.
 
+**Built (Phase 4, stage 2).** `apps/api/src/modules/trades/` implements this table, with
+the table itself in `trade.machine.ts`, the escrow of ADR-0004 in `trade.service.ts` and
+the timer in `trade-expirer.ts` (worker only). Where the code is more specific than the
+text:
+
+- **There is no stored `CREATED` state.** A trade's first row is already
+  `AWAITING_FIAT_PAYMENT`, written in the same transaction as the reservation on the offer
+  and JE-3. A trade whose escrow could not be locked never existed.
+- **Only the buyer cancels.** The table lets either party; a seller who could cancel after
+  the birr was sent but before "I have paid" would keep both. A buyer who never pays costs
+  the seller nothing but the payment window, and the expirer ends it.
+- **One idempotency key per settlement, `trade:{id}:settle`,** rather than one per event.
+  Release, cancel, expiry and, from stage 4, an administrator's decision all post through
+  one method under the trade's row lock, so the escrow empties once whichever path reaches
+  it first and the next finds a terminal status. "I have paid", cancel and release take no
+  client `Idempotency-Key`: they are idempotent by state, and a repeat is a 409.
+- **Two edges the drawing does not show, both for stage 4 to use:** the seller may release
+  while `DISPUTED` (most appeals end with the seller seeing the money after all), and the
+  party who opened a dispute may withdraw it, `DISPUTED` → `BUYER_MARKED_PAID`. A dispute
+  can only be opened `TRADE_DISPUTE_COOLDOWN_MINUTES` (10) after "I have paid".
+- **The fee is the buyer's, taken out of what they receive** (`TRADE_FEE_BPS`, zero today):
+  the JE-4′ shape. Escrow holds the trade amount, so the offer's limits and remaining
+  volume never depend on the fee, and the `TRADE_FEES` leg is posted even at zero.
+- **Where to pay is frozen on the trade,** encrypted under its own purpose, and shown to
+  the buyer only while the trade is open. The seller editing or archiving the method
+  afterwards changes nothing about a trade already running.
+- **The price is checked twice.** The taker is quoted before any row is written and refused
+  with a 409 if the reserved offer's price differs at commit time: an advertiser editing
+  the ad at that moment gets a taker who looks again, not one who bought at a number they
+  never saw.
+- **Limits are advisory, the balance floor is not.** The daily ceiling from the KYC tier
+  (`KYC_TIERS.dailyTradeUsd`, one USDT as one dollar) and `TRADE_MAX_OPEN_PER_USER` are
+  checked for both parties before the transaction; a race can overshoot them by a trade.
+  The escrow lock itself is taken under the ledger's row lock and cannot overshoot.
+- **Marking paid after the deadline but before the expirer's next pass is allowed.** The
+  row lock decides, and whichever commits first is what happened; a buyer who paid in the
+  last seconds is not told they did not.
+- **Locks are taken in one order everywhere** (the trade row, then the offer, then the
+  ledger balances, then the trader counters), so a take and a cancel on the same offer
+  cannot wait on each other.
+- **Audit events** are `trade.created`, `trade.cancelled`, `trade.released` and
+  `trade.expired`; the `escrow.*` events in the table are the ledger transactions
+  themselves, referenced from the trade row.
+
+Proven in `apps/api/test/api/trades.spec.ts`: AT-2 (twenty rounds of two takers racing for
+one seller's last 100 USDT), AT-3, AT-4, AT-5 (five concurrent releases, one credit), AT-6,
+AT-7 and AT-14.
+
 ---
 
 ## 4. How these are enforced in code

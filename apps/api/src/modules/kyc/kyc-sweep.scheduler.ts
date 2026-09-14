@@ -25,6 +25,8 @@ const LOCK_TTL_MS = 5 * 60 * 1000;
 @Injectable()
 export class KycSweepScheduler implements OnModuleInit, OnModuleDestroy {
   private timer: NodeJS.Timeout | null = null;
+  /** The sweep running right now, so that shutdown can wait for it. */
+  private inFlight: Promise<void> | null = null;
 
   constructor(
     private readonly retention: KycRetentionService,
@@ -35,15 +37,25 @@ export class KycSweepScheduler implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): void {
-    this.timer = setInterval(() => void this.run(), INTERVAL_MS);
+    this.timer = setInterval(() => void this.start(), INTERVAL_MS);
     // Once at boot, so a restart is also a sweep and a fresh deployment does
     // not wait an hour to clear whatever the last one left.
-    void this.run();
+    void this.start();
   }
 
-  onModuleDestroy(): void {
+  /** No new sweep starts, and the one in flight finishes before the process lets go of its connections. */
+  async onModuleDestroy(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    await this.inFlight;
+  }
+
+  /** A sweep, remembered while it runs; a timer firing during one joins it rather than starting another. */
+  private start(): Promise<void> {
+    this.inFlight ??= this.run().finally(() => {
+      this.inFlight = null;
+    });
+    return this.inFlight;
   }
 
   private async run(): Promise<void> {

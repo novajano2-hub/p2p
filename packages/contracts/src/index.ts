@@ -20,5 +20,6 @@ export * from "./deposits";
 export * from "./withdrawals";
 export * from "./payment-methods";
 export * from "./offers";
+export * from "./trades";
 export * from "./reconciliation";
 export * from "./auth";
