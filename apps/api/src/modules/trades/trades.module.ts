@@ -9,6 +9,7 @@ import { NotificationsModule } from "@/modules/notifications/notifications.modul
 import { OffersModule } from "@/modules/offers/offers.module";
 import { OutboxModule } from "@/modules/outbox/outbox.module";
 import { PaymentMethodsModule } from "@/modules/payment-methods/payment-methods.module";
+import { RealtimeModule } from "@/modules/realtime/realtime.module";
 import { TradeService } from "@/modules/trades/trade.service";
 import { TradesController } from "@/modules/trades/trades.controller";
 
@@ -28,6 +29,7 @@ import { TradesController } from "@/modules/trades/trades.controller";
     IdempotencyModule,
     OffersModule,
     PaymentMethodsModule,
+    RealtimeModule,
   ],
   controllers: [TradesController],
   providers: [TradeService],

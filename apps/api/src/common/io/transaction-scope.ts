@@ -17,24 +17,69 @@ import { AsyncLocalStorage } from "node:async_hooks";
   first, and throws if it finds itself inside one. The scope rides on
   AsyncLocalStorage, which follows the awaits - a call three services deep
   is still "inside" the transaction that started at the top.
+
+  The scope also carries the work that must wait for the commit: a socket
+  frame saying a row now exists must not go out while the row could still
+  roll back, and must not go out from inside the transaction either. Such
+  work registers itself with afterCommit() and runs, in order, once the
+  transaction has returned - outside the scope, with no lock held.
 */
+
+export type AfterCommitHook = () => Promise<void> | void;
 
 interface OpenTransaction {
   /** What opened it, for the error message: "ledger:post", "kyc:submit". */
   name: string;
   openedAt: number;
+  /** Runs after the commit, in the order registered. */
+  afterCommit: AfterCommitHook[];
 }
 
 const openTransaction = new AsyncLocalStorage<OpenTransaction>();
 
-/** Runs `work` with the current context marked as inside a transaction named `name`. */
-export function withTransactionScope<T>(name: string, work: () => Promise<T>): Promise<T> {
-  return openTransaction.run({ name, openedAt: Date.now() }, work);
+/**
+ * Runs `work` with the current context marked as inside a transaction named
+ * `name`, then runs whatever the work registered with afterCommit(). A hook
+ * that throws is reported to `onHookError` and does not fail the result: the
+ * transaction is already durable, and what a hook does is best effort by
+ * nature - a frame, a cache, a metric.
+ */
+export async function withTransactionScope<T>(
+  name: string,
+  work: () => Promise<T>,
+  onHookError: (error: unknown) => void = () => undefined,
+): Promise<T> {
+  const scope: OpenTransaction = { name, openedAt: Date.now(), afterCommit: [] };
+  const result = await openTransaction.run(scope, work);
+  for (const hook of scope.afterCommit) {
+    try {
+      await hook();
+    } catch (error) {
+      onHookError(error);
+    }
+  }
+  return result;
 }
 
 /** The transaction the current context is inside, or undefined. For tests and diagnostics. */
 export function currentTransaction(): OpenTransaction | undefined {
   return openTransaction.getStore();
+}
+
+/**
+ * Runs `hook` once the transaction the current context is inside has
+ * committed - or right away, when there is none. For the things that must
+ * not happen inside a transaction (AT-19) and must not happen unless it
+ * commits either. Inside a transaction the returned promise resolves at
+ * once; outside, it is the hook's own.
+ */
+export function afterCommit(hook: AfterCommitHook): Promise<void> {
+  const open = openTransaction.getStore();
+  if (open) {
+    open.afterCommit.push(hook);
+    return Promise.resolve();
+  }
+  return Promise.resolve().then(hook);
 }
 
 export class IoInsideTransactionError extends Error {

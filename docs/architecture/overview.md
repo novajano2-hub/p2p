@@ -87,23 +87,46 @@ cannot drift between them:
 Note that `reconciler` is deliberately read-only. It raises exceptions for humans; it does
 not write correcting entries. See ADR-0009.
 
+### Realtime delivery
+
+**Built (Phase 4, stage 3).** One WebSocket per browser tab at `/v1/ws`
+(`apps/api/src/modules/realtime/`), accepted only when the upgrade carries a live session
+cookie and an Origin we serve - the socket equivalent of the CSRF check, so a cross-site
+page cannot open one - and refused with a plain HTTP status otherwise. A socket subscribes
+to the trades its tab is looking at and is fed from one Redis channel (`rt:events`) that
+every API replica listens to, so the two parties of a chat may be served by different
+processes and a worker's expirer can tell a browser that a trade just expired.
+
+The socket delivers and decides nothing. Sending a message is a POST like every other
+write (session, CSRF, rate limit, a client message id for idempotency); the row is written
+and numbered under the trade's row lock, and only after the commit is a frame published -
+`afterCommit()` in `common/io/transaction-scope.ts`, so nothing on the wire describes a row
+that could still roll back, and nothing is published from inside a transaction (AT-19). A
+client that missed a frame asks for everything after the last sequence number it has.
+Frames: `message`, `typing`, `read`, `trade` (a status changed - refetch), `notification`
+(the bell, for every notification the system writes). Limits, all enforced server-side:
+8 connections per account (the oldest tab makes way), 20 trades watched per connection,
+30 frames per 10 seconds, 16 KB per frame, 1 MB of unsent bytes before a slow reader is
+dropped, a ping every 30 seconds, and the session re-checked every minute so a sign-out
+elsewhere closes the socket (4001). On shutdown every socket is told 1001.
+
 ## 3. Trust boundaries
 
 A trust boundary is a line across which you must stop believing what you are told and
 start verifying. Everything crossing one of these lines is validated, authorized, size-
 limited, rate-limited and logged.
 
-| ID     | Boundary                | What crosses it                                                          | What we must never assume                                                                                                                |
-| ------ | ----------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| **B1** | Browser → API           | Session cookie, CSRF token, JSON request bodies, uploads                 | That the client computed anything correctly, that the user owns the ID in the URL, that a role claim in the request is real              |
-| **B2** | API → PostgreSQL        | SQL, transactions, locks                                                 | That application-level checks are sufficient; constraints must exist in the database                                                     |
-| **B3** | API → Redis/BullMQ      | Jobs, rate-limit counters, leases                                        | That a job runs exactly once, or that a Redis lock protects financial correctness                                                        |
-| **B4** | API ↔ Custody provider  | Address creation requests, sign requests, **inbound webhooks**           | That a webhook is authentic without signature verification, or that "signed" means "broadcast", or that a timeout means "did not happen" |
-| **B5** | API ↔ Object storage    | Dispute evidence uploads/downloads                                       | That an uploaded file is the type or size it claims, or that it is safe to show staff unscanned                                          |
-| **B6** | Custody → Blockchain    | Broadcast transactions, chain state reads                                | That an RPC node is honest, current, or that a confirmed transaction is final before the policy threshold                                |
-| **B7** | Admin human → API       | Privileged actions: dispute resolution, withdrawal approval, adjustments | That an admin account is not compromised, or that one admin should be able to move funds alone above a threshold                         |
-| **B8** | Users ↔ Ethiopian banks | ETB payment, entirely outside our systems                                | **That a payment happened.** We have no visibility, no proof and no ability to reverse. Everything here is claim, not fact               |
-| **B9** | CI/CD → Production      | Container images, migrations, secrets                                    | That the build pipeline is trusted infrastructure by default                                                                             |
+| ID     | Boundary                | What crosses it                                                              | What we must never assume                                                                                                                |
+| ------ | ----------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **B1** | Browser → API           | Session cookie, CSRF token, JSON request bodies, uploads, WebSocket upgrades | That the client computed anything correctly, that the user owns the ID in the URL, that a role claim in the request is real              |
+| **B2** | API → PostgreSQL        | SQL, transactions, locks                                                     | That application-level checks are sufficient; constraints must exist in the database                                                     |
+| **B3** | API → Redis/BullMQ      | Jobs, rate-limit counters, leases                                            | That a job runs exactly once, or that a Redis lock protects financial correctness                                                        |
+| **B4** | API ↔ Custody provider  | Address creation requests, sign requests, **inbound webhooks**               | That a webhook is authentic without signature verification, or that "signed" means "broadcast", or that a timeout means "did not happen" |
+| **B5** | API ↔ Object storage    | Dispute evidence uploads/downloads                                           | That an uploaded file is the type or size it claims, or that it is safe to show staff unscanned                                          |
+| **B6** | Custody → Blockchain    | Broadcast transactions, chain state reads                                    | That an RPC node is honest, current, or that a confirmed transaction is final before the policy threshold                                |
+| **B7** | Admin human → API       | Privileged actions: dispute resolution, withdrawal approval, adjustments     | That an admin account is not compromised, or that one admin should be able to move funds alone above a threshold                         |
+| **B8** | Users ↔ Ethiopian banks | ETB payment, entirely outside our systems                                    | **That a payment happened.** We have no visibility, no proof and no ability to reverse. Everything here is claim, not fact               |
+| **B9** | CI/CD → Production      | Container images, migrations, secrets                                        | That the build pipeline is trusted infrastructure by default                                                                             |
 
 **B8 is the boundary that most shapes the product.** Every technical control we build for
 trades exists because the money we care most about moves where we cannot see it.

@@ -4,6 +4,7 @@ import { PrismaModule } from "@/infra/prisma/prisma.module";
 import { AuthModule } from "@/modules/auth/auth.module";
 import { NotificationsController } from "@/modules/notifications/notifications.controller";
 import { NotificationsService } from "@/modules/notifications/notifications.service";
+import { RealtimeModule } from "@/modules/realtime/realtime.module";
 
 /*
   Exported: AdminKycService writes into this service from the admin realm,
@@ -12,7 +13,7 @@ import { NotificationsService } from "@/modules/notifications/notifications.serv
   or anything else customer-side.
 */
 @Module({
-  imports: [PrismaModule, AuthModule],
+  imports: [PrismaModule, AuthModule, RealtimeModule],
   controllers: [NotificationsController],
   providers: [NotificationsService],
   exports: [NotificationsService],

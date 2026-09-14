@@ -170,6 +170,11 @@ export const tradeView = z.object({
   closeReason: z.string().nullable(),
 
   dispute: tradeDisputeSummary.nullable(),
+  /** Where the chat stands for this party: the newest message, and how many they have not read. */
+  chat: z.object({
+    lastSeq: z.number().int().nonnegative(),
+    unread: z.number().int().nonnegative(),
+  }),
   actions: tradeActions,
 
   createdAt: z.string(),

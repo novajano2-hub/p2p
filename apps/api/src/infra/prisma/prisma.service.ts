@@ -1,5 +1,6 @@
 import { createPrismaClient, type Prisma, type PrismaClient } from "@abay/database";
 import { Inject, Injectable, type OnModuleDestroy } from "@nestjs/common";
+import { PinoLogger } from "nestjs-pino";
 
 import { withTransactionScope } from "@/common/io/transaction-scope";
 import { ENV } from "@/config/config.module";
@@ -18,7 +19,11 @@ import { type Env } from "@/config/env";
 export class PrismaService implements OnModuleDestroy {
   readonly client: PrismaClient;
 
-  constructor(@Inject(ENV) env: Env) {
+  constructor(
+    @Inject(ENV) env: Env,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(PrismaService.name);
     this.client = createPrismaClient(
       env.DATABASE_URL,
       env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
@@ -31,7 +36,8 @@ export class PrismaService implements OnModuleDestroy {
     Every transaction that touches money should open through here rather than
     through client.$transaction directly: the scope it enters is what lets an
     outbound HTTP or storage call refuse to run while the row locks are held
-    (AT-19, common/io/transaction-scope.ts). The name is for the error message
+    (AT-19, common/io/transaction-scope.ts), and what carries the work that
+    waits for the commit (afterCommit). The name is for the error message
     that call would raise, and for nothing else.
 
     The timeouts are longer than Prisma's defaults on purpose. A posting that
@@ -44,11 +50,19 @@ export class PrismaService implements OnModuleDestroy {
     work: (tx: Prisma.TransactionClient) => Promise<T>,
     options: { maxWait?: number; timeout?: number } = {},
   ): Promise<T> {
-    return withTransactionScope(name, () =>
-      this.client.$transaction(work, {
-        maxWait: options.maxWait ?? 10_000,
-        timeout: options.timeout ?? 30_000,
-      }),
+    return withTransactionScope(
+      name,
+      () =>
+        this.client.$transaction(work, {
+          maxWait: options.maxWait ?? 10_000,
+          timeout: options.timeout ?? 30_000,
+        }),
+      (error) => {
+        this.logger.warn(
+          { event: "transaction.after_commit_failed", transaction: name, err: error },
+          "work scheduled for after a commit failed; the commit itself stands",
+        );
+      },
     );
   }
 

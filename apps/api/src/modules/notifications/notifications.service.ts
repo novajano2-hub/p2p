@@ -1,15 +1,22 @@
-import { type NotificationsResponse, type NotificationType } from "@abay/contracts";
-import { type Prisma } from "@abay/database";
+import {
+  type NotificationItem,
+  type NotificationsResponse,
+  type NotificationType,
+} from "@abay/contracts";
+import { type Notification, type Prisma } from "@abay/database";
 import { Injectable } from "@nestjs/common";
 
 import { AppError } from "@/common/errors/app-error";
+import { afterCommit } from "@/common/io/transaction-scope";
 import { PrismaService } from "@/infra/prisma/prisma.service";
+import { RealtimeService, topics } from "@/modules/realtime/realtime.service";
 
 /*
   A customer's own notifications: what they were told, and whether they have
-  read it. Nothing here is created by a customer's own request - the only
-  writer today is AdminKycService, deciding a submission - so the service a
-  customer's session reaches is read-only except for marking something read.
+  read it. Nothing here is created by a customer's own request - the writers
+  are the admin realm deciding a submission, and the deposit, withdrawal and
+  trade engines - so the service a customer's session reaches is read-only
+  except for marking something read.
 */
 
 /** A Prisma client or an open transaction. The writer passes the transaction. */
@@ -20,7 +27,10 @@ const LIST_LIMIT = 50;
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeService,
+  ) {}
 
   async list(userId: string): Promise<NotificationsResponse> {
     const [notifications, unreadCount] = await Promise.all([
@@ -32,18 +42,7 @@ export class NotificationsService {
       this.prisma.client.notification.count({ where: { userId, readAt: null } }),
     ]);
 
-    return {
-      notifications: notifications.map((notification) => ({
-        id: notification.id,
-        type: notification.type,
-        title: notification.title,
-        body: notification.body,
-        link: notification.link,
-        readAt: notification.readAt?.toISOString() ?? null,
-        createdAt: notification.createdAt.toISOString(),
-      })),
-      unreadCount,
-    };
+    return { notifications: notifications.map(toItem), unreadCount };
   }
 
   /** Marks one as read. Scoped to its owner, so an id is never enough on its own. */
@@ -73,14 +72,15 @@ export class NotificationsService {
   /**
    * Writes one. Pass the transaction when it belongs to a change being made
    * in one - a KYC decision and the notification telling the customer about
-   * it commit together or neither does.
+   * it commit together or neither does. The customer's open sockets hear of
+   * it once it is durable, so a bell can ring without a refetch.
    */
   async notify(
     input: { userId: string; type: NotificationType; title: string; body: string; link?: string },
     tx?: Writer,
   ): Promise<void> {
     const writer = tx ?? this.prisma.client;
-    await writer.notification.create({
+    const row = await writer.notification.create({
       data: {
         userId: input.userId,
         type: input.type,
@@ -89,5 +89,23 @@ export class NotificationsService {
         link: input.link ?? null,
       },
     });
+    await afterCommit(() =>
+      this.realtime.publish({
+        topics: [topics.user(input.userId)],
+        frame: { type: "notification", notification: toItem(row) },
+      }),
+    );
   }
+}
+
+function toItem(row: Notification): NotificationItem {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    body: row.body,
+    link: row.link,
+    readAt: row.readAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
 }

@@ -203,9 +203,17 @@ describe("the mock custody provider", () => {
 });
 
 describe("the outbox", () => {
+  // Dated at the epoch, so it is claimed ahead of whatever earlier test
+  // files left pending: nothing in the API process drains the outbox, and
+  // a long batch leaves rows there that are many minutes old.
   const enqueue = (type: string, id: string) =>
     prisma.transaction("test-enqueue", (tx) =>
-      outbox.enqueue(tx, { type, payload: { id }, correlationId: uniq("corr") }),
+      outbox.enqueue(tx, {
+        type,
+        payload: { id },
+        correlationId: uniq("corr"),
+        availableAt: new Date(0),
+      }),
     );
 
   it("sends what committed, once, outside any transaction; and nothing that rolled back", async () => {

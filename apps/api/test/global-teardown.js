@@ -141,6 +141,16 @@ module.exports = async function teardown() {
         const dir = path.join(root, id);
         if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
       }
+      // Chat images are filed under the trade, not the customer.
+      const tradeRoot = path.resolve(
+        process.cwd(),
+        process.env.STORAGE_LOCAL_DIR ?? ".storage",
+        "trades",
+      );
+      for (const trade of testTrades) {
+        const dir = path.join(tradeRoot, trade.id);
+        if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+      }
 
       // Sweeps before customers: a sweep holds its attribution address with
       // onDelete: Restrict, because a swept address is not something a cascade
