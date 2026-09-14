@@ -63,6 +63,21 @@ npm run dev:worker -w api   # chain observer, deposit confirmer, withdrawal
                             # processor, treasury sweeps, outbox publisher
 ```
 
+While the chain is mocked, `chain` is the hand that moves it. Nothing in a
+deposit or a withdrawal can reach this - the domain works against whatever
+chain it is given - so it is the only way to make money arrive in development.
+It refuses to run against a database that is not local.
+
+```bash
+npm run chain -w @abay/database -- mint <address> <usdt>   # money arrives
+npm run chain -w @abay/database -- advance                 # past finality
+npm run chain -w @abay/database -- show <address>          # what is there
+npm run chain -w @abay/database -- reorg <txHash>          # take it back
+```
+
+Verification codes are not emailed in development: with no `RESEND_API_KEY` the
+message is written to the API log, code and all.
+
 Database migrations use the schema-owning role (`DIRECT_DATABASE_URL`); the running API uses
 a role that cannot alter the schema (`DATABASE_URL`). Both are created by
 `packages/database/sql/roles.sql` on first `docker compose up`.

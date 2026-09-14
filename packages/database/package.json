@@ -20,7 +20,8 @@
     "migrate:status": "prisma migrate status",
     "migrate:check": "node scripts/migrate-check.mjs",
     "studio": "prisma studio",
-    "admin": "node scripts/admin.mjs"
+    "admin": "node scripts/admin.mjs",
+    "chain": "node scripts/chain.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
