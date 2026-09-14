@@ -72,6 +72,11 @@ model User {
   deposits        Deposit[]
   withdrawals     Withdrawal[]
   idempotencyKeys IdempotencyKey[]
+  paymentMethods  PaymentMethod[]
+  offers          Offer[]
+  tradesAsBuyer   Trade[]         @relation("TradeBuyer")
+  tradesAsSeller  Trade[]         @relation("TradeSeller")
+  traderStats     TraderStats?
 
   @@map("users")
 }
@@ -119,6 +124,14 @@ enum NotificationType {
   WITHDRAWAL_SENT
   /// A withdrawal did not go ahead; the hold was released back to available.
   WITHDRAWAL_RETURNED
+  /// Phase 4 - trades. Each links to the trade it is about.
+  TRADE_OPENED
+  TRADE_PAID
+  TRADE_RELEASED
+  TRADE_CANCELLED
+  TRADE_EXPIRED
+  DISPUTE_OPENED
+  DISPUTE_RESOLVED
 
   @@map("notification_type")
 }
@@ -1261,4 +1274,460 @@ model MockCustodyDirective {
   createdAt DateTime            @default(now())
 
   @@map("mock_custody_directives")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: the marketplace. An offer is an advertisement; a trade is one
+// acceptance of it, with the USDT side held in a per-trade escrow account
+// (ADR-0004) and the birr side settled entirely outside the platform, which
+// is why a trade carries the seller's payment instructions and a chat, and
+// why a dispute exists at all (docs/architecture/state-machines.md 3,
+// threat model B8). Amounts are millionths of a USDT; birr is santim,
+// hundredths, and never enters the ledger (ledger-taxonomy.md 7).
+// ---------------------------------------------------------------------------
+
+/// The rails birr actually moves on in Ethiopia: the two mobile wallets, the
+/// M-Pesa launched by Safaricom Ethiopia, and an ordinary bank transfer.
+enum PaymentMethodKind {
+  TELEBIRR
+  CBE_BIRR
+  MPESA
+  BANK_TRANSFER
+
+  @@map("payment_method_kind")
+}
+
+enum PaymentMethodStatus {
+  ACTIVE
+  /// Retired by its owner. Kept because trades snapshot from it and history
+  /// must still say where a buyer was told to pay.
+  ARCHIVED
+
+  @@map("payment_method_status")
+}
+
+/// Where a seller receives birr. The details - account holder, account or
+/// phone number, branch - are RESTRICTED (data-classification.md): held as
+/// one AES-256-GCM document under FIELD_ENCRYPTION_KEY, decrypted for the
+/// owner, for the counterparty of an open trade, and for a dispute resolver
+/// with an audit row. Nothing else reads them.
+model PaymentMethod {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  kind PaymentMethodKind
+  /// For BANK_TRANSFER, the bank's code from the contracts' list ("CBE",
+  /// "AWASH"). Null for the mobile wallets, which are their own institution.
+  bankCode String? @map("bank_code")
+
+  /// What lists show: the rail and the last digits, "Telebirr ····4821".
+  /// Composed by the service from data that is not secret; never typed.
+  label String
+  /// The last digits of the number, so two methods can be told apart in a
+  /// list without decrypting either.
+  hint  String
+
+  detailsEncrypted String @map("details_encrypted")
+
+  status     PaymentMethodStatus @default(ACTIVE)
+  archivedAt DateTime?           @map("archived_at")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  offers OfferPaymentMethod[]
+  trades Trade[]
+
+  @@index([userId, status])
+  @@map("payment_methods")
+}
+
+/// From the publisher's side: a SELL offer sells their USDT for birr, a BUY
+/// offer buys USDT with their birr. Whoever gives up USDT funds the escrow
+/// (ADR-0004), so on a BUY offer that is the taker.
+enum OfferSide {
+  BUY
+  SELL
+
+  @@map("offer_side")
+}
+
+enum OfferStatus {
+  ACTIVE
+  /// Taken off the marketplace by its owner; can come back.
+  PAUSED
+  /// Gone for good. Trades already open against it carry on regardless.
+  CLOSED
+
+  @@map("offer_status")
+}
+
+/// An advertisement. Nothing is locked by posting one: the escrow is taken
+/// from the seller when a trade is created, so a SELL offer is shown only
+/// while its owner can still fund at least its minimum.
+model Offer {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  side  OfferSide
+  asset LedgerAsset
+  /// ISO 4217. One currency at launch; a column so that a second one is a
+  /// value rather than a migration.
+  fiat  String      @default("ETB")
+
+  /// Santim per one USDT. Fixed: there is no reference index for the birr
+  /// that a floating price could honestly follow.
+  priceSantim BigInt @map("price_santim")
+
+  /// Millionths of a USDT. `total` is what was posted; `remaining` is what
+  /// trades have not yet taken - decremented when a trade opens, restored
+  /// when one is cancelled, expires or is refunded.
+  totalAmount     BigInt @map("total_amount")
+  remainingAmount BigInt @map("remaining_amount")
+
+  /// What one trade may be worth, in santim: the limits a taker sees.
+  minSantim BigInt @map("min_santim")
+  maxSantim BigInt @map("max_santim")
+
+  /// How long the buyer has to pay before the trade expires (state-machines.md 3).
+  paymentWindowMinutes Int @map("payment_window_minutes")
+
+  /// Shown to a taker before they commit. Free text, never instructions
+  /// about where to pay - those come from the payment method, at trade time.
+  terms     String?
+  /// Posted into the trade's chat, as the publisher, the moment a trade opens.
+  autoReply String? @map("auto_reply")
+
+  /// Who may take it. Both are checked when a trade is created, not when the
+  /// list is shown, because the list is only a suggestion.
+  requireVerified    Boolean @default(false) @map("require_verified")
+  minCompletedTrades Int     @default(0) @map("min_completed_trades")
+
+  status OfferStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  paymentMethods OfferPaymentMethod[]
+  trades         Trade[]
+
+  @@index([status, side, priceSantim])
+  @@index([userId, status])
+  @@map("offers")
+}
+
+/// A rail an offer accepts. On a SELL offer each row names one of the
+/// seller's own methods - where the buyer will be told to pay. On a BUY
+/// offer only the kind is named: the taker is the seller and will pay in
+/// through whichever of their own methods matches.
+model OfferPaymentMethod {
+  id      String @id @default(uuid(7))
+  offerId String @map("offer_id")
+  offer   Offer  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  kind PaymentMethodKind
+
+  paymentMethodId String?        @map("payment_method_id")
+  paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: Cascade)
+
+  @@index([offerId])
+  @@index([paymentMethodId])
+  @@map("offer_payment_methods")
+}
+
+/// The trade machine (state-machines.md 3). CREATED is transient: the
+/// escrow lock and the row commit together, so the first state a row is
+/// ever seen in is AWAITING_FIAT_PAYMENT.
+enum TradeStatus {
+  AWAITING_FIAT_PAYMENT
+  BUYER_MARKED_PAID
+  COMPLETED
+  CANCELLED
+  EXPIRED
+  DISPUTED
+  REFUNDED
+
+  @@map("trade_status")
+}
+
+/// One acceptance of an offer, from escrow lock to settlement. Everything a
+/// taker agreed to is copied here at creation - the price, the amount, the
+/// payment instructions - so that editing the offer or the payment method
+/// afterwards changes nothing about a trade already open (threat model B8.6).
+model Trade {
+  id String @id @default(uuid(7))
+
+  offerId   String    @map("offer_id")
+  offer     Offer     @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  offerSide OfferSide @map("offer_side")
+
+  buyerId  String @map("buyer_id")
+  buyer    User   @relation("TradeBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  sellerId String @map("seller_id")
+  seller   User   @relation("TradeSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+
+  asset LedgerAsset
+  /// Millionths. What the seller's escrow holds until settlement.
+  amount BigInt
+  /// Millionths. The platform's cut, taken from the escrow at release and paid
+  /// by the buyer (JE-4). Zero at launch; a leg is posted regardless.
+  fee    BigInt @default(0)
+
+  fiat        String @default("ETB")
+  priceSantim BigInt @map("price_santim")
+  /// Santim the buyer pays the seller, outside the platform. Reference data
+  /// only: the platform never holds it (ledger-taxonomy.md 7).
+  fiatSantim  BigInt @map("fiat_santim")
+
+  /// The seller's receiving method for this trade, and its instructions as
+  /// they were the moment the trade opened - encrypted the same way the
+  /// method itself is. The label and kind are plain so a list can name the
+  /// rail without decrypting anything.
+  paymentMethodId          String?           @map("payment_method_id")
+  paymentMethod            PaymentMethod?    @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  paymentKind              PaymentMethodKind @map("payment_kind")
+  paymentLabel             String            @map("payment_label")
+  paymentSnapshotEncrypted String            @map("payment_snapshot_encrypted")
+
+  status TradeStatus @default(AWAITING_FIAT_PAYMENT)
+
+  /// Database time, compared with the database's now() by the expirer: with
+  /// several processes and their several clocks, whether a trade expired is
+  /// a question about money and gets one answer.
+  paymentDeadline DateTime  @map("payment_deadline")
+  paidAt          DateTime? @map("paid_at")
+  /// Set when the trade reaches a terminal state, whichever one.
+  closedAt        DateTime? @map("closed_at")
+  /// Why it closed, in words for the person it happened to.
+  closeReason     String?   @map("close_reason")
+
+  /// JE-3, and the entry that emptied the escrow: JE-4, JE-5 or JE-6.
+  escrowTransactionId     String? @map("escrow_transaction_id")
+  settlementTransactionId String? @map("settlement_transaction_id")
+
+  /// The chat's message counter. Bumped under the trade's row lock, so every
+  /// message has one place in one order and a client can ask for "after N".
+  chatSeq Int @default(0) @map("chat_seq")
+
+  /// The Idempotency-Key the taker's client sent (ADR-0007).
+  clientKey     String @map("client_key")
+  correlationId String @map("correlation_id")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events   TradeEvent[]
+  messages TradeMessage[]
+  reads    TradeChatRead[]
+  dispute  Dispute?
+
+  @@index([buyerId, createdAt])
+  @@index([sellerId, createdAt])
+  @@index([status, paymentDeadline])
+  @@index([offerId, status])
+  @@index([correlationId])
+  @@map("trades")
+}
+
+enum TradeEventKind {
+  CREATED
+  MARKED_PAID
+  CANCELLED
+  EXPIRED
+  RELEASED
+  DISPUTE_OPENED
+  DISPUTE_WITHDRAWN
+  DISPUTE_RESOLVED
+
+  @@map("trade_event_kind")
+}
+
+/// The trade's timeline: every change of state, who caused it, and when.
+/// Written in the same transaction as the change, so the timeline a dispute
+/// resolver reads is complete by construction (AT-8). Also what the chat
+/// shows between the messages, as system notices.
+model TradeEvent {
+  id      String @id @default(uuid(7))
+  tradeId String @map("trade_id")
+  trade   Trade  @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+
+  kind TradeEventKind
+
+  /// The party who acted, or the administrator, or neither for the expirer.
+  actorUserId  String? @map("actor_user_id")
+  actorAdminId String? @map("actor_admin_id")
+  data         Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([tradeId, createdAt])
+  @@map("trade_events")
+}
+
+enum TradeMessageKind {
+  TEXT
+  IMAGE
+
+  @@map("trade_message_kind")
+}
+
+/// One message between the two parties. `seq` is the trade's own counter,
+/// assigned under the trade's row lock: the order is decided once, in the
+/// database, and a client that reconnects asks for everything after the
+/// last one it saw. `clientMessageId` is the client's own idempotency key,
+/// so a retry over a bad connection is the same message and not a repeat.
+model TradeMessage {
+  id      String @id @default(uuid(7))
+  tradeId String @map("trade_id")
+  trade   Trade  @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+
+  seq      Int
+  senderId String @map("sender_id")
+
+  kind TradeMessageKind
+  body String?
+
+  /// For an IMAGE: the object store key, and what was sniffed from the bytes.
+  storageKey  String? @unique @map("storage_key")
+  contentType String? @map("content_type")
+  sizeBytes   Int?    @map("size_bytes")
+
+  clientMessageId String @map("client_message_id")
+
+  createdAt DateTime @default(now())
+
+  @@unique([tradeId, seq])
+  @@unique([tradeId, senderId, clientMessageId])
+  @@map("trade_messages")
+}
+
+/// How far each party has read. One row per party per trade.
+model TradeChatRead {
+  tradeId String @map("trade_id")
+  trade   Trade  @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  userId  String @map("user_id")
+
+  lastReadSeq Int      @default(0) @map("last_read_seq")
+  updatedAt   DateTime @updatedAt
+
+  @@id([tradeId, userId])
+  @@map("trade_chat_reads")
+}
+
+enum DisputeStatus {
+  OPEN
+  /// Withdrawn by whoever opened it; the trade goes back to waiting for the seller.
+  WITHDRAWN
+  RESOLVED
+
+  @@map("dispute_status")
+}
+
+/// Why a party appealed, as a closed set a resolver can filter and count by.
+enum DisputeReason {
+  /// The seller: the buyer marked paid and nothing arrived.
+  PAYMENT_NOT_RECEIVED
+  /// The buyer: paid, and the seller will not release.
+  PAYMENT_NOT_RELEASED
+  /// The seller: something arrived, and not the agreed amount.
+  WRONG_AMOUNT
+  /// The seller: the payer's name is not the buyer's (threat model B8.4).
+  THIRD_PARTY_PAYMENT
+  SUSPECTED_FRAUD
+  OTHER
+
+  @@map("dispute_reason")
+}
+
+enum DisputeOutcome {
+  /// The buyer paid: escrow to the buyer (JE-6).
+  RELEASE_TO_BUYER
+  /// The buyer did not: escrow back to the seller (JE-5).
+  REFUND_TO_SELLER
+
+  @@map("dispute_outcome")
+}
+
+/// An appeal on a trade the buyer says they paid. One per trade: a second
+/// disagreement is the same disagreement. Resolved only by an administrator
+/// holding DISPUTE_RESOLVER who is not a party (AT-8), or ended by the seller
+/// releasing after all, or withdrawn by whoever opened it.
+model Dispute {
+  id      String @id @default(uuid(7))
+  tradeId String @unique @map("trade_id")
+  trade   Trade  @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+
+  openedById  String        @map("opened_by_id")
+  reason      DisputeReason
+  description String
+
+  status  DisputeStatus   @default(OPEN)
+  outcome DisputeOutcome?
+
+  /// The administrator who decided, copied down as the audit event copies it,
+  /// and why - in their own words, for the parties.
+  resolvedById    String?   @map("resolved_by_id")
+  resolvedByEmail String?   @map("resolved_by_email")
+  resolutionNote  String?   @map("resolution_note")
+  resolvedAt      DateTime? @map("resolved_at")
+  withdrawnAt     DateTime? @map("withdrawn_at")
+
+  correlationId String @map("correlation_id")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  evidence DisputeEvidence[]
+
+  @@index([status, createdAt])
+  @@map("disputes")
+}
+
+/// A screenshot or statement a party attached. RESTRICTED: private bucket,
+/// read only through the dispute it belongs to, by its parties and the
+/// resolver (threat model B5.2).
+model DisputeEvidence {
+  id        String  @id @default(uuid(7))
+  disputeId String  @map("dispute_id")
+  dispute   Dispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  uploadedById String  @map("uploaded_by_id")
+  storageKey   String  @unique @map("storage_key")
+  contentType  String  @map("content_type")
+  sizeBytes    Int     @map("size_bytes")
+  note         String?
+
+  createdAt DateTime @default(now())
+
+  @@index([disputeId])
+  @@map("dispute_evidence")
+}
+
+/// What the marketplace shows beside a name: how many trades, how many went
+/// through, how quickly they pay and release. Counters maintained in the
+/// same transaction as the trade transition that moves them, so they cannot
+/// disagree with the trades. Every duration is milliseconds.
+model TraderStats {
+  userId String @id @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Trades entered, on either side.
+  tradesTotal     Int @default(0) @map("trades_total")
+  tradesCompleted Int @default(0) @map("trades_completed")
+  /// Trades this account let fail: cancelled or expired while it was the
+  /// buyer, or a dispute decided against it.
+  tradesFailed    Int @default(0) @map("trades_failed")
+
+  /// As a seller: from the buyer marking paid to the release.
+  releaseTotalMs BigInt @default(0) @map("release_total_ms")
+  releaseCount   Int    @default(0) @map("release_count")
+  /// As a buyer: from the trade opening to marking paid.
+  payTotalMs BigInt @default(0) @map("pay_total_ms")
+  payCount   Int    @default(0) @map("pay_count")
+
+  updatedAt DateTime @updatedAt
+
+  @@map("trader_stats")
 }

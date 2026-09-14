@@ -18,5 +18,7 @@ export * from "./ledger";
 export * from "./wallet";
 export * from "./deposits";
 export * from "./withdrawals";
+export * from "./payment-methods";
+export * from "./offers";
 export * from "./reconciliation";
 export * from "./auth";
