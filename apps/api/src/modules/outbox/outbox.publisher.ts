@@ -24,6 +24,8 @@ const MAX_BATCHES_PER_TICK = 10;
 export class OutboxPublisher implements OnModuleInit, OnModuleDestroy {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  /** The pass running right now, so that shutdown can wait for it. */
+  private inFlight: Promise<void> | null = null;
 
   constructor(
     private readonly outbox: OutboxService,
@@ -34,13 +36,23 @@ export class OutboxPublisher implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): void {
-    this.timer = setInterval(() => void this.tick(), INTERVAL_MS);
-    void this.tick();
+    this.timer = setInterval(() => void this.start(), INTERVAL_MS);
+    void this.start();
   }
 
-  onModuleDestroy(): void {
+  /** No new pass starts, and the one in flight finishes before the process lets go of its connections. */
+  async onModuleDestroy(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    await this.inFlight;
+  }
+
+  /** A pass, remembered while it runs; a timer firing during one joins it rather than starting another. */
+  private start(): Promise<void> {
+    this.inFlight ??= this.tick().finally(() => {
+      this.inFlight = null;
+    });
+    return this.inFlight;
   }
 
   async tick(): Promise<void> {
