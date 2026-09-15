@@ -138,9 +138,16 @@ describe("the trade chat", () => {
     });
 
     const sent = await buyer.api
-      .post(`/v1/trades/${trade.id}/messages`, { clientMessageId: "m-0001-aaaa", body: "  Paid via Telebirr, ref 7781  " })
+      .post(`/v1/trades/${trade.id}/messages`, {
+        clientMessageId: "m-0001-aaaa",
+        body: "  Paid via Telebirr, ref 7781  ",
+      })
       .expect(201);
-    expect(sent.body).toMatchObject({ seq: 2, senderId: buyer.userId, body: "Paid via Telebirr, ref 7781" });
+    expect(sent.body).toMatchObject({
+      seq: 2,
+      senderId: buyer.userId,
+      body: "Paid via Telebirr, ref 7781",
+    });
 
     // The same client id again is the same message, not a second one.
     const again = await buyer.api
@@ -185,7 +192,11 @@ describe("the trade chat", () => {
     const stranger = await customer();
 
     const notImage = await buyer.api
-      .raw(`/v1/trades/${trade.id}/messages/images/img-0001-aaaa`, "image/png", Buffer.from("not really"))
+      .raw(
+        `/v1/trades/${trade.id}/messages/images/img-0001-aaaa`,
+        "image/png",
+        Buffer.from("not really"),
+      )
       .expect(400);
     expect(notImage.body.error.code).toBe("VALIDATION_FAILED");
 
@@ -205,7 +216,9 @@ describe("the trade chat", () => {
       .expect(201);
     expect(again.body.id).toBe(sent.body.id);
 
-    const bytes = await seller.api.get(`/v1/trades/${trade.id}/messages/${sent.body.id}/image`).expect(200);
+    const bytes = await seller.api
+      .get(`/v1/trades/${trade.id}/messages/${sent.body.id}/image`)
+      .expect(200);
     expect(bytes.headers["content-type"]).toMatch(/^image\/png/);
     expect(bytes.body.length).toBe(2_048);
 
@@ -229,7 +242,10 @@ describe("the trade chat", () => {
     // Cancelled, and still talking: the money may have crossed anyway.
     await buyer.api.post(`/v1/trades/${trade.id}/cancel`).expect(200);
     await seller.api
-      .post(`/v1/trades/${trade.id}/messages`, { clientMessageId: "m-0004-aaaa", body: "no worries" })
+      .post(`/v1/trades/${trade.id}/messages`, {
+        clientMessageId: "m-0004-aaaa",
+        body: "no worries",
+      })
       .expect(201);
     expect((await messages(buyer.api, trade.id).expect(200)).body.open).toBe(true);
 
@@ -255,7 +271,10 @@ describe("the trade chat", () => {
       .post(`/v1/trades/${trade.id}/messages`, { clientMessageId: "m-0006-aaaa", body: "   " })
       .expect(400);
     await buyer.api
-      .post(`/v1/trades/${trade.id}/messages`, { clientMessageId: "m-0007-aaaa", body: "x".repeat(2_001) })
+      .post(`/v1/trades/${trade.id}/messages`, {
+        clientMessageId: "m-0007-aaaa",
+        body: "x".repeat(2_001),
+      })
       .expect(400);
     await buyer.api
       .post(`/v1/trades/${trade.id}/messages`, { clientMessageId: "no", body: "hello" })

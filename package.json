@@ -33,5 +33,9 @@
     "prettier-plugin-tailwindcss": "0.8.1",
     "turbo": "2.10.12",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2",
+    "fastify": "5.12.4"
   }
 }

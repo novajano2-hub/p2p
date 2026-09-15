@@ -37,7 +37,9 @@ export const sendMessageRequest = z.object({
     .string()
     .trim()
     .min(1, { error: "Write something first." })
-    .max(CHAT_MESSAGE_MAX_LENGTH, { error: `Keep it under ${CHAT_MESSAGE_MAX_LENGTH} characters.` }),
+    .max(CHAT_MESSAGE_MAX_LENGTH, {
+      error: `Keep it under ${CHAT_MESSAGE_MAX_LENGTH} characters.`,
+    }),
 });
 export type SendMessageRequest = z.infer<typeof sendMessageRequest>;
 

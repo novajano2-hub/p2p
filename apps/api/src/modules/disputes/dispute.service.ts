@@ -67,7 +67,10 @@ interface Context {
 }
 
 /** The two people a dispute is between. */
-interface Parties { buyerId: string; sellerId: string }
+interface Parties {
+  buyerId: string;
+  sellerId: string;
+}
 
 const EVIDENCE_WITH = {
   evidence: { orderBy: { createdAt: "asc" as const } },

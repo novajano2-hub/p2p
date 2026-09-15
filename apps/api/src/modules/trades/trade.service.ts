@@ -1176,12 +1176,14 @@ export function statsView(
 > {
   const total = stats?.tradesTotal ?? 0;
   const completed = stats?.tradesCompleted ?? 0;
+  // Over finished trades only: one still running is not a failure yet.
+  const finished = completed + (stats?.tradesFailed ?? 0);
   const average = (totalMs: bigint, count: number) =>
     count > 0 ? Math.round(Number(totalMs) / count / 1_000) : null;
   return {
     tradesTotal: total,
     tradesCompleted: completed,
-    completionRate: total > 0 ? Math.round((completed / total) * 100) : null,
+    completionRate: finished > 0 ? Math.round((completed / finished) * 100) : null,
     avgReleaseSeconds: stats ? average(stats.releaseTotalMs, stats.releaseCount) : null,
     avgPaySeconds: stats ? average(stats.payTotalMs, stats.payCount) : null,
   };

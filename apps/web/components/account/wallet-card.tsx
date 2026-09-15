@@ -1,7 +1,7 @@
 "use client";
 
 import { Eye, EyeSlash } from "@phosphor-icons/react";
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { Panel } from "@/components/app/panel";
 import { ButtonLink } from "@/components/ui/button";
@@ -12,30 +12,25 @@ import {
   setBalanceHidden,
   subscribeBalanceHidden,
 } from "@/lib/balance-visibility";
+import { walletRoutes } from "@/lib/app-nav";
 import { cn } from "@/lib/cn";
+import { formatMicro } from "@/lib/money";
+import { walletClient, type WalletBalance } from "@/lib/wallet/client";
 
 /*
   The balance card. Three figures a customer needs at a glance: what they can
-  trade with now, what is locked in escrow for trades in progress, and roughly
-  what that is worth in birr. The ledger that fills these in is Phase 2; until
-  then a new account's true balance is zero, and the card says so rather than
-  inventing a number.
+  trade with now, what is locked in escrow for trades in progress, and the
+  total. All three come from the ledger on every load, the same read the
+  wallet page makes; there is no cached balance column anywhere in this
+  system, on purpose.
+
+  No estimated birr value. There is no price feed, and a figure beside
+  somebody's balance that is quietly wrong is worse than no figure at all.
 
   The eye toggle masks every figure on the card at once and remembers the
   choice (lib/balance-visibility.ts), the way an exchange app does before a
   screen-share or handing the phone to someone else.
-
-  The balance itself is set in the sans face, not the mono one used for
-  identifiers elsewhere in the app: a large bold number with tabular figures
-  reads the way a balance does on the exchanges this audience already knows,
-  where the amount is typographically the loudest thing on the page.
 */
-
-const stats = [
-  { label: "Available", value: "0.00", unit: "USDT" },
-  { label: "In escrow", value: "0.00", unit: "USDT" },
-  { label: "Estimated value", value: "—", unit: "ETB" },
-] as const;
 
 export function WalletCard({ className }: { className?: string | undefined }) {
   const hidden = useSyncExternalStore(
@@ -43,6 +38,26 @@ export function WalletCard({ className }: { className?: string | undefined }) {
     readBalanceHidden,
     getServerBalanceHidden,
   );
+  const [balance, setBalance] = useState<WalletBalance | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void walletClient.balance().then((result) => {
+      if (live && result.ok) setBalance(result.balance);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const figure = (value: string | undefined): string =>
+    hidden ? MASKED_AMOUNT : value === undefined ? "—" : formatMicro(value);
+
+  const stats = [
+    { label: "Available", value: figure(balance?.available) },
+    { label: "In escrow", value: figure(balance?.escrowed) },
+    { label: "Withdrawing", value: figure(balance?.pendingWithdrawal) },
+  ];
 
   return (
     <Panel className={className}>
@@ -67,16 +82,16 @@ export function WalletCard({ className }: { className?: string | undefined }) {
                 hidden && "tracking-widest",
               )}
             >
-              {hidden ? MASKED_AMOUNT : "0.00"}
+              {figure(balance?.total)}
             </span>
             <span className="text-muted-foreground text-base font-medium">USDT</span>
           </p>
         </div>
         <div className="flex gap-2">
-          <ButtonLink href="/wallet" arrow={false}>
+          <ButtonLink href={walletRoutes.deposit} arrow={false}>
             Deposit
           </ButtonLink>
-          <ButtonLink href="/wallet" variant="secondary" arrow={false}>
+          <ButtonLink href={walletRoutes.withdraw} variant="secondary" arrow={false}>
             Withdraw
           </ButtonLink>
         </div>
@@ -86,19 +101,18 @@ export function WalletCard({ className }: { className?: string | undefined }) {
         {stats.map((stat) => (
           <div key={stat.label}>
             <dt className="text-muted-foreground text-[12px]">{stat.label}</dt>
-            <dd className="mt-1 flex items-baseline gap-1">
-              <span className="text-foreground font-sans text-lg font-bold tabular-nums">
-                {hidden ? MASKED_AMOUNT : stat.value}
-              </span>
-              <span className="text-muted-foreground text-[12px]">{stat.unit}</span>
+            <dd
+              className={cn(
+                "text-foreground mt-0.5 text-[15px] font-medium tabular-nums",
+                hidden && "tracking-widest",
+              )}
+            >
+              {stat.value}{" "}
+              <span className="text-muted-foreground text-[12px] font-normal">USDT</span>
             </dd>
           </div>
         ))}
       </dl>
-
-      <p className="text-muted-foreground mt-4 text-[12px] leading-relaxed">
-        Deposits and withdrawals open once custody is connected. Nothing can be moved yet.
-      </p>
     </Panel>
   );
 }

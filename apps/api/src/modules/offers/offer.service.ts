@@ -87,6 +87,7 @@ interface MarketRow {
   available_santim: bigint;
   trades_total: number | null;
   trades_completed: number | null;
+  trades_failed: number | null;
   release_total_ms: bigint | null;
   release_count: number | null;
   pay_total_ms: bigint | null;
@@ -337,7 +338,7 @@ export class OfferService {
                CASE WHEN o.side = 'SELL'
                     THEN LEAST(o.remaining_amount, COALESCE(b.balance, 0))
                     ELSE o.remaining_amount END AS available,
-               s.trades_total, s.trades_completed,
+               s.trades_total, s.trades_completed, s.trades_failed,
                s.release_total_ms, s.release_count, s.pay_total_ms, s.pay_count
           FROM offers o
           JOIN users u ON u.id = o.user_id
@@ -373,6 +374,8 @@ export class OfferService {
         row.max_santim < row.available_santim ? row.max_santim : row.available_santim;
       const total = row.trades_total ?? 0;
       const completed = row.trades_completed ?? 0;
+      // Over finished trades only: one still running is not a failure yet.
+      const finished = completed + (row.trades_failed ?? 0);
       return {
         id: row.id,
         side: row.side,
@@ -394,7 +397,7 @@ export class OfferService {
           verified: row.kyc_status === "APPROVED",
           tradesTotal: total,
           tradesCompleted: completed,
-          completionRate: total > 0 ? Math.round((completed / total) * 100) : null,
+          completionRate: finished > 0 ? Math.round((completed / finished) * 100) : null,
           avgReleaseSeconds: average(row.release_total_ms, row.release_count),
           avgPaySeconds: average(row.pay_total_ms, row.pay_count),
         },
