@@ -296,8 +296,12 @@ const wrap =
   <T>(result: { ok: true; data: T } | Failure): Result<{ [P in K]: T }> =>
     result.ok ? ({ ok: true, [key]: result.data } as { ok: true } & { [P in K]: T }) : result;
 
-const post = <T>(path: string, body: unknown, schema: z.ZodType<T>, headers?: Record<string, string>) =>
-  send(path, schema, { method: "POST", body: JSON.stringify(body), headers: headers ?? {} });
+const post = <T>(
+  path: string,
+  body: unknown,
+  schema: z.ZodType<T>,
+  headers?: Record<string, string>,
+) => send(path, schema, { method: "POST", body: JSON.stringify(body), headers: headers ?? {} });
 
 /** An image as the raw request body, under its own type, with the longer timeout a photo needs. */
 const upload = <T>(path: string, file: Blob, schema: z.ZodType<T>) =>
@@ -320,8 +324,12 @@ const query = (params: Record<string, string | number | undefined>): string => {
 export const marketClient = {
   /* payment methods */
   paymentMethods: () =>
-    send("/v1/payment-methods", z.object({ paymentMethods: z.array(paymentMethodSchema) }), {}).then(
-      (result) => (result.ok ? { ok: true as const, paymentMethods: result.data.paymentMethods } : result),
+    send(
+      "/v1/payment-methods",
+      z.object({ paymentMethods: z.array(paymentMethodSchema) }),
+      {},
+    ).then((result) =>
+      result.ok ? { ok: true as const, paymentMethods: result.data.paymentMethods } : result,
     ),
   addPaymentMethod: (input: NewPaymentMethod) =>
     post("/v1/payment-methods", input, paymentMethodSchema).then(wrap("paymentMethod")),
@@ -373,7 +381,10 @@ export const marketClient = {
       paymentMethodId?: string;
     },
     idempotencyKey: string,
-  ) => post("/v1/trades", input, tradeSchema, { "Idempotency-Key": idempotencyKey }).then(wrap("trade")),
+  ) =>
+    post("/v1/trades", input, tradeSchema, { "Idempotency-Key": idempotencyKey }).then(
+      wrap("trade"),
+    ),
   markPaid: (id: string, reference: string) =>
     post(`/v1/trades/${id}/paid`, reference ? { reference } : {}, tradeSchema).then(wrap("trade")),
   cancelTrade: (id: string, reason: string) =>
@@ -407,11 +418,9 @@ export const marketClient = {
   withdrawDispute: (tradeId: string) =>
     post(`/v1/trades/${tradeId}/dispute/withdraw`, {}, disputeSchema).then(wrap("dispute")),
   addEvidence: (tradeId: string, file: Blob, note: string) =>
-    upload(
-      `/v1/trades/${tradeId}/dispute/evidence${query({ note })}`,
-      file,
-      evidenceSchema,
-    ).then(wrap("evidence")),
+    upload(`/v1/trades/${tradeId}/dispute/evidence${query({ note })}`, file, evidenceSchema).then(
+      wrap("evidence"),
+    ),
   evidenceUrl: (tradeId: string, evidenceId: string) =>
     `${apiOrigin()}/v1/trades/${tradeId}/dispute/evidence/${evidenceId}`,
 };

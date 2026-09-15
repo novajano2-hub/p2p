@@ -5,12 +5,24 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
-import { AdvertiserLine, ListNotice, PaymentKindChips, Segmented, birr, usdt } from "@/components/market/bits";
+import {
+  AdvertiserLine,
+  ListNotice,
+  PaymentKindChips,
+  Segmented,
+  birr,
+  usdt,
+} from "@/components/market/bits";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/cn";
-import { marketClient, type MarketOffer, type OfferSide, type PaymentMethodKind } from "@/lib/market/client";
+import {
+  marketClient,
+  type MarketOffer,
+  type OfferSide,
+  type PaymentMethodKind,
+} from "@/lib/market/client";
 import { FIAT, PAYMENT_KINDS, PAYMENT_KIND_LIST } from "@/lib/market/labels";
 import { formatSantim, toSantim } from "@/lib/market/money";
 
@@ -46,7 +58,8 @@ export function Marketplace() {
   const [more, setMore] = useState(false);
 
   const amountSantim = toSantim(amount) ?? undefined;
-  const amountProblem = amount !== "" && amountSantim === undefined ? "Enter an amount in birr." : null;
+  const amountProblem =
+    amount !== "" && amountSantim === undefined ? "Enter an amount in birr." : null;
 
   const load = useCallback(
     async (cursor?: string) => {
@@ -185,7 +198,13 @@ export function Marketplace() {
               </ul>
               {state.nextCursor ? (
                 <div className="mt-4 flex justify-center">
-                  <Button type="button" variant="secondary" size="sm" loading={more} onClick={loadMore}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    loading={more}
+                    onClick={loadMore}
+                  >
                     Show more
                   </Button>
                 </div>

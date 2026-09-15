@@ -5,7 +5,14 @@ import { useCallback, useEffect, useState } from "react";
 
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
-import { BackTo, ConfirmButton, ListNotice, PaymentKindChips, birr, usdt } from "@/components/market/bits";
+import {
+  BackTo,
+  ConfirmButton,
+  ListNotice,
+  PaymentKindChips,
+  birr,
+  usdt,
+} from "@/components/market/bits";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { marketClient, type MyOffer } from "@/lib/market/client";
@@ -31,7 +38,9 @@ export function MyAds() {
   const refresh = useCallback(() => {
     void marketClient.myOffers().then((result) => {
       setState(
-        result.ok ? { status: "ready", offers: result.offers } : { status: "error", message: result.message },
+        result.ok
+          ? { status: "ready", offers: result.offers }
+          : { status: "error", message: result.message },
       );
     });
   }, []);
@@ -81,7 +90,10 @@ export function MyAds() {
               const status = OFFER_STATUS[offer.status];
               const kinds = offer.paymentMethods.map((method) => method.kind);
               return (
-                <li key={offer.id} className="flex flex-col gap-3 py-4 lg:flex-row lg:items-center lg:justify-between">
+                <li
+                  key={offer.id}
+                  className="flex flex-col gap-3 py-4 lg:flex-row lg:items-center lg:justify-between"
+                >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-foreground text-[15px] font-semibold">
@@ -101,7 +113,12 @@ export function MyAds() {
                   </div>
                   {offer.status !== "CLOSED" ? (
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
-                      <ButtonLink href={`/trade/ads/${offer.id}/edit`} variant="secondary" size="sm" arrow={false}>
+                      <ButtonLink
+                        href={`/trade/ads/${offer.id}/edit`}
+                        variant="secondary"
+                        size="sm"
+                        arrow={false}
+                      >
                         Edit
                       </ButtonLink>
                       <Button

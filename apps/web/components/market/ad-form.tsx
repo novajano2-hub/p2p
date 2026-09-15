@@ -20,7 +20,13 @@ import {
   type PaymentMethod,
   type PaymentMethodKind,
 } from "@/lib/market/client";
-import { ASSET, FIAT, PAYMENT_KINDS, PAYMENT_KIND_LIST, PAYMENT_WINDOWS } from "@/lib/market/labels";
+import {
+  ASSET,
+  FIAT,
+  PAYMENT_KINDS,
+  PAYMENT_KIND_LIST,
+  PAYMENT_WINDOWS,
+} from "@/lib/market/labels";
 import { compareSantim, plainSantim, toSantim } from "@/lib/market/money";
 import { plainMicro, toMicro } from "@/lib/money";
 
@@ -106,7 +112,8 @@ function toRequest(draft: Draft): { ok: true; body: OfferDraft } | { ok: false; 
   if (!total || total === "0") errors.total = `Enter how much ${ASSET} the ad is for.`;
   if (!min || min === "0") errors.min = `Enter the smallest trade, in ${FIAT}.`;
   if (!max || max === "0") errors.max = `Enter the largest trade, in ${FIAT}.`;
-  if (min && max && compareSantim(min, max) > 0) errors.max = "The maximum must be at least the minimum.";
+  if (min && max && compareSantim(min, max) > 0)
+    errors.max = "The maximum must be at least the minimum.";
   if (draft.side === "SELL" && draft.methodIds.length === 0) {
     errors.methodIds = "Choose at least one way to be paid.";
   }
@@ -117,7 +124,8 @@ function toRequest(draft: Draft): { ok: true; body: OfferDraft } | { ok: false; 
   if (!Number.isInteger(minTrades) || minTrades < 0 || minTrades > 10_000) {
     errors.minCompletedTrades = "Enter a whole number.";
   }
-  if (Object.keys(errors).length > 0 || !price || !total || !min || !max) return { ok: false, errors };
+  if (Object.keys(errors).length > 0 || !price || !total || !min || !max)
+    return { ok: false, errors };
   return {
     ok: true,
     body: {
@@ -126,7 +134,9 @@ function toRequest(draft: Draft): { ok: true; body: OfferDraft } | { ok: false; 
       minSantim: min,
       maxSantim: max,
       paymentWindowMinutes: draft.window,
-      ...(draft.side === "SELL" ? { paymentMethodIds: draft.methodIds } : { paymentKinds: draft.kinds }),
+      ...(draft.side === "SELL"
+        ? { paymentMethodIds: draft.methodIds }
+        : { paymentKinds: draft.kinds }),
       terms: draft.terms.trim(),
       autoReply: draft.autoReply.trim(),
       requireVerified: draft.requireVerified,
@@ -242,34 +252,71 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
               className="flex flex-col gap-5"
             >
               {editing ? null : (
-                <Segmented value={draft.side} onChange={(side) => set("side", side)} options={SIDES} label="Buy or sell" />
+                <Segmented
+                  value={draft.side}
+                  onChange={(side) => set("side", side)}
+                  options={SIDES}
+                  label="Buy or sell"
+                />
               )}
 
               <Field label={`Price, ${FIAT} per ${ASSET}`} error={errors.price}>
                 {(control) => (
-                  <Input {...control} value={draft.price} onChange={(e) => set("price", e.target.value)} inputMode="decimal" placeholder="158.50" className="tabular-nums" />
+                  <Input
+                    {...control}
+                    value={draft.price}
+                    onChange={(e) => set("price", e.target.value)}
+                    inputMode="decimal"
+                    placeholder="158.50"
+                    className="tabular-nums"
+                  />
                 )}
               </Field>
 
               <Field
                 label={`Total amount, ${ASSET}`}
-                hint={draft.side === "SELL" ? "How much you are offering across all trades on this ad. Nothing is locked until a trade opens." : "How much you want to buy across all trades on this ad."}
+                hint={
+                  draft.side === "SELL"
+                    ? "How much you are offering across all trades on this ad. Nothing is locked until a trade opens."
+                    : "How much you want to buy across all trades on this ad."
+                }
                 error={errors.total}
               >
                 {(control) => (
-                  <Input {...control} value={draft.total} onChange={(e) => set("total", e.target.value)} inputMode="decimal" placeholder="100" className="tabular-nums" />
+                  <Input
+                    {...control}
+                    value={draft.total}
+                    onChange={(e) => set("total", e.target.value)}
+                    inputMode="decimal"
+                    placeholder="100"
+                    className="tabular-nums"
+                  />
                 )}
               </Field>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label={`Smallest trade, ${FIAT}`} error={errors.min}>
                   {(control) => (
-                    <Input {...control} value={draft.min} onChange={(e) => set("min", e.target.value)} inputMode="decimal" placeholder="500" className="tabular-nums" />
+                    <Input
+                      {...control}
+                      value={draft.min}
+                      onChange={(e) => set("min", e.target.value)}
+                      inputMode="decimal"
+                      placeholder="500"
+                      className="tabular-nums"
+                    />
                   )}
                 </Field>
                 <Field label={`Largest trade, ${FIAT}`} error={errors.max}>
                   {(control) => (
-                    <Input {...control} value={draft.max} onChange={(e) => set("max", e.target.value)} inputMode="decimal" placeholder="20000" className="tabular-nums" />
+                    <Input
+                      {...control}
+                      value={draft.max}
+                      onChange={(e) => set("max", e.target.value)}
+                      inputMode="decimal"
+                      placeholder="20000"
+                      className="tabular-nums"
+                    />
                   )}
                 </Field>
               </div>
@@ -301,11 +348,16 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
 
               {draft.side === "SELL" ? (
                 <fieldset>
-                  <legend className="text-foreground mb-2 text-sm font-medium">Be paid through</legend>
+                  <legend className="text-foreground mb-2 text-sm font-medium">
+                    Be paid through
+                  </legend>
                   {methods.length === 0 ? (
                     <p className="text-muted-foreground text-[13px]">
                       You have no payment method yet.{" "}
-                      <AppLink href="/trade/payment-methods" className="text-primary font-medium underline-offset-4 hover:underline">
+                      <AppLink
+                        href="/trade/payment-methods"
+                        className="text-primary font-medium underline-offset-4 hover:underline"
+                      >
                         Add one
                       </AppLink>{" "}
                       to post a sell ad.
@@ -323,12 +375,16 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                     </div>
                   )}
                   {errors.methodIds ? (
-                    <p role="alert" className="text-destructive mt-2 text-[13px]">{errors.methodIds}</p>
+                    <p role="alert" className="text-destructive mt-2 text-[13px]">
+                      {errors.methodIds}
+                    </p>
                   ) : null}
                 </fieldset>
               ) : (
                 <fieldset>
-                  <legend className="text-foreground mb-2 text-sm font-medium">I can pay through</legend>
+                  <legend className="text-foreground mb-2 text-sm font-medium">
+                    I can pay through
+                  </legend>
                   <div className="flex flex-col gap-2">
                     {PAYMENT_KIND_LIST.map((kind) => (
                       <Checkbox
@@ -340,20 +396,43 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                     ))}
                   </div>
                   {errors.kinds ? (
-                    <p role="alert" className="text-destructive mt-2 text-[13px]">{errors.kinds}</p>
+                    <p role="alert" className="text-destructive mt-2 text-[13px]">
+                      {errors.kinds}
+                    </p>
                   ) : null}
                 </fieldset>
               )}
 
-              <Field label="Terms" hint="Shown to a taker before they place the order. Optional." error={errors.terms}>
+              <Field
+                label="Terms"
+                hint="Shown to a taker before they place the order. Optional."
+                error={errors.terms}
+              >
                 {(control) => (
-                  <Textarea {...control} value={draft.terms} onChange={(e) => set("terms", e.target.value)} maxLength={1000} placeholder="Pay from an account in your own name. No third-party payments." />
+                  <Textarea
+                    {...control}
+                    value={draft.terms}
+                    onChange={(e) => set("terms", e.target.value)}
+                    maxLength={1000}
+                    placeholder="Pay from an account in your own name. No third-party payments."
+                  />
                 )}
               </Field>
 
-              <Field label="Auto-reply" hint="The first message in every trade's chat, from you. Optional." error={errors.autoReply}>
+              <Field
+                label="Auto-reply"
+                hint="The first message in every trade's chat, from you. Optional."
+                error={errors.autoReply}
+              >
                 {(control) => (
-                  <Textarea {...control} value={draft.autoReply} onChange={(e) => set("autoReply", e.target.value)} maxLength={500} rows={2} placeholder="Thanks! Send the money and press I have paid; I release within a few minutes." />
+                  <Textarea
+                    {...control}
+                    value={draft.autoReply}
+                    onChange={(e) => set("autoReply", e.target.value)}
+                    maxLength={500}
+                    rows={2}
+                    placeholder="Thanks! Send the money and press I have paid; I release within a few minutes."
+                  />
                 )}
               </Field>
 
@@ -365,7 +444,13 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                 />
                 <Field label="Minimum completed trades" error={errors.minCompletedTrades}>
                   {(control) => (
-                    <Input {...control} value={draft.minCompletedTrades} onChange={(e) => set("minCompletedTrades", e.target.value)} inputMode="numeric" className="tabular-nums" />
+                    <Input
+                      {...control}
+                      value={draft.minCompletedTrades}
+                      onChange={(e) => set("minCompletedTrades", e.target.value)}
+                      inputMode="numeric"
+                      className="tabular-nums"
+                    />
                   )}
                 </Field>
               </div>
@@ -379,8 +464,14 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
           <div className="flex flex-col gap-4 lg:col-span-2">
             <Panel title="How ads work">
               <ul className="text-muted-foreground flex flex-col gap-2 text-[13px] leading-relaxed">
-                <li>A sell ad is listed only while your available balance can fund its smallest trade. The escrow is taken when a trade opens, not when the ad is posted.</li>
-                <li>Buyers see your price, your limits, your record and your terms - never your payment details until a trade between you is open.</li>
+                <li>
+                  A sell ad is listed only while your available balance can fund its smallest trade.
+                  The escrow is taken when a trade opens, not when the ad is posted.
+                </li>
+                <li>
+                  Buyers see your price, your limits, your record and your terms - never your
+                  payment details until a trade between you is open.
+                </li>
                 <li>You can pause an ad any time. Trades already running are not affected.</li>
               </ul>
             </Panel>

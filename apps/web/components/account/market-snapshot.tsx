@@ -39,7 +39,12 @@ export function MarketSnapshot({ className }: { className?: string | undefined }
 
   const sides = [
     { label: "Buy USDT", hint: "lowest ask", href: "/trade?want=BUY", price: best?.buy ?? null },
-    { label: "Sell USDT", hint: "highest bid", href: "/trade?want=SELL", price: best?.sell ?? null },
+    {
+      label: "Sell USDT",
+      hint: "highest bid",
+      href: "/trade?want=SELL",
+      price: best?.sell ?? null,
+    },
   ];
 
   return (
@@ -47,7 +52,10 @@ export function MarketSnapshot({ className }: { className?: string | undefined }
       title="Market"
       description={`Best offers right now, in ${FIAT} per USDT.`}
       action={
-        <AppLink href="/trade" className="text-primary hover:text-primary-hover font-medium underline-offset-4 hover:underline">
+        <AppLink
+          href="/trade"
+          className="text-primary hover:text-primary-hover font-medium underline-offset-4 hover:underline"
+        >
           All offers
         </AppLink>
       }
@@ -57,7 +65,10 @@ export function MarketSnapshot({ className }: { className?: string | undefined }
         {sides.map((side) => (
           <div key={side.label} className="flex items-center justify-between gap-4 py-3">
             <dt>
-              <AppLink href={side.href} className="text-foreground block text-sm font-medium hover:underline">
+              <AppLink
+                href={side.href}
+                className="text-foreground block text-sm font-medium hover:underline"
+              >
                 {side.label}
               </AppLink>
               <span className="text-muted-foreground block text-[12px]">{side.hint}</span>

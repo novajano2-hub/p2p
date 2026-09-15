@@ -28,9 +28,7 @@ import { formatSantim } from "@/lib/market/money";
 */
 
 type State =
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | { status: "ready"; trade: Trade };
+  { status: "loading" } | { status: "error"; message: string } | { status: "ready"; trade: Trade };
 
 export function TradeView({ tradeId }: { tradeId: string }) {
   const { user } = useSession();
@@ -48,7 +46,11 @@ export function TradeView({ tradeId }: { tradeId: string }) {
     let live = true;
     void marketClient.trade(tradeId).then((result) => {
       if (!live) return;
-      setState(result.ok ? { status: "ready", trade: result.trade } : { status: "error", message: result.message });
+      setState(
+        result.ok
+          ? { status: "ready", trade: result.trade }
+          : { status: "error", message: result.message },
+      );
     });
     return () => {
       live = false;

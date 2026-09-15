@@ -52,7 +52,9 @@ export function Timeline({ trade }: { trade: Trade }) {
                 {EVENT_LABELS[event.kind] ?? event.kind}
                 <span className="text-muted-foreground"> · {actorName(event)}</span>
               </p>
-              <p className="text-muted-foreground text-[12px] tabular-nums">{dateTime(event.createdAt)}</p>
+              <p className="text-muted-foreground text-[12px] tabular-nums">
+                {dateTime(event.createdAt)}
+              </p>
             </div>
           </li>
         ))}

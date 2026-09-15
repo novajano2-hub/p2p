@@ -22,7 +22,11 @@ export const PAYMENT_KINDS: Record<
   PaymentMethodKind,
   { label: string; numberLabel: string; /** The bar beside the name, Binance-style. */ bar: string }
 > = {
-  TELEBIRR: { label: "Telebirr", numberLabel: "Telebirr phone number", bar: "bg-status-complete-fg" },
+  TELEBIRR: {
+    label: "Telebirr",
+    numberLabel: "Telebirr phone number",
+    bar: "bg-status-complete-fg",
+  },
   CBE_BIRR: { label: "CBE Birr", numberLabel: "CBE Birr phone number", bar: "bg-primary" },
   MPESA: { label: "M-Pesa", numberLabel: "M-Pesa phone number", bar: "bg-status-pending-fg" },
   BANK_TRANSFER: { label: "Bank transfer", numberLabel: "Account number", bar: "bg-sage" },
@@ -140,7 +144,8 @@ export function traderRecord(stats: {
 }): string {
   const parts = [`${stats.tradesTotal} ${stats.tradesTotal === 1 ? "order" : "orders"}`];
   if (stats.completionRate !== null) parts.push(`${stats.completionRate}% completion`);
-  if (stats.avgReleaseSeconds !== null) parts.push(`releases in ~${minutes(stats.avgReleaseSeconds)}`);
+  if (stats.avgReleaseSeconds !== null)
+    parts.push(`releases in ~${minutes(stats.avgReleaseSeconds)}`);
   return parts.join(" · ");
 }
 

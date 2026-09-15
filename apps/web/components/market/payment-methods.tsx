@@ -170,10 +170,15 @@ export function PaymentMethods() {
                   <div className="flex min-w-0 items-center gap-3">
                     <span
                       aria-hidden="true"
-                      className={cn("h-8 w-1 shrink-0 rounded-full", PAYMENT_KINDS[method.kind].bar)}
+                      className={cn(
+                        "h-8 w-1 shrink-0 rounded-full",
+                        PAYMENT_KINDS[method.kind].bar,
+                      )}
                     />
                     <div className="min-w-0">
-                      <p className="text-foreground truncate text-[15px] font-medium">{method.label}</p>
+                      <p className="text-foreground truncate text-[15px] font-medium">
+                        {method.label}
+                      </p>
                       <p className="text-muted-foreground text-[12px]">
                         {PAYMENT_KINDS[method.kind].label}
                       </p>
@@ -227,7 +232,12 @@ export function PaymentMethods() {
               error={errors.accountHolder?.message}
             >
               {(control) => (
-                <Input {...control} {...register("accountHolder")} autoComplete="name" placeholder="Abebe Bikila" />
+                <Input
+                  {...control}
+                  {...register("accountHolder")}
+                  autoComplete="name"
+                  placeholder="Abebe Bikila"
+                />
               )}
             </Field>
 
@@ -247,7 +257,12 @@ export function PaymentMethods() {
                 </Field>
                 <Field label="Account number" error={errors.accountNumber?.message}>
                   {(control) => (
-                    <Input {...control} {...register("accountNumber")} inputMode="numeric" autoComplete="off" />
+                    <Input
+                      {...control}
+                      {...register("accountNumber")}
+                      inputMode="numeric"
+                      autoComplete="off"
+                    />
                   )}
                 </Field>
                 <Field label="Branch" hint="Optional." error={errors.branch?.message}>
@@ -260,7 +275,13 @@ export function PaymentMethods() {
                 error={errors.phone?.message}
               >
                 {(control) => (
-                  <Input {...control} {...register("phone")} inputMode="tel" autoComplete="tel" placeholder="0912345678" />
+                  <Input
+                    {...control}
+                    {...register("phone")}
+                    inputMode="tel"
+                    autoComplete="tel"
+                    placeholder="0912345678"
+                  />
                 )}
               </Field>
             )}

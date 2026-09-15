@@ -7,13 +7,7 @@ import { AppLink } from "@/components/ui/app-link";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { cn } from "@/lib/cn";
-import {
-  ASSET,
-  FIAT,
-  PAYMENT_KINDS,
-  tradeStatusPill,
-  traderRecord,
-} from "@/lib/market/labels";
+import { ASSET, FIAT, PAYMENT_KINDS, tradeStatusPill, traderRecord } from "@/lib/market/labels";
 import type { Advertiser, PaymentMethodKind, Trade } from "@/lib/market/client";
 import { formatSantim } from "@/lib/market/money";
 import { formatMicro } from "@/lib/money";
@@ -35,7 +29,10 @@ export function PaymentKindChips({
     <ul className={cn("flex flex-wrap gap-x-3 gap-y-1", className)}>
       {kinds.map((kind) => (
         <li key={kind} className="flex items-center gap-1.5 text-[13px]">
-          <span aria-hidden="true" className={cn("h-3.5 w-0.5 rounded-full", PAYMENT_KINDS[kind].bar)} />
+          <span
+            aria-hidden="true"
+            className={cn("h-3.5 w-0.5 rounded-full", PAYMENT_KINDS[kind].bar)}
+          />
           {PAYMENT_KINDS[kind].label}
         </li>
       ))}
@@ -72,7 +69,9 @@ export function AdvertiserLine({
           ) : null}
         </span>
         {!compact ? (
-          <span className="text-muted-foreground block text-[12px]">{traderRecord(advertiser)}</span>
+          <span className="text-muted-foreground block text-[12px]">
+            {traderRecord(advertiser)}
+          </span>
         ) : null}
       </span>
     </div>
@@ -94,7 +93,10 @@ export function TradePill({ trade, className }: { trade: Trade; className?: stri
  * deadline that has passed is the server's to act on, and the screen that
  * shows it refetches rather than guesses.
  */
-export function useCountdown(deadline: string | null, active: boolean): {
+export function useCountdown(
+  deadline: string | null,
+  active: boolean,
+): {
   label: string;
   expired: boolean;
   secondsLeft: number;
@@ -131,11 +133,7 @@ export function Segmented<T extends string>({
   label: string;
 }) {
   return (
-    <div
-      role="group"
-      aria-label={label}
-      className="bg-muted rounded-control inline-flex p-1"
-    >
+    <div role="group" aria-label={label} className="bg-muted rounded-control inline-flex p-1">
       {options.map((option) => {
         const selected = option.value === value;
         return (
@@ -185,7 +183,13 @@ export function ConfirmButton({
 
   if (!asking) {
     return (
-      <Button type="button" variant={variant} size={size} disabled={disabled} onClick={() => setAsking(true)}>
+      <Button
+        type="button"
+        variant={variant}
+        size={size}
+        disabled={disabled}
+        onClick={() => setAsking(true)}
+      >
         {children}
       </Button>
     );
