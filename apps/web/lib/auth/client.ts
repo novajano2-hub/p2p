@@ -77,7 +77,21 @@ export type KycResult =
 export type KycDocumentResult =
   { ok: true; document: KycDocument } | { ok: false; code: AuthErrorCode; message: string };
 
-export type NotificationType = "KYC_APPROVED" | "KYC_REJECTED" | "DEPOSIT_CREDITED";
+/** Everything the API can tell an account about. Mirrors notificationType in @abay/contracts. */
+export type NotificationType =
+  | "KYC_APPROVED"
+  | "KYC_REJECTED"
+  | "DEPOSIT_CREDITED"
+  | "WITHDRAWAL_SENT"
+  | "WITHDRAWAL_RETURNED"
+  | "TRADE_OPENED"
+  | "TRADE_PAID"
+  | "TRADE_RELEASED"
+  | "TRADE_CANCELLED"
+  | "TRADE_EXPIRED"
+  | "DISPUTE_OPENED"
+  | "DISPUTE_RESOLVED"
+  | "DISPUTE_WITHDRAWN";
 
 /** What the account was told without doing anything on this device. */
 export type NotificationItem = {
@@ -173,7 +187,21 @@ export interface AuthClient {
   markAllNotificationsRead(): Promise<AuthResult>;
 }
 
-const notificationTypeSchema = z.enum(["KYC_APPROVED", "KYC_REJECTED", "DEPOSIT_CREDITED"]);
+const notificationTypeSchema = z.enum([
+  "KYC_APPROVED",
+  "KYC_REJECTED",
+  "DEPOSIT_CREDITED",
+  "WITHDRAWAL_SENT",
+  "WITHDRAWAL_RETURNED",
+  "TRADE_OPENED",
+  "TRADE_PAID",
+  "TRADE_RELEASED",
+  "TRADE_CANCELLED",
+  "TRADE_EXPIRED",
+  "DISPUTE_OPENED",
+  "DISPUTE_RESOLVED",
+  "DISPUTE_WITHDRAWN",
+]);
 const notificationItemSchema = z.object({
   id: z.string(),
   type: notificationTypeSchema,
@@ -295,6 +323,7 @@ export async function send<T>(
   path: string,
   schema: z.ZodType<T>,
   init: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
 ): Promise<{ ok: true; data: T } | Failure> {
   let response: Response;
   try {
@@ -312,7 +341,7 @@ export async function send<T>(
       // Without this the session cookie is neither stored nor sent.
       credentials: "include",
       cache: "no-store",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     // Offline, DNS failure, a CORS rejection, or the timeout above. The browser

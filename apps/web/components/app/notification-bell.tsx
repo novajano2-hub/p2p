@@ -1,10 +1,21 @@
 "use client";
 
-import { Bell, CheckCircle, WarningCircle } from "@phosphor-icons/react";
+import {
+  ArrowCircleDown,
+  ArrowCircleUp,
+  Bell,
+  ChatCircleDots,
+  CheckCircle,
+  Handshake,
+  Scales,
+  WarningCircle,
+  XCircle,
+} from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
-import { authClient, type NotificationItem } from "@/lib/auth/client";
+import { useRealtimeEvent } from "@/components/app/realtime-provider";
+import { authClient, type NotificationItem, type NotificationType } from "@/lib/auth/client";
 import { cn } from "@/lib/cn";
 
 /*
@@ -12,20 +23,39 @@ import { cn } from "@/lib/cn";
   with a count, the same hand-rolled disclosure pattern as AccountMenu beside
   it: closes on Escape, on a click outside, and on choosing an item.
 
-  Polled rather than pushed - every REFRESH_MS while the tab is open - because
-  the only thing that can arrive here today is a KYC decision, which is not
-  urgent to the second, and a poll is the whole mechanism rather than a new
-  piece of infrastructure. Worth becoming a websocket once something time-
-  sensitive (a trade needing a reply) is the thing arriving.
+  Fed two ways. The socket delivers each notification the moment it is
+  written, which is what makes "the buyer says they have paid" arrive while
+  the seller is looking at something else. The poll underneath it is the
+  fallback for a tab whose socket is between reconnects, and the first read
+  on load.
 */
 
 const REFRESH_MS = 45_000;
 
-const ICONS: Record<NotificationItem["type"], typeof CheckCircle> = {
-  KYC_APPROVED: CheckCircle,
-  KYC_REJECTED: WarningCircle,
-  DEPOSIT_CREDITED: CheckCircle,
+type Glyph = { Icon: typeof CheckCircle; tone: "good" | "warn" | "note" };
+
+const GLYPHS: Partial<Record<NotificationType, Glyph>> = {
+  KYC_APPROVED: { Icon: CheckCircle, tone: "good" },
+  KYC_REJECTED: { Icon: WarningCircle, tone: "warn" },
+  DEPOSIT_CREDITED: { Icon: ArrowCircleDown, tone: "good" },
+  WITHDRAWAL_SENT: { Icon: ArrowCircleUp, tone: "good" },
+  WITHDRAWAL_RETURNED: { Icon: WarningCircle, tone: "warn" },
+  TRADE_OPENED: { Icon: Handshake, tone: "note" },
+  TRADE_PAID: { Icon: ChatCircleDots, tone: "note" },
+  TRADE_RELEASED: { Icon: CheckCircle, tone: "good" },
+  TRADE_CANCELLED: { Icon: XCircle, tone: "warn" },
+  TRADE_EXPIRED: { Icon: XCircle, tone: "warn" },
+  DISPUTE_OPENED: { Icon: Scales, tone: "warn" },
+  DISPUTE_WITHDRAWN: { Icon: Scales, tone: "note" },
+  DISPUTE_RESOLVED: { Icon: Scales, tone: "good" },
 };
+const FALLBACK: Glyph = { Icon: Bell, tone: "note" };
+
+const TONE_CLASS = {
+  good: "text-status-complete-fg",
+  warn: "text-status-attention-fg",
+  note: "text-primary",
+} as const;
 
 const relativeTime = new Intl.RelativeTimeFormat("en-GB", { numeric: "auto" });
 
@@ -63,6 +93,15 @@ export function NotificationBell() {
     const id = window.setInterval(() => void refresh(), REFRESH_MS);
     return () => window.clearInterval(id);
   }, []);
+
+  // The moment it is written, not on the next poll.
+  useRealtimeEvent("notification", (frame) => {
+    const item = { ...frame.notification, type: frame.notification.type as NotificationType };
+    setItems((current) =>
+      current.some((entry) => entry.id === item.id) ? current : [item, ...current].slice(0, 50),
+    );
+    if (!item.readAt) setUnreadCount((count) => count + 1);
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -156,7 +195,7 @@ export function NotificationBell() {
           ) : (
             <ul className="flex flex-col gap-0.5">
               {items.map((item) => {
-                const Icon = ICONS[item.type];
+                const { Icon, tone } = GLYPHS[item.type] ?? FALLBACK;
                 return (
                   <li key={item.id}>
                     <button
@@ -171,12 +210,7 @@ export function NotificationBell() {
                         size={17}
                         weight="fill"
                         aria-hidden="true"
-                        className={cn(
-                          "mt-0.5 shrink-0",
-                          item.type === "KYC_APPROVED"
-                            ? "text-status-complete-fg"
-                            : "text-status-attention-fg",
-                        )}
+                        className={cn("mt-0.5 shrink-0", TONE_CLASS[tone])}
                       />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline justify-between gap-2">
