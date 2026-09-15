@@ -1,17 +1,27 @@
 # apps/web
 
-The Next.js client. Currently only the marketing landing page (route group
-`app/(marketing)`); the authenticated customer and admin areas arrive in later phases.
+The Next.js client: three route groups behind one design system. `app/(marketing)` is
+the landing page and the legal text, `app/(app)` is the customer's account, wallet,
+marketplace and orders, and `app/(admin)` is the administration area, which shares
+nothing with the customer side but the origin - its own layout, its own client, its own
+session cookie.
 
 ## Structure
 
 ```
 app/(marketing)/       landing page, plus /terms and /privacy (placeholder legal text)
 app/(auth)/            /register, /login, /recover: one card, one step per screen
+app/(app)/             the customer: /account, /wallet/*, /trade/*, /orders/*, /settings
+app/(admin)/           the administration area: verification, deposits, withdrawals,
+                       disputes, reconciliation and the ledger, each gated on its own role
+components/market/     the marketplace, the order page, its chat and its dispute panel
+components/admin/      the administration screens and the kit they are built from
+lib/market/            the customer's market client, birr money, and the words on screen
+lib/admin/             the administrator's client, kept apart from the customer's
+lib/realtime/          one WebSocket per tab, with reconnection and catch-up
 components/auth/       the three flows, the shared card, code step, password rules
 components/legal/      legal-page layout
-lib/auth/              zod schemas, email masking, and the auth client (a PREVIEW until
-                       Phase 1: steps can be walked, final actions fail with NOT_CONNECTED)
+lib/auth/              zod schemas, email masking, and the customer API client
 components/brand/      wordmark (placeholder)
 components/marketing/  one component per section, plus header, footer, mobile nav
 components/motion/     gsap.ts (single plugin registration), Reveal (scroll reveal)

@@ -46,12 +46,22 @@ the same instant, on separate connections. Assert: exactly one trade reaches
 available is 0, not −100; exactly one escrow account exists with 100; the ledger balances.
 Repeat ≥ 50 times to catch interleavings that pass once by luck.
 
+_Built (Phase 4, stage 2; raised to fifty rounds in stage 6)_ in
+`apps/api/test/api/trades.spec.ts`. One wording correction for the record: the loser is
+refused with `INSUFFICIENT_FUNDS`, which is the code the ledger actually throws; this
+plan's `INSUFFICIENT_AVAILABLE_BALANCE` was never a code in the system.
+
 ### AT-3 — A withdrawal and a trade started concurrently cannot overspend
 
 **Phase 4 · Concurrency**
 Same setup, but one request is a 100 USDT withdrawal and the other is a 100 USDT trade
 acceptance. Assert: exactly one succeeds; total liabilities to that user are unchanged;
 `available + escrowed + pending_withdrawal` is still exactly 100.
+
+_Built (Phase 4, stage 2; made a repeated race in stage 6)_ in
+`apps/api/test/api/trades.spec.ts`. Eight rounds rather than AT-2's fifty, because each
+round the withdrawal wins consumes 100 USDT of the customer's daily tier ceiling, which no
+test may raise; the reset is stated in the test.
 
 ### AT-4 — Buyer marking paid does not release escrow
 
@@ -62,6 +72,11 @@ account still holds the full amount; buyer's available balance is unchanged. Add
 assert by inspection of the transition table that **no automatic path exists** from
 `BUYER_MARKED_PAID` to `COMPLETED` without a seller or admin actor.
 
+_Built (Phase 4, stage 2), the integration half_ in `apps/api/test/api/trades.spec.ts`:
+the mark-paid action posts nothing, the expirer finds nothing to do on a paid trade, and
+the machine's table has no timer edge out of `BUYER_MARKED_PAID`. Still outstanding: the
+E2E half - no Playwright spec drives `/orders/[id]`.
+
 ### AT-5 — Repeated release requests credit the buyer exactly once
 
 **Phase 4 · Integration + Concurrency**
@@ -69,6 +84,13 @@ Seller sends the release request N times — same idempotency key, different ide
 keys, and concurrently. Assert: exactly one JE-4; buyer credited exactly once; escrow
 account balance is exactly 0; subsequent attempts return the original result or a typed
 `ILLEGAL_TRANSITION`, never a second credit.
+
+_Built (Phase 4, stage 2)_ in `apps/api/test/api/trades.spec.ts`: one release under
+five concurrent requests, the rest `409 CONFLICT`. The same-key and different-key arms
+are not expressible as written - `POST /v1/trades/:id/release` takes no `Idempotency-Key`
+at all, and the state machine is what makes it once-only. Either the route grows a key or
+this paragraph should say the machine is the mechanism; it should not keep asserting
+something the route cannot do.
 
 ### AT-6 — Cross-user access is denied
 
@@ -91,6 +113,9 @@ original JE-3 still exists unmodified and the refund carries `reverses_transacti
 Run the expirer worker repeatedly against the same trade — it must be a no-op after the
 first run.
 
+_Built (Phase 4, stage 2)_ in `apps/api/test/api/trades.spec.ts`, both the cancellation
+and the expiry path, each asserting `reverses_transaction_id` points at the lock.
+
 ### AT-8 — A disputed trade is resolvable only by an authorized role, with a complete audit record
 
 **Phase 4 · API + Integration**
@@ -100,6 +125,15 @@ resolver, both outcomes succeed and produce: the correct ledger entries (JE-6 or
 `audit_event` containing actor, reason code, free-text rationale, evidence references,
 correlation ID and before/after state, and a reconstructable timeline from trade creation
 to resolution.
+
+_Built (Phase 4, stage 4; completed in stage 6)_ in `apps/api/test/api/disputes.spec.ts`.
+All five denials are asserted, including the last one: a resolver cannot be a party
+because administrators are a separate table with their own sessions, so what the test
+proves is the separation - no admin row is either side of the trade, no customer exists
+with the resolver's address, and an admin session is refused by the customer routes
+outright. Both outcomes now carry the whole record: actor and admin id, correlation id
+tied to the request that was sent, the reason code in `before`, the note, the evidence
+ids, and the timeline read back from the trade's own events.
 
 ### AT-9 — Ambiguous broadcast causes neither a duplicate withdrawal nor an automatic refund
 
@@ -165,6 +199,13 @@ Global assertion over every trade in the database: terminal trades have escrow b
 exactly 0; open trades have escrow balance exactly equal to the trade amount. Catches
 partial releases and double refunds that individual tests would miss.
 
+_Built (Phase 4, stage 6)_ in `apps/api/test/ledger-invariants.ts`, which the api project
+loads through `setupFilesAfterEnv`, so it runs after **every** test in the suite and over
+every trade in the database rather than one file's own. The two sets of states are
+imported from the machine, so a new state cannot pass by not being in a list. AT-10's
+balance check moved into the same hook for the same reason: it was copied into seven
+specs and missing from three that post to the ledger.
+
 ### AT-15 — Posted ledger entries cannot be updated or deleted
 
 **Phase 2 · Integration**
@@ -185,6 +226,17 @@ future bug in application code, which is the entire reason it is in the database
 For every aggregate, enumerate the full cartesian product of (state × event). Every pair
 not in the transition table must throw `IllegalTransitionError` and write nothing. This is
 one test that covers the entire transition surface, including the pairs nobody thought of.
+
+_Built (Phase 3 for two machines, Phase 4 stage 6 for the other two)_:
+`withdrawal.machine.spec.ts`, `deposit.machine.spec.ts`, `trade.machine.spec.ts` and
+`offer.transitions.spec.ts` each sweep their whole table, and `OFFER_TRANSITIONS` was
+exported so that it could be swept at all. The "and write nothing" half is
+`apps/api/test/api/transitions.spec.ts`, which drives refused moves over HTTP and asserts
+the trade's status, its `updatedAt`, its ledger transactions, its escrow and its event
+count are all exactly what they were. That test found one: "I have paid" on a disputed
+trade took the table's `DISPUTED → BUYER_MARKED_PAID` edge, which belongs to withdrawing
+a dispute, and left an open dispute on a trade that could then no longer be refunded.
+Fixed in the same stage.
 
 ### AT-18 — Balances never go negative, under any operation sequence
 
@@ -245,7 +297,7 @@ modules.
 | **1** — foundation             | AT-6 (auth resources) · AT-13 · AT-21                                                                                                                                         |
 | **2** — ledger slice           | AT-10 · AT-11 · AT-15 · AT-16 · AT-18 · AT-19                                                                                                                                 |
 | **3** — mock wallet ops        | AT-1 · AT-9 · AT-12 · AT-20                                                                                                                                                   |
-| **4** — P2P escrow             | AT-2 · AT-3 · AT-4 · AT-5 · AT-7 · AT-8 · AT-14 · AT-17                                                                                                                       |
+| **4** — P2P escrow             | AT-2 · AT-3 · AT-4 · AT-5 · AT-7 · AT-8 · AT-14 · AT-17 — all green as of Phase 4, stage 6, except AT-4's E2E half, which Phase 5 owes                                        |
 | **5** — UX hardening           | Full E2E journeys · AT-6 across every resource · AT-22 site-wide                                                                                                              |
 | **6** — real sandbox           | The entire suite re-run against the provider sandbox, plus independent security review, custody architecture review, penetration test, DR exercise and reconciliation testing |
 

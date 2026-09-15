@@ -237,11 +237,13 @@ Escrow account T-123 is now exactly zero.
 
 Debits 100,000,000; credits 99,500,000 + 500,000 = 100,000,000. Balanced.
 
-**Who pays the fee is an open question** — see [open-questions.md](../open-questions.md)
-Q3. Charging the buyer (shown here) reduces what they receive; charging the seller means
-locking `amount + fee` at JE-3, which changes the escrow amount and therefore the offer's
-displayed limits. These are different products, and the decision must be made before
-Phase 4.
+**Who pays the fee was Q3, and it is answered** — see
+[open-questions.md](../open-questions.md). No P2P fee at launch, and the buyer pays when
+there is one: the shape above. Charging the seller instead would mean locking
+`amount + fee` at JE-3, which changes the escrow amount and therefore the offer's
+displayed limits - a different product, not a different number. Built in Phase 4 with
+`TRADE_FEE_BPS` at zero, and the zero leg is still posted so that turning the rate on
+changes an amount rather than the shape of a transaction.
 
 ### JE-5 — Trade expired unpaid, escrow refunded
 
@@ -257,7 +259,8 @@ went in and came back, which is what a support agent needs to see. Exactly once 
 ### JE-6 — Dispute resolved in the buyer's favor
 
 Ledger shape identical to JE-4. What differs is everything around it: `actor` is the
-admin's user ID, `reason` is `DISPUTE_RESOLVED_RELEASE`, and the transaction is linked to
+resolving administrator - `ADMIN` and their admin id, since administrators have no
+customer account - `reason` is `DISPUTE_RESOLVED_RELEASE`, and the transaction is linked to
 a `dispute_id` and a mandatory free-text reason plus evidence references in the audit
 trail. The ledger records what moved; the audit event records who decided and why —
 AT-8.
@@ -395,18 +398,18 @@ Two rows deserve attention:
 
 ## 6. Invariants this taxonomy makes checkable
 
-| #   | Invariant                                                          | How it is enforced                                                                                                     | Status                                                                          |
-| --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| L1  | Every ledger transaction has ≥ 2 entries                           | Deferred constraint trigger `ledger_entries_balance_check`                                                             | **Built**                                                                       |
-| L2  | Debits = credits per `(transaction, asset)`                        | Same trigger, on `SUM(signed_amount) = 0`                                                                              | **Built**                                                                       |
-| L3  | One asset per ledger transaction                                   | Same trigger, on `COUNT(DISTINCT asset) = 1`                                                                           | **Built**                                                                       |
-| L4  | Entries are immutable                                              | `REVOKE UPDATE, DELETE, TRUNCATE` from `abay_app` **and** raising triggers that stop everyone else, superuser included | **Built**                                                                       |
-| L5  | Customer and escrow balances never negative                        | `CHECK (balance >= 0 OR allows_negative)` on the projection                                                            | **Built**                                                                       |
-| L6  | Escrowed funds are not simultaneously available                    | Follows from L2 + per-trade accounts + row locking; asserted by AT-2                                                   | **Row locking built** (`LedgerService`); the escrow assertion itself is Phase 4 |
-| L7  | Settled trade escrow balance is exactly 0                          | Invariant test across all trades (AT-14)                                                                               | Phase 4                                                                         |
-| L8  | Balances rebuilt from entries equal the projection                 | Rebuild-and-compare test (AT-11)                                                                                       | **Built** (`ledger-properties.spec.ts`, rebuild in a rolled-back transaction)   |
-| L9  | Σ controlled on-chain assets = Σ customer liabilities ± in-flight  | Reconciler; break detection tested by AT-12                                                                            | **Built** (reconciler + AT-12; read-only, raises breaks)                        |
-| L10 | Every transaction carries reference, actor, reason, correlation ID | `NOT NULL` columns on `ledger_transactions`                                                                            | **Built**                                                                       |
+| #   | Invariant                                                          | How it is enforced                                                                                                     | Status                                                                        |
+| --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| L1  | Every ledger transaction has ≥ 2 entries                           | Deferred constraint trigger `ledger_entries_balance_check`                                                             | **Built**                                                                     |
+| L2  | Debits = credits per `(transaction, asset)`                        | Same trigger, on `SUM(signed_amount) = 0`                                                                              | **Built**                                                                     |
+| L3  | One asset per ledger transaction                                   | Same trigger, on `COUNT(DISTINCT asset) = 1`                                                                           | **Built**                                                                     |
+| L4  | Entries are immutable                                              | `REVOKE UPDATE, DELETE, TRUNCATE` from `abay_app` **and** raising triggers that stop everyone else, superuser included | **Built**                                                                     |
+| L5  | Customer and escrow balances never negative                        | `CHECK (balance >= 0 OR allows_negative)` on the projection                                                            | **Built**                                                                     |
+| L6  | Escrowed funds are not simultaneously available                    | Follows from L2 + per-trade accounts + row locking; asserted by AT-2                                                   | **Built** (`LedgerService` locking; `trades.spec.ts` AT-2, fifty rounds)      |
+| L7  | Settled trade escrow balance is exactly 0                          | Invariant test across all trades (AT-14)                                                                               | **Built** (`test/ledger-invariants.ts`, after every test in the project)      |
+| L8  | Balances rebuilt from entries equal the projection                 | Rebuild-and-compare test (AT-11)                                                                                       | **Built** (`ledger-properties.spec.ts`, rebuild in a rolled-back transaction) |
+| L9  | Σ controlled on-chain assets = Σ customer liabilities ± in-flight  | Reconciler; break detection tested by AT-12                                                                            | **Built** (reconciler + AT-12; read-only, raises breaks)                      |
+| L10 | Every transaction carries reference, actor, reason, correlation ID | `NOT NULL` columns on `ledger_transactions`                                                                            | **Built**                                                                     |
 
 The built rows live in `packages/database/sql/` (`ledger-invariants.sql`,
 `ledger-immutability.sql`, `ledger-balance-projection.sql`,
@@ -473,6 +476,19 @@ reversed and what has since reversed it. Money crosses the wire only as integer 
 millionths (AT-21), and opening a customer's or a trade's account, or a transaction that
 touched one, writes `ledger.account_viewed` / `ledger.transaction_viewed` to the audit log,
 as opening an identity submission does.
+
+**Phase 4 - escrow, and the four transactions a trade can post.** The marketplace writes
+through the same service as everything else and has no privileged path: JE-3 locks the
+seller's USDT into `LIAB:TRADE:{id}:USDT:ESCROW` when a trade opens, and exactly one of
+JE-4 (release to the buyer, with the fee leg posted at zero), JE-5 (refund, carrying
+`reverses_transaction_id` back to the lock) or their dispute-decided twins JE-6 and
+`DISPUTE_RESOLVED_REFUND` closes it. One settlement key per trade means a trade can
+settle once however many requests arrive, and the per-trade account makes the invariant
+checkable rather than inferred: escrow equals the trade's amount while it is open and
+exactly zero once it is not, now asserted over every trade in the database after every
+test in the suite (AT-14). A dispute changes the actor and the reason and nothing else
+about the money - which is the whole point of resolving through `settle()` rather than
+around it.
 
 Three implementation notes where the code is more specific than this document was:
 

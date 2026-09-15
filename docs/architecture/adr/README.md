@@ -11,7 +11,7 @@ will point there.
 | [ADR-0003](#adr-0003--an-immutable-double-entry-ledger-is-the-sole-source-of-monetary-truth)           | Immutable double-entry ledger is the sole source of monetary truth               | Accepted |
 | [ADR-0004](#adr-0004--escrow-is-an-internal-ledger-hold-in-a-per-trade-account)                        | Escrow is an internal ledger hold in a per-trade account                         | Accepted |
 | [ADR-0005](#adr-0005--value-representation-money-time-and-identifiers)                                 | Value representation: money, time and identifiers                                | Accepted |
-| [ADR-0006](#adr-0006--chain-and-custody-behind-adapters-bsc-is-the-network)                            | Chain and custody behind adapters; Plasma is a hypothesis                        | Accepted |
+| [ADR-0006](#adr-0006--chain-and-custody-behind-adapters-bsc-is-the-network)                            | Chain and custody behind adapters; BSC is the network                            | Accepted |
 | [ADR-0007](#adr-0007--idempotency-keys-and-a-transactional-outbox-for-every-external-effect)           | Idempotency keys and a transactional outbox for every external effect            | Accepted |
 | [ADR-0008](#adr-0008--zod-as-the-single-validation-and-contract-library)                               | Zod as the single validation and contract library                                | Accepted |
 | [ADR-0009](#adr-0009--balances-are-a-transactional-projection-row-locks-are-the-concurrency-primitive) | Balances are a transactional projection; row locks are the concurrency primitive | Accepted |

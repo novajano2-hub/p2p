@@ -35,13 +35,20 @@ before I create or move anything**, since it touches your existing repository la
 Built (2026-09-10, commit c313670 on `feat/admin-realm`): a separate `AdminUser` realm,
 its own session, its own routes under `/v1/admin` and `/admin`, append-only audit events.
 What it is not: restricted to who can even attempt to sign in. Today `/admin/login` is
-served to anyone who requests it, from anywhere, and a correct password alone is enough to
-open an identity-verification queue holding RESTRICTED personal data.
+served to anyone who requests it, from anywhere, and a password plus a six-digit code is
+enough to open an identity-verification queue holding RESTRICTED personal data.
+
+As of Phase 4, stage 6 the same door also opens dispute resolution: a resolver reads the
+seller's decrypted payment details, both parties' private chat, whatever either of them
+attached, and presses a button that moves escrow to one of them irreversibly. The
+capability behind this login has grown from reading personal data to moving other
+people's money.
 
 That is acceptable right now. Nothing here is reachable except on localhost or this LAN,
 and there is no attacker on either. It stops being acceptable the moment this application
-is reachable at a public hostname, or the moment a real customer's identity documents land
-in the queue — whichever comes first.
+is reachable at a public hostname, the moment a real customer's identity documents land
+in the queue, or the moment a real trade's escrow can be decided from it — whichever comes
+first.
 
 **Decision, recorded so it cannot quietly slip:** before either of those happens, put the
 admin realm behind an edge-level gate the application itself cannot be bypassed to reach -
@@ -77,7 +84,7 @@ Two workable designs with different security properties:
 Medium-residual (R-08), and separation is far cheaper to build now than to retrofit once
 sessions, audit and notifications assume a single user table.
 
-### Q3 — Who pays the P2P trade fee, and is it a fixed amount or a percentage? **Blocks Phase 4, wanted for Phase 0.5 copy**
+### Q3 — Who pays the P2P trade fee, and is it a fixed amount or a percentage? **Answered (see §4); built in Phase 4 at zero**
 
 The fee is zero at launch, but its _shape_ changes the escrow amount and therefore the
 trade creation entry:
@@ -221,9 +228,9 @@ any of them.
 
 ## 5. Deliberately deferred items (tracked here, not as code TODOs)
 
-| Item                                               | Deferred to     | Why                                                                                                                                                                       |
-| -------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Content-Security-Policy with nonces                | Phase 1         | Needs the authenticated app's script inventory; a landing-only CSP would be rewritten immediately. Baseline headers (nosniff, frame deny, referrer, permissions) ship now |
-| Real photography on the landing page               | Owner           | Safety section uses a grayscale placeholder from picsum.photos; `next.config.ts` allows that host only for this reason                                                    |
-| `/login`, `/register`, `/terms`, `/privacy` routes | Phase 1 / owner | Linked from the landing page; currently 404                                                                                                                               |
-| shadcn/ui installation                             | Phase 1         | The landing page needs only a button and a native `<details>` accordion; shadcn arrives with forms and dialogs                                                            |
+| Item                                               | Deferred to    | Why                                                                                                                                                                                         |
+| -------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Content-Security-Policy with nonces                | Phase 1        | Needs the authenticated app's script inventory; a landing-only CSP would be rewritten immediately. Baseline headers (nosniff, frame deny, referrer, permissions) ship now                   |
+| Real photography on the landing page               | Owner          | Safety section uses a grayscale placeholder from picsum.photos; `next.config.ts` allows that host only for this reason                                                                      |
+| `/login`, `/register`, `/terms`, `/privacy` routes | Done (Phase 1) | All four exist; the legal text is still placeholder and still the owner's                                                                                                                   |
+| shadcn/ui installation                             | Not taken up   | Forms, dialogs and four phases of screens shipped without it; `components/ui/` is hand-written against the design tokens. Recorded as a decision by default rather than an outstanding task |

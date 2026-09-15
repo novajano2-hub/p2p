@@ -81,7 +81,7 @@ are said in words about the money rather than about the machine: `MANUAL_REVIEW`
 "being checked - a person is looking at this one, usually a matter of hours", not "held
 by risk".
 
-**Screens (Phase 3, stage 5).** The three human transitions have an interface at**Screens (Phase 3, stage 5).** The three human transitions have an interface at
+**Screens (Phase 3, stage 5).** The three human transitions have an interface at
 `/admin/deposits`, in two queues rather than one list: "held for review" asks should this
 be credited, "nobody to credit" asks whose is this, and mixing them makes a reviewer skip
 rows of the other job. One decision worth recording: an unattributed deposit that landed
@@ -180,7 +180,7 @@ off. `REQUESTED` and `RISK_REVIEW` can be cancelled and `APPROVED` cannot, but `
 and `APPROVED` are both stage `PENDING` - so the view carries `cancellable` from the
 server instead of the browser inferring it, which it cannot do correctly.
 
-**Screens (Phase 3, stage 5).** `/admin/withdrawals`, in two queues: money held waiting**Screens (Phase 3, stage 5).** `/admin/withdrawals`, in two queues: money held waiting
+**Screens (Phase 3, stage 5).** `/admin/withdrawals`, in two queues: money held waiting
 for approval, and transfers whose broadcast outcome nobody can be sure of. The second one
 is shaped by what it costs to be wrong. The two outcomes are offered as a deliberate
 choice, not a dropdown default; "it is on the chain" demands the transaction hash;
@@ -351,6 +351,38 @@ rows, with the resolver's routes in `admin-disputes.controller.ts` under the
   the buyer with no administrator involved. The buyer cannot cancel a disputed trade.
 
 Proven in `apps/api/test/api/disputes.spec.ts` (AT-8, AT-6).
+
+**Screens (Phase 4, stage 6).** `/admin/disputes`, and the whole case on one page at
+`/admin/disputes/{id}`. Where the screen makes a decision the API did not:
+
+- **Two lists, not a queue and an archive.** The API answers with `open` oldest first and
+  the last twenty decided; both are shown, because the question a resolver actually has
+  before deciding one is how the last ones like it went. The open tab carries the count,
+  since that is the number that means work.
+- **The case is one page.** The trade, both parties' records, where the buyer was told to
+  pay, every file either side attached, the whole chat and the trade's own timeline. A
+  dispute is decided on pattern as much as on a screenshot - a party with fourteen
+  completed trades and one with none are not the same claim - so the two records sit
+  beside the claim rather than a click away.
+- **The page says that reading it is recorded.** `dispute.viewed` is written on every
+  detail read (B7.5), and a control nobody knows about deters nobody, so the panel holding
+  the seller's decrypted account details says so in its own words.
+- **Evidence and chat images are fetched with the session**, never by URL: the bytes come
+  through the API under the resolver's cookie and become object URLs the page revokes
+  (B5.2). Nothing has scanned or parsed these files (B5.1), so one that will not decode
+  says so in words rather than leaving a broken image in a decision.
+- **The two outcomes are a choice, not a default**, with each one's consequence stated
+  under it, and the note is required before the button will work. Pressing it asks once
+  more, naming the person who will be paid and the amount - the same shape the withdrawal
+  screen uses for the decision that cannot be taken back (AT-8's "no decision without a
+  stated reason", made a property of the screen rather than of the reviewer).
+- **The screen never works out a status.** Every control follows what the API says the
+  session may do; the role gate is the API's, and the screen shows what is missing rather
+  than hiding the page.
+
+Not built here: nothing reports on resolution patterns per resolver (B7.1's detection
+half), and a resolver cannot write into the trade's chat - the note in the decision is
+the only thing either party is told.
 
 ---
 

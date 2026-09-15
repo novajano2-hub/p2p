@@ -5,7 +5,7 @@ The BIRQ API: NestJS on the Fastify adapter. One codebase, two entrypoints:
 It deploys on its own, as a container built from [Dockerfile](Dockerfile), independently
 of the web app.
 
-## What exists at this checkpoint (Phase 1, step 1)
+## The foundations every module sits on
 
 - Validated environment (`src/config/env.ts`): the process refuses to boot on a missing
   or malformed value, and the error names the variable without printing its value.
@@ -19,7 +19,12 @@ of the web app.
   on everything, a 1 MB body limit, sanitised request ids.
 - Graceful shutdown: drains in-flight requests for `SHUTDOWN_TIMEOUT_MS`, then exits.
 
-Nothing here touches money, a blockchain or a custody provider. Auth arrives in step 2.
+On top of those sit the modules: accounts and sessions, the KYC queue, the separate
+admin realm with TOTP, the double-entry ledger, deposits and withdrawals against a mock
+chain and a mock custody provider, reconciliation, and the marketplace - offers, trades
+with escrow, the trade chat over a WebSocket, and disputes. What each one decided is in
+[docs/architecture/state-machines.md](../../docs/architecture/state-machines.md); the
+chain and the custody provider are still mocks.
 
 ## Layout
 
