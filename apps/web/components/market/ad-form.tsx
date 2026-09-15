@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { PageHeader, Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
 import { BackTo, ListNotice, Segmented } from "@/components/market/bits";
+import { useMayPostAds, VerifyToPost } from "@/components/market/verify-to-post";
 import { AppLink } from "@/components/ui/app-link";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -146,6 +147,7 @@ function toRequest(draft: Draft): { ok: true; body: OfferDraft } | { ok: false; 
 }
 
 export function AdForm({ offerId }: { offerId?: string | undefined }) {
+  const mayPost = useMayPostAds();
   const router = useRouter();
   const [state, setState] = useState<State>({ status: "loading" });
   const [draft, setDraft] = useState<Draft>(EMPTY);
@@ -231,7 +233,11 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
         }
       />
 
-      {state.status === "loading" ? (
+      {/* Editing an ad needs no verification: the account that posted it was
+          verified at the time, and the API only asks on create. */}
+      {!editing && !mayPost ? (
+        <VerifyToPost />
+      ) : state.status === "loading" ? (
         <Panel>
           <ListNotice>Loading…</ListNotice>
         </Panel>

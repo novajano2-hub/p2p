@@ -13,6 +13,7 @@ import {
   birr,
   usdt,
 } from "@/components/market/bits";
+import { useMayPostAds, VerifyToPost } from "@/components/market/verify-to-post";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { marketClient, type MyOffer } from "@/lib/market/client";
@@ -31,6 +32,7 @@ type State =
   | { status: "ready"; offers: MyOffer[] };
 
 export function MyAds() {
+  const mayPost = useMayPostAds();
   const [state, setState] = useState<State>({ status: "loading" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -62,10 +64,14 @@ export function MyAds() {
     <>
       <BackTo href="/trade">Marketplace</BackTo>
       <PageHeader title="My ads" description="What you have posted, and what is left on each.">
-        <ButtonLink href="/trade/ads/new" size="sm" arrow={false}>
-          Post an ad
-        </ButtonLink>
+        {mayPost ? (
+          <ButtonLink href="/trade/ads/new" size="sm" arrow={false}>
+            Post an ad
+          </ButtonLink>
+        ) : null}
       </PageHeader>
+
+      <VerifyToPost className="mb-4" />
 
       <Panel>
         {error ? <FormError message={error} /> : null}
@@ -78,11 +84,15 @@ export function MyAds() {
             icon={Megaphone}
             title="No ads yet"
             description="Post an ad to sell USDT at your price, or to buy it. Buyers and sellers find you in the marketplace."
-            action={
-              <ButtonLink href="/trade/ads/new" size="sm" variant="secondary" arrow={false}>
-                Post an ad
-              </ButtonLink>
-            }
+            {...(mayPost
+              ? {
+                  action: (
+                    <ButtonLink href="/trade/ads/new" size="sm" variant="secondary" arrow={false}>
+                      Post an ad
+                    </ButtonLink>
+                  ),
+                }
+              : {})}
           />
         ) : (
           <ul className="divide-border divide-y">
