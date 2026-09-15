@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // What a Playwright run leaves behind. The report is a bundled React
+    // app, so linting it reports three thousand problems in somebody
+    // else's minified code - which is what `npm run lint` did after every
+    // local e2e run.
+    "playwright-report/**",
+    "test-results/**",
   ]),
 ]);
 
