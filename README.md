@@ -98,4 +98,11 @@ npm run test:e2e -w web             # once: npm exec -w web -- playwright instal
 Dependencies are pinned exactly. After adding or upgrading a package, run `npm run pin`
 and commit `package-lock.json` with it.
 
+The `overrides` block in the root `package.json` lifts two transitive packages past a
+published advisory: `deepmerge-ts`, reached through the Prisma CLI that ships in the API
+image for `migrate deploy`, and `fastify`, which `@nestjs/platform-fastify` pins to a
+release predating the `X-Forwarded-*` spoofing fix. Editing an override does not on its own
+invalidate the lockfile: run `npm update <package>` after, and check with `npm ls <package>`.
+Drop an entry once the package that pulls it in asks for a fixed version itself.
+
 CI runs all of the above plus a dependency audit and secret scan on every pull request.
