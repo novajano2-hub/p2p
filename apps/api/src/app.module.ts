@@ -14,6 +14,7 @@ import { AdminModule } from "@/modules/admin/admin.module";
 import { AuthModule } from "@/modules/auth/auth.module";
 import { BlockchainModule } from "@/modules/blockchain/blockchain.module";
 import { ChatModule } from "@/modules/chat/chat.module";
+import { DisputesModule } from "@/modules/disputes/disputes.module";
 import { CustodyModule } from "@/modules/custody/custody.module";
 import { DepositsModule } from "@/modules/deposits/deposits.module";
 import { HealthModule } from "@/modules/health/health.module";
@@ -63,6 +64,7 @@ export class AppModule {
         OffersModule,
         TradesModule,
         ChatModule,
+        DisputesModule,
         RealtimeGatewayModule,
         SweepsModule,
         ReconciliationModule,

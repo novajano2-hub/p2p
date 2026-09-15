@@ -324,6 +324,34 @@ Proven in `apps/api/test/api/trades.spec.ts`: AT-2 (twenty rounds of two takers 
 one seller's last 100 USDT), AT-3, AT-4, AT-5 (five concurrent releases, one credit), AT-6,
 AT-7 and AT-14.
 
+**Built (Phase 4, stage 4).** `apps/api/src/modules/disputes/` implements the `DISPUTED`
+rows, with the resolver's routes in `admin-disputes.controller.ts` under the
+`DISPUTE_RESOLVER` role. Where the code is more specific than the text:
+
+- **Either party opens, after a cooldown** of `TRADE_DISPUTE_COOLDOWN_MINUTES` (10) from "I
+  have paid": a transfer takes a while to show, and a dispute opened the second after it is
+  noise for the reviewer and pressure on the seller. A trade has one dispute row; a
+  withdrawn one may be reopened by either side, and is rewritten.
+- **Evidence** is JPEG, PNG or WebP by magic bytes, at most 5 MB and five files per party,
+  attached while the dispute is open, readable by the two parties and the resolver only,
+  and stored under the trade so it is retired with it (threat model B5.2, B5.4). There is
+  no malware scan yet (B5.1).
+- **The decision is one settlement** through the trade engine's `settle()`, under the
+  trade's single settlement key: for the buyer the release shape as `DISPUTE_RESOLVED_RELEASE`
+  (JE-6), for the seller the refund shape as `DISPUTE_RESOLVED_REFUND`, reversing the lock
+  by id. The audit event (`dispute.resolved_release` / `dispute.resolved_refund`) carries
+  the actor, the mandatory note, both states and the evidence ids (AT-8); the note reaches
+  both parties word for word. A refund restores the offer's volume and counts against the
+  buyer's record; a release counts as a completed trade for both.
+- **Reading a dispute is audited** (`dispute.viewed`), because the detail decrypts where
+  the buyer was told to pay (B7.5).
+- **A resolver cannot be a party.** Administrators are a separate realm with no customer
+  account, so the table's precondition holds by construction rather than by check.
+- **The seller may still release while `DISPUTED`**, which closes the dispute as decided for
+  the buyer with no administrator involved. The buyer cannot cancel a disputed trade.
+
+Proven in `apps/api/test/api/disputes.spec.ts` (AT-8, AT-6).
+
 ---
 
 ## 4. How these are enforced in code

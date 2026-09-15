@@ -12,7 +12,15 @@ import { type Mail } from "@/infra/mail/mailer";
   instructions; those live in the app, behind the session.
 */
 
-export type TradeMailKind = "OPENED" | "PAID" | "RELEASED" | "CANCELLED" | "EXPIRED";
+export type TradeMailKind =
+  | "OPENED"
+  | "PAID"
+  | "RELEASED"
+  | "CANCELLED"
+  | "EXPIRED"
+  | "DISPUTED"
+  | "DISPUTE_WITHDRAWN"
+  | "DECIDED";
 
 export function tradeMail(
   kind: TradeMailKind,
@@ -24,6 +32,8 @@ export function tradeMail(
     amount: bigint;
     fiatSantim: bigint;
     counterparty: string;
+    /** For DECIDED: which way it went. */
+    outcome?: "RELEASE_TO_BUYER" | "REFUND_TO_SELLER" | undefined;
   },
 ): Mail {
   const usdt = `${formatUsdt(input.amount)} USDT`;
@@ -62,6 +72,28 @@ export function tradeMail(
           ? `The trade with ${other} for ${usdt} expired before they paid. Your USDT is back in your available balance.`
           : `Your trade with ${other} for ${usdt} expired before it was marked as paid. Do not send anything for it now; if you already have, contact them in the app.`;
       break;
+    case "DISPUTED":
+      subject = `${other} opened a dispute on your trade for ${usdt}`;
+      body = `${other} has asked a reviewer to look at your trade for ${usdt} (${birr}). The USDT stays in escrow until it is decided. Open the trade in the app and attach anything that shows what happened - a reviewer reads the chat and the evidence from both sides.`;
+      break;
+    case "DISPUTE_WITHDRAWN":
+      subject = `${other} withdrew the dispute on your trade for ${usdt}`;
+      body =
+        input.role === "SELLER"
+          ? `${other} has withdrawn their dispute. The trade for ${usdt} is back to waiting for you to release once the ${birr} has arrived.`
+          : `${other} has withdrawn their dispute. The trade for ${usdt} is back to waiting for the seller to release.`;
+      break;
+    case "DECIDED": {
+      const toBuyer = input.outcome === "RELEASE_TO_BUYER";
+      const won = input.role === "BUYER" ? toBuyer : !toBuyer;
+      subject = won
+        ? `The dispute on your trade for ${usdt} was decided in your favour`
+        : `The dispute on your trade for ${usdt} was decided against you`;
+      body = toBuyer
+        ? `A reviewer decided the dispute on your trade with ${other}: ${usdt} was released to the buyer. The reviewer's note is in the app.`
+        : `A reviewer decided the dispute on your trade with ${other}: ${usdt} went back to the seller. The reviewer's note is in the app.`;
+      break;
+    }
   }
 
   const footer = `Open ${input.appName} to see the trade. Never follow a link in an email to release or pay.`;

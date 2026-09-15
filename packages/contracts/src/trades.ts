@@ -110,19 +110,28 @@ export const tradeActions = z.object({
 });
 export type TradeActions = z.infer<typeof tradeActions>;
 
+export const disputeStatus = z.enum(["OPEN", "WITHDRAWN", "RESOLVED"]);
+export type DisputeStatus = z.infer<typeof disputeStatus>;
+
+export const disputeReason = z.enum([
+  "PAYMENT_NOT_RECEIVED",
+  "PAYMENT_NOT_RELEASED",
+  "WRONG_AMOUNT",
+  "THIRD_PARTY_PAYMENT",
+  "SUSPECTED_FRAUD",
+  "OTHER",
+]);
+export type DisputeReason = z.infer<typeof disputeReason>;
+
+export const disputeOutcome = z.enum(["RELEASE_TO_BUYER", "REFUND_TO_SELLER"]);
+export type DisputeOutcome = z.infer<typeof disputeOutcome>;
+
 export const tradeDisputeSummary = z.object({
   id: z.string(),
-  status: z.enum(["OPEN", "WITHDRAWN", "RESOLVED"]),
-  reason: z.enum([
-    "PAYMENT_NOT_RECEIVED",
-    "PAYMENT_NOT_RELEASED",
-    "WRONG_AMOUNT",
-    "THIRD_PARTY_PAYMENT",
-    "SUSPECTED_FRAUD",
-    "OTHER",
-  ]),
+  status: disputeStatus,
+  reason: disputeReason,
   openedByMe: z.boolean(),
-  outcome: z.enum(["RELEASE_TO_BUYER", "REFUND_TO_SELLER"]).nullable(),
+  outcome: disputeOutcome.nullable(),
   /** The resolver's words to the parties, once decided. */
   resolutionNote: z.string().nullable(),
   createdAt: z.string(),
