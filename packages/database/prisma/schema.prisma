@@ -132,6 +132,7 @@ enum NotificationType {
   TRADE_EXPIRED
   DISPUTE_OPENED
   DISPUTE_RESOLVED
+  DISPUTE_WITHDRAWN
 
   @@map("notification_type")
 }

@@ -26,6 +26,7 @@ export const notificationType = z.enum([
   "TRADE_EXPIRED",
   "DISPUTE_OPENED",
   "DISPUTE_RESOLVED",
+  "DISPUTE_WITHDRAWN",
 ]);
 export type NotificationType = z.infer<typeof notificationType>;
 

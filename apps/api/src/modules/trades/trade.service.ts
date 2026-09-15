@@ -95,13 +95,13 @@ interface Context {
 
 type Tx = Prisma.TransactionClient;
 
-const WITH = {
+export const WITH = {
   dispute: true,
   events: { where: { kind: "MARKED_PAID" as const }, take: 1 },
   reads: true,
 } satisfies Prisma.TradeInclude;
 
-type TradeRow = Prisma.TradeGetPayload<{ include: typeof WITH }>;
+export type TradeRow = Prisma.TradeGetPayload<{ include: typeof WITH }>;
 
 /** What one settlement posts and where the trade ends up. */
 interface Settlement {
@@ -806,11 +806,9 @@ export class TradeService {
    * Both parties' open sockets learn the trade changed - once the change is
    * durable, never before, and never from inside the transaction (AT-19).
    * The frame carries the status and nothing else; a client refetches.
+   * Public so that the disputes module can say the same thing.
    */
-  private changed(
-    trade: { id: string; buyerId: string; sellerId: string },
-    status: TradeStatus,
-  ): void {
+  changed(trade: { id: string; buyerId: string; sellerId: string }, status: TradeStatus): void {
     void afterCommit(() =>
       this.realtime.tradeChanged({
         id: trade.id,

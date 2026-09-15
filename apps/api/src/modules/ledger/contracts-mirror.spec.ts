@@ -1,5 +1,8 @@
 import {
   adminRole,
+  disputeOutcome,
+  disputeReason,
+  disputeStatus,
   ledgerAccountScope,
   ledgerAccountType,
   ledgerActorType,
@@ -37,6 +40,9 @@ const mirrors: [string, readonly string[], Record<string, string>][] = [
   ["tradeStatus", tradeStatus.options, $Enums.TradeStatus],
   ["tradeEventKind", tradeEventKind.options, $Enums.TradeEventKind],
   ["tradeMessageKind", tradeMessageKind.options, $Enums.TradeMessageKind],
+  ["disputeStatus", disputeStatus.options, $Enums.DisputeStatus],
+  ["disputeReason", disputeReason.options, $Enums.DisputeReason],
+  ["disputeOutcome", disputeOutcome.options, $Enums.DisputeOutcome],
 ];
 
 describe("contract enumerations mirror the schema's", () => {
