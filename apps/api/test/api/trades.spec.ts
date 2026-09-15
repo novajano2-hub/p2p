@@ -11,7 +11,7 @@ import { accounts } from "@/modules/ledger/account-code";
 import { LedgerService } from "@/modules/ledger/ledger.service";
 import { OfferService } from "@/modules/offers/offer.service";
 import { EXPIRER_LOCK_KEY, TradeExpirer } from "@/modules/trades/trade-expirer";
-import { TRADE_TRANSITIONS } from "@/modules/trades/trade.machine";
+import { OPEN, SETTLED, TRADE_TRANSITIONS } from "@/modules/trades/trade.machine";
 import { TradeService } from "@/modules/trades/trade.service";
 
 import { csrfFor, PASSWORD, registerFully, uniqueEmail } from "./helpers";
@@ -59,14 +59,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await db.$disconnect();
   await app.close();
-});
-
-/* AT-10: every transaction in the database balances, after every test here. */
-afterEach(async () => {
-  const rows = await db.$queryRaw<{ transaction_id: string }[]>`
-    SELECT transaction_id FROM ledger_entries
-     GROUP BY transaction_id, asset HAVING sum(signed_amount) <> 0 OR count(*) < 2`;
-  expect(rows).toEqual([]);
 });
 
 afterEach(() => {
@@ -636,6 +628,13 @@ describe("giving the escrow back", () => {
     await redis.client.del(EXPIRER_LOCK_KEY);
   });
 
+  /*
+    The invariant itself lives in test/ledger-invariants.ts, which checks
+    every trade in the database after every test in the project rather than
+    this file's own trades at the end of this file. What is left to prove
+    here is that the hook had something to look at: a run that made no
+    settled trade would pass it without meaning anything.
+  */
   it("leaves every settled trade's escrow at exactly zero (AT-14)", async () => {
     const rows = await db.$queryRaw<
       { id: string; status: string; amount: bigint; balance: bigint }[]
@@ -645,9 +644,14 @@ describe("giving the escrow back", () => {
         LEFT JOIN ledger_accounts a ON a.code = 'LIAB:TRADE:' || t.id || ':USDT:ESCROW'
         LEFT JOIN ledger_account_balances b ON b.account_id = a.id
        WHERE t.correlation_id LIKE ${`test-${run}-%`}`;
-    expect(rows.length).toBeGreaterThan(0);
+
+    const seen = new Set(rows.map((row) => row.status));
+    expect([...seen].some((status) => SETTLED.includes(status as (typeof SETTLED)[number]))).toBe(
+      true,
+    );
+    expect([...seen].some((status) => OPEN.includes(status as (typeof OPEN)[number]))).toBe(true);
     for (const row of rows) {
-      const settled = ["COMPLETED", "CANCELLED", "EXPIRED", "REFUNDED"].includes(row.status);
+      const settled = SETTLED.includes(row.status as (typeof SETTLED)[number]);
       expect(row.balance).toBe(settled ? 0n : row.amount);
     }
   });
@@ -666,7 +670,9 @@ describe("concurrency", () => {
     const first = await customer();
     const second = await customer();
 
-    for (let round = 0; round < 20; round++) {
+    // "Repeat >= 50 times to catch interleavings that pass once by luck" - AT-2.
+    const ROUNDS = 50;
+    for (let round = 0; round < ROUNDS; round++) {
       const [a, b] = await Promise.all([
         take(first.api, { offerId: offer.id, amount: (100n * USDT).toString() }),
         take(second.api, { offerId: offer.id, amount: (100n * USDT).toString() }),
@@ -694,39 +700,74 @@ describe("concurrency", () => {
         },
       },
     });
-    expect(escrows).toBe(20);
-  });
+    expect(escrows).toBe(ROUNDS);
+  }, 180_000);
 
+  /*
+    Eight rounds rather than AT-2's fifty, and the reason is the customer's
+    own daily withdrawal ceiling: every round the withdrawal wins consumes
+    100 USDT of a 2,000 USDT tier limit that no test may raise, and a round
+    refused by the ceiling would be a race nobody ran. Eight is what fits
+    with room to spare, and it is eight more than this test used to run.
+  */
   it("a withdrawal and a trade started together cannot overspend (AT-3)", async () => {
     const seller = await customer({ usdt: 100n });
     const method = await addMethod(seller.api);
-    const offer = await sellOffer(seller.api, method.id);
+    const offer = await sellOffer(seller.api, method.id, {
+      totalAmount: (10_000n * USDT).toString(),
+    });
     const buyer = await customer();
 
-    const [withdrawal, trade] = await Promise.all([
-      seller.api.post(
-        "/v1/wallet/withdrawals",
-        {
-          network: "BSC",
-          amount: (100n * USDT).toString(),
-          destination: OUTSIDE,
-          password: PASSWORD,
-        },
-        uniq("key"),
-      ),
-      take(buyer.api, { offerId: offer.id, amount: (100n * USDT).toString() }),
-    ]);
-    const statuses = [withdrawal.status, trade.status].sort();
-    expect(statuses).toEqual([201, 409]);
+    // Everything the seller holds in any form. It grows only when a
+    // withdrawal wins, because an authorised withdrawal cannot be handed back.
+    let stake = 100n * USDT;
 
-    const [free, held, locked] = await Promise.all([
-      available(seller.userId),
-      pending(seller.userId),
-      trades.escrowedFor(seller.userId),
-    ]);
-    expect(free + held + locked).toBe(100n * USDT);
-    expect(free).toBe(0n);
-  });
+    for (let round = 0; round < 8; round++) {
+      const [withdrawal, trade] = await Promise.all([
+        seller.api.post(
+          "/v1/wallet/withdrawals",
+          {
+            network: "BSC",
+            amount: (100n * USDT).toString(),
+            destination: OUTSIDE,
+            password: PASSWORD,
+          },
+          uniq("key"),
+        ),
+        take(buyer.api, { offerId: offer.id, amount: (100n * USDT).toString() }),
+      ]);
+
+      // Exactly one of the two got the money, and the loser was refused for
+      // the right reason rather than by some other rule.
+      expect([withdrawal.status, trade.status].sort()).toEqual([201, 409]);
+      const loser = withdrawal.status === 409 ? withdrawal : trade;
+      expect(loser.body.error.code).toBe("INSUFFICIENT_FUNDS");
+
+      const [free, held, locked] = await Promise.all([
+        available(seller.userId),
+        pending(seller.userId),
+        trades.escrowedFor(seller.userId),
+      ]);
+      expect(free).toBe(0n);
+      expect(free + held + locked).toBe(stake);
+
+      /*
+        Put the seller back to exactly 100 available for the next round. A
+        trade can be cancelled, which returns the escrow; an approved
+        withdrawal cannot be - it is already authorised, and only the
+        processor or an administrator moves it - so that 100 stays held for
+        good and the seller is funded again instead.
+      */
+      if (trade.status === 201) {
+        const won = trade.body as TradeView;
+        await buyer.api.post(`/v1/trades/${won.id}/cancel`).expect(200);
+      } else {
+        await fund(seller.userId, 100n);
+        stake += 100n * USDT;
+      }
+      expect(await available(seller.userId)).toBe(100n * USDT);
+    }
+  }, 180_000);
 
   // Sixty requests serialised on one offer row run close to the default thirty seconds.
   it("takes and cancels on one offer at the same time, and nothing waits on anything", async () => {

@@ -35,6 +35,12 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run check:boundaries -w web
+
+      # The browser's half of AT-21: the money helpers, which round-trip past
+      # 2^53 and must agree with the server about birr. They have always been
+      # here and have never been run by CI.
+      - run: npm run test -w web
+
       - run: npm run build
 
       - uses: actions/upload-artifact@v4
