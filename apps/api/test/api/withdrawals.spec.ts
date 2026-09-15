@@ -75,14 +75,6 @@ afterAll(async () => {
   await app.close();
 });
 
-/* AT-10: every transaction in the database balances, after every test here. */
-afterEach(async () => {
-  const rows = await db.$queryRaw<{ transaction_id: string }[]>`
-    SELECT transaction_id FROM ledger_entries
-     GROUP BY transaction_id, asset HAVING sum(signed_amount) <> 0 OR count(*) < 2`;
-  expect(rows).toEqual([]);
-});
-
 /* ------------------------------------------------------------- helpers */
 
 const available = (userId: string) => ledger.balance(accounts.userAvailable(userId));

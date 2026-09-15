@@ -71,14 +71,6 @@ afterAll(async () => {
   await app.close();
 });
 
-/* AT-10: every transaction in the database balances, after every test here. */
-afterEach(async () => {
-  const rows = await db.$queryRaw<{ transaction_id: string }[]>`
-    SELECT transaction_id FROM ledger_entries
-     GROUP BY transaction_id, asset HAVING sum(signed_amount) <> 0 OR count(*) < 2`;
-  expect(rows).toEqual([]);
-});
-
 /* ------------------------------------------------------------- helpers */
 
 function api(cookie: string) {
@@ -217,18 +209,18 @@ async function makeAdmin(roles: string[] = ["DISPUTE_RESOLVER"]) {
 }
 type Admin = Awaited<ReturnType<typeof makeAdmin>>;
 
-const adminGet = (admin: Admin, path: string) =>
+const adminGet = (admin: Admin, path: string, requestId = uniq("adm")) =>
   request(server())
     .get(`/v1/admin/disputes${path}`)
     .set("Cookie", admin.cookie)
-    .set("x-request-id", uniq("adm"));
+    .set("x-request-id", requestId);
 
-const adminPost = (admin: Admin, path: string, body: object) =>
+const adminPost = (admin: Admin, path: string, body: object, requestId = uniq("adm")) =>
   request(server())
     .post(`/v1/admin/disputes${path}`)
     .set("Cookie", admin.cookie)
     .set("x-csrf-token", admin.csrf)
-    .set("x-request-id", uniq("adm"))
+    .set("x-request-id", requestId)
     .send(body);
 
 /* ---------------------------------------------------------------- tests */
@@ -394,8 +386,11 @@ describe("deciding a dispute (AT-8)", () => {
     const { buyer, seller, dispute } = await disputed();
     const body = { outcome: "RELEASE_TO_BUYER", note: NOTE };
 
-    // The parties, with their customer sessions, are nobody in the admin realm.
+    // The parties, with their customer sessions, are nobody in the admin realm -
+    // neither of them can read the case and neither can decide it.
     await buyer.api.post(`/v1/admin/disputes/${dispute.id}/resolve`, body).expect(401);
+    await buyer.api.get(`/v1/admin/disputes/${dispute.id}`).expect(401);
+    await seller.api.post(`/v1/admin/disputes/${dispute.id}/resolve`, body).expect(401);
     await seller.api.get(`/v1/admin/disputes/${dispute.id}`).expect(401);
     await request(server()).post(`/v1/admin/disputes/${dispute.id}/resolve`).send(body).expect(401);
 
@@ -404,6 +399,27 @@ describe("deciding a dispute (AT-8)", () => {
     await adminGet(reviewer, "").expect(403);
     await adminPost(reviewer, `/${dispute.id}/resolve`, body).expect(403);
     expect(await escrow(dispute.tradeId)).toBe(40n * USDT);
+
+    /*
+      The plan's fifth denial is "an admin who is a party to the trade". There
+      is no such person to make: administrators live in their own table with
+      their own sessions, and a trade's two sides are rows in another. So the
+      test is of the separation itself rather than of a refusal - if these
+      four ever stop holding, the fifth denial becomes writable and this test
+      is where somebody should come back to.
+    */
+    const resolver = await makeAdmin();
+    expect(await db.user.findUnique({ where: { email: resolver.email } })).toBeNull();
+    const row = await db.trade.findUniqueOrThrow({ where: { id: dispute.tradeId } });
+    expect(
+      await db.adminUser.findMany({ where: { id: { in: [row.buyerId, row.sellerId] } } }),
+    ).toEqual([]);
+    // And it does not work in the other direction either: an admin session is
+    // not a customer session, so a resolver cannot act as a party anywhere.
+    await request(server())
+      .get(`/v1/trades/${dispute.tradeId}`)
+      .set("Cookie", resolver.cookie)
+      .expect(401);
   });
 
   it("releases to the buyer with a full record: ledger, audit, both parties, timeline", async () => {
@@ -468,10 +484,13 @@ describe("deciding a dispute (AT-8)", () => {
     }).expect(400);
     expect(noNote.body.error.details[0].path).toBe("note");
 
-    const decided = await adminPost(resolver, `/${dispute.id}/resolve`, {
-      outcome: "RELEASE_TO_BUYER",
-      note: NOTE,
-    }).expect(200);
+    const requestId = uniq("decide");
+    const decided = await adminPost(
+      resolver,
+      `/${dispute.id}/resolve`,
+      { outcome: "RELEASE_TO_BUYER", note: NOTE },
+      requestId,
+    ).expect(200);
     expect(decided.body).toMatchObject({
       status: "RESOLVED",
       outcome: "RELEASE_TO_BUYER",
@@ -495,11 +514,16 @@ describe("deciding a dispute (AT-8)", () => {
       where: { action: "dispute.resolved_release", subjectId: dispute.id },
     });
     expect(audit?.actorEmail).toBe(resolver.email);
+    expect(audit?.actorAdminId).toBe(resolver.id);
+    // The request that caused it, so the event, the logs and the ledger row
+    // can be put beside each other afterwards.
+    expect(audit?.correlationId).toBe(requestId);
     expect(audit?.reason).toBe(NOTE);
     expect(audit?.before).toMatchObject({
       tradeStatus: "DISPUTED",
       disputeStatus: "OPEN",
       openedBy: "BUYER",
+      reason: "PAYMENT_NOT_RELEASED",
     });
     expect(audit?.after).toMatchObject({ tradeStatus: "COMPLETED", outcome: "RELEASE_TO_BUYER" });
     expect((audit?.after as { evidenceIds: string[] }).evidenceIds).toEqual([
@@ -543,12 +567,21 @@ describe("deciding a dispute (AT-8)", () => {
 
   it("refunds the seller when decided the other way, reversing the lock (JE-5 shape)", async () => {
     const { seller, buyer, offer, trade, dispute } = await disputed();
+    await seller.api
+      .raw(`/v1/trades/${trade.id}/dispute/evidence`, "image/png", fakePng())
+      .expect(201);
     const resolver = await makeAdmin();
+    const detail = (await adminGet(resolver, `/${dispute.id}`).expect(200))
+      .body as AdminDisputeDetail;
 
-    const decided = await adminPost(resolver, `/${dispute.id}/resolve`, {
-      outcome: "REFUND_TO_SELLER",
-      note: "No transfer reached the seller's account by the time of review.",
-    }).expect(200);
+    const refundNote = "No transfer reached the seller's account by the time of review.";
+    const requestId = uniq("decide");
+    const decided = await adminPost(
+      resolver,
+      `/${dispute.id}/resolve`,
+      { outcome: "REFUND_TO_SELLER", note: refundNote },
+      requestId,
+    ).expect(200);
     expect(decided.body.trade.status).toBe("REFUNDED");
 
     expect(await legs(trade.id, "DISPUTE_RESOLVED_REFUND")).toEqual([
@@ -575,13 +608,36 @@ describe("deciding a dispute (AT-8)", () => {
     const audit = await db.auditEvent.findFirst({
       where: { action: "dispute.resolved_refund", subjectId: dispute.id },
     });
+    expect(audit?.actorEmail).toBe(resolver.email);
+    expect(audit?.actorAdminId).toBe(resolver.id);
+    expect(audit?.correlationId).toBe(requestId);
+    expect(audit?.reason).toBe(refundNote);
+    expect(audit?.before).toMatchObject({
+      tradeStatus: "DISPUTED",
+      disputeStatus: "OPEN",
+      openedBy: "BUYER",
+      reason: "PAYMENT_NOT_RELEASED",
+    });
     expect(audit?.after).toMatchObject({
       tradeStatus: "REFUNDED",
       sellerRefund: (40n * USDT).toString(),
     });
+    expect((audit?.after as { evidenceIds: string[] }).evidenceIds).toEqual([
+      detail.evidence[0]?.id,
+    ]);
     const view = await buyer.api.get(`/v1/trades/${trade.id}`).expect(200);
     expect(view.body.status).toBe("REFUNDED");
     expect(view.body.message).toMatch(/seller's favour/i);
+
+    // The whole story, from either side, without reading the audit log.
+    const timeline = (await seller.api.get(`/v1/trades/${trade.id}/events`).expect(200)).body
+      .events as { kind: string; actor: string }[];
+    expect(timeline.map((event) => `${event.kind}:${event.actor}`)).toEqual([
+      "CREATED:COUNTERPARTY",
+      "MARKED_PAID:COUNTERPARTY",
+      "DISPUTE_OPENED:COUNTERPARTY",
+      "DISPUTE_RESOLVED:ADMIN",
+    ]);
   });
 
   it("ends without a person when the seller releases after all", async () => {

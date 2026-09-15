@@ -1,9 +1,13 @@
 # ETB/USDT P2P Platform — Documentation
 
-**Status: Phase 0 (decisions and threat model). No application code has been written.**
+**Status: Phase 4 complete (the marketplace: offers, trades, escrow, chat, disputes and
+their screens). Phase 5, UX hardening, is next.**
 
-Everything in this folder is a _proposal for review_. Nothing here has been validated
-against a real custody provider, a real blockchain network, or a real payment rail.
+These documents describe what is built as well as what is intended: the design documents
+carry dated **Built (Phase N, stage M)** notes where the code has caught up with them, and
+where it has not they say so. What has _not_ changed is the standing caveat - nothing here
+has been validated against a real custody provider, a real blockchain network, or a real
+payment rail, and every claim that depends on one is marked UNVALIDATED.
 
 ## Read in this order
 
@@ -15,10 +19,11 @@ against a real custody provider, a real blockchain network, or a real payment ra
 | 4   | [architecture/ledger-taxonomy.md](architecture/ledger-taxonomy.md)         | The chart of accounts and worked, balanced journal entries                      |
 | 5   | [architecture/state-machines.md](architecture/state-machines.md)           | Deposit, withdrawal and trade transition tables                                 |
 | 6   | [architecture/data-classification.md](architecture/data-classification.md) | Data classes and the secret inventory                                           |
-| 7   | [architecture/repository-tree.md](architecture/repository-tree.md)         | Proposed monorepo layout                                                        |
+| 7   | [architecture/repository-tree.md](architecture/repository-tree.md)         | The monorepo layout as built, and the rules behind it                           |
 | 8   | [threat-model/README.md](threat-model/README.md)                           | Attackers, boundaries, STRIDE analysis, risk register                           |
 | 9   | [testing/acceptance-test-plan.md](testing/acceptance-test-plan.md)         | The tests that define "correct"                                                 |
 | 10  | [open-questions.md](open-questions.md)                                     | Blocking questions and the unvalidated-assumption register                      |
+| 11  | [runbooks/](runbooks/)                                                     | What to do, for the jobs a person has to do by hand                             |
 
 ## The one-paragraph version
 

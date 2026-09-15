@@ -48,7 +48,12 @@ export default {
       globalTeardown: "<rootDir>/test/global-teardown.js",
       // Jest ignores testTimeout inside a projects entry; setup-timeout.ts sets
       // it after the framework is installed, where it is honoured.
-      setupFilesAfterEnv: ["<rootDir>/test/setup-timeout.ts"],
+      // setup-timeout raises the per-test budget; ledger-invariants holds AT-10
+      // and AT-14 over every spec in the project, so neither can be forgotten.
+      setupFilesAfterEnv: [
+        "<rootDir>/test/setup-timeout.ts",
+        "<rootDir>/test/ledger-invariants.ts",
+      ],
     },
   ],
 };

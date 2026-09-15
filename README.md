@@ -9,16 +9,16 @@ design and the acceptance-test plan are under [docs/](docs/README.md).
 
 ## Status
 
-| Phase                               | State                                      |
-| ----------------------------------- | ------------------------------------------ |
-| 0. Decisions and threat model       | Done, under review                         |
-| 0.5 Landing page and monorepo shell | Done: landing, auth pages (preview), legal |
-| 1. Foundation (API, database, auth) | **In progress**: step 1 of 3, API scaffold |
-| 2. Ledger vertical slice            | Not started                                |
-| 3. Mock wallet operations           | Not started                                |
-| 4. P2P escrow                       | Not started                                |
-| 5. UX hardening                     | Not started                                |
-| 6. Real provider sandbox            | Not started; requires explicit approval    |
+| Phase                               | State                                                                 |
+| ----------------------------------- | --------------------------------------------------------------------- |
+| 0. Decisions and threat model       | Done, under review                                                    |
+| 0.5 Landing page and monorepo shell | Done: landing, auth pages, legal                                      |
+| 1. Foundation (API, database, auth) | Done: accounts, sessions, KYC, the admin realm with TOTP              |
+| 2. Ledger vertical slice            | Done: double entry, projections, invariants in the database           |
+| 3. Mock wallet operations           | Done: deposits, withdrawals, sweeps, reconciliation, mock chain       |
+| 4. P2P escrow                       | Done: offers, trades, chat, disputes, and the screens for all of them |
+| 5. UX hardening                     | Not started                                                           |
+| 6. Real provider sandbox            | Not started; requires explicit approval                               |
 
 No real blockchain, custody or money behaviour exists in this repository. Everything about
 the real chain route is marked UNVALIDATED in [docs/open-questions.md](docs/open-questions.md).
@@ -33,7 +33,7 @@ apps/api            NestJS + Fastify API and workers; deploys on its own (apps/a
 packages/contracts  Zod schemas for everything that crosses the API boundary. No DB types.
 packages/database   Prisma schema, migrations, hand-written SQL (roles, later triggers)
 packages/config     Shared TypeScript configuration
-docs/               Architecture, threat model, testing, open questions
+docs/               Architecture, threat model, testing, runbooks, open questions
 scripts/            Repository utilities (dependency pinning)
 docker-compose.yml  Local PostgreSQL and Redis with least-privilege roles
 ```
@@ -56,11 +56,12 @@ Then open http://localhost:3000 (web) and http://127.0.0.1:3001/health (API).
 **The workers are a separate process, and `npm run dev` does not start them.** An API
 process runs no timers on purpose, so without this nothing on a timer happens locally: a
 deposit is never credited, a withdrawal is never built or broadcast, nothing is swept,
-and the outbox never drains. In another terminal:
+an unpaid trade never expires, and the outbox never drains. In another terminal:
 
 ```bash
 npm run dev:worker -w api   # chain observer, deposit confirmer, withdrawal
-                            # processor, treasury sweeps, outbox publisher
+                            # processor, treasury sweeps, trade expirer,
+                            # outbox publisher
 ```
 
 While the chain is mocked, `chain` is the hand that moves it. Nothing in a

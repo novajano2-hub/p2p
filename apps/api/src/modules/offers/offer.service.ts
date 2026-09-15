@@ -38,7 +38,12 @@ import { PaymentMethodService } from "@/modules/payment-methods/payment-method.s
 
 const SUBJECT = "offer";
 
-const OFFER_TRANSITIONS: TransitionTable<OfferStatus> = {
+/**
+ * The fourth transition table in the system. Exported for the AT-17 sweep in
+ * offer.transitions.spec.ts: a table nobody can read from outside is a table
+ * nobody can prove, and this one decides whether an offer can be taken.
+ */
+export const OFFER_TRANSITIONS: TransitionTable<OfferStatus> = {
   ACTIVE: ["PAUSED", "CLOSED"],
   PAUSED: ["ACTIVE", "CLOSED"],
   CLOSED: [],

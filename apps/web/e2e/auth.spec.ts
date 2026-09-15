@@ -170,11 +170,32 @@ const ACCOUNT_GREETING = /^Good (morning|afternoon|evening|night),/;
 /** The first of the six boxes. Filling it with all six digits fills the rest. */
 const codeBox = (page: Page) => page.getByLabel(/digit 1 of 6/);
 
+/*
+  Ticking "I agree to the Terms".
+
+  The square is drawn from our own tokens (components/ui/checkbox.tsx) and the
+  real <input> is sr-only inside its own <label>, so a click aimed at the input
+  never lands: the label is the topmost element at that point, Playwright waits
+  for it to stop intercepting, and the test times out sixty seconds later. Two
+  of those in a file is most of a CI job.
+
+  A person clicks the square, which is the first eighteen pixels of the label -
+  not the sentence beside it, which is a paragraph with two links in it that
+  are meant to be followed rather than to tick anything. The assertion is here
+  so that a layout change moves this from "the box was never ticked and the
+  next step is a mystery" to a failure on this line.
+*/
+async function acceptTerms(page: Page) {
+  const terms = page.getByRole("checkbox", { name: /By creating an account/ });
+  await page.locator("label", { has: terms }).click({ position: { x: 9, y: 9 } });
+  await expect(terms).toBeChecked();
+}
+
 /** Walks sign-up as far as the password step. */
 async function toPasswordStep(page: Page) {
   await page.goto("/register");
   await page.getByLabel("Email").fill(USER.email);
-  await page.getByLabel(/By creating an account/).check();
+  await acceptTerms(page);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await codeBox(page).fill("123456");
   await expect(page.getByRole("heading", { level: 1, name: "Create a password" })).toBeVisible();
@@ -355,7 +376,7 @@ test.describe("sign up", () => {
     await expect(page.getByText(/Agree to the Terms/)).toBeVisible();
 
     // Consent, then continue to the code step with the address masked.
-    await page.getByLabel(/By creating an account/).check();
+    await acceptTerms(page);
     await next.click();
     await expect(page.getByRole("heading", { level: 1, name: "Verify your email" })).toBeVisible();
     await expect(page.getByText("sam***@gmail.com")).toBeVisible();
@@ -391,7 +412,7 @@ test.describe("sign up", () => {
     });
     await page.goto("/register");
     await page.getByLabel("Email").fill(USER.email);
-    await page.getByLabel(/By creating an account/).check();
+    await acceptTerms(page);
     await page.getByRole("button", { name: "Continue", exact: true }).click();
     await codeBox(page).fill("000000");
 
@@ -407,7 +428,7 @@ test.describe("sign up", () => {
     });
     await page.goto("/register");
     await page.getByLabel("Email").fill(USER.email);
-    await page.getByLabel(/By creating an account/).check();
+    await acceptTerms(page);
     await page.getByRole("button", { name: "Continue", exact: true }).click();
 
     const notice = page.getByRole("alert").filter({ hasText: "already exists" });
@@ -432,7 +453,7 @@ test.describe("sign up", () => {
     await page.route("**/v1/auth/**", (route) => route.abort("connectionrefused"));
     await page.goto("/register");
     await page.getByLabel("Email").fill(USER.email);
-    await page.getByLabel(/By creating an account/).check();
+    await acceptTerms(page);
     await page.getByRole("button", { name: "Continue", exact: true }).click();
 
     await expect(

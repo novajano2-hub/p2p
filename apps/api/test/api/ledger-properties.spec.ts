@@ -55,23 +55,6 @@ afterAll(async () => {
   await db.$disconnect();
 });
 
-/*
-  AT-10, as the plan words it: not a test but a hook. Whatever the test above
-  it was doing, if anything in this file managed to write an unbalanced
-  transaction, the file fails.
-*/
-afterEach(async () => {
-  const rows = await db.$queryRaw<{ transaction_id: string }[]>`
-    SELECT transaction_id FROM ledger_entries
-     GROUP BY transaction_id, asset
-    HAVING sum(signed_amount) <> 0 OR count(*) < 2`;
-  expect(rows).toEqual([]);
-  const assets = await db.$queryRaw<{ transaction_id: string }[]>`
-    SELECT transaction_id FROM ledger_entries
-     GROUP BY transaction_id HAVING count(DISTINCT asset) <> 1`;
-  expect(assets).toEqual([]);
-});
-
 /* ------------------------------------------------------------ randomness */
 
 /** mulberry32: small, fast, and the same sequence for the same seed on every machine. */

@@ -26,6 +26,7 @@ import { v7 as uuidv7 } from "uuid";
 import { AppError } from "@/common/errors/app-error";
 import { IdempotencyService, requestHash } from "@/common/idempotency/idempotency.service";
 import { afterCommit } from "@/common/io/transaction-scope";
+import { IllegalTransitionError } from "@/common/state-machine/transition";
 import { amountForFiat, fiatForAmount, formatEtb } from "@/common/money/fiat";
 import { formatUsdt } from "@/common/money/units";
 import { ENV } from "@/config/config.module";
@@ -404,6 +405,18 @@ export class TradeService {
       const trade = await this.lockParty(tx, userId, id);
       if (trade.buyerId !== userId) {
         throw AppError.forbidden("Only the buyer can mark a trade as paid.");
+      }
+      /*
+        The table also allows DISPUTED -> BUYER_MARKED_PAID, but that edge
+        belongs to withdrawing a dispute, which closes the dispute row in the
+        same transaction. Reached from here it would leave an open dispute on
+        a trade that is no longer in dispute: still in the resolver queue,
+        still releasable, but no longer refundable, because the machine has no
+        BUYER_MARKED_PAID -> REFUNDED edge. So "I have paid" is only ever the
+        first move, and says so by name.
+      */
+      if (trade.status !== "AWAITING_FIAT_PAYMENT") {
+        throw new IllegalTransitionError("trade", trade.status, "BUYER_MARKED_PAID");
       }
       assertTradeTransition(trade.status, "BUYER_MARKED_PAID");
       const now = new Date();

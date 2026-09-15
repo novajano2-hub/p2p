@@ -202,6 +202,31 @@ export async function adminRequest<T>(
   return { ok: true, data: parsed.data };
 }
 
+/**
+ * The same session, for a route that answers with bytes rather than JSON: a
+ * photograph of a document, a piece of dispute evidence, an image somebody
+ * sent in a trade's chat. None of them can be an <img src>, which the browser
+ * would fetch without the header the API wants; each is fetched here and
+ * handed to the caller as a blob to make an object URL from.
+ *
+ * Null for every way it can fail. A screen that cannot show a picture says so
+ * in its own words; there is nothing useful to distinguish here.
+ */
+export async function adminBlob(path: string): Promise<Blob | null> {
+  try {
+    const response = await fetch(`${apiOrigin()}/v1/admin${path}`, {
+      credentials: "include",
+      cache: "no-store",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    rememberCsrfToken(response.headers);
+    if (!response.ok) return null;
+    return await response.blob();
+  } catch {
+    return null;
+  }
+}
+
 export const adminClient = {
   async login(input: {
     email: string;
@@ -266,18 +291,8 @@ export const adminClient = {
   },
 
   /** The photograph itself, as a blob the caller turns into an object URL. */
-  async photo(submissionId: string, documentId: string): Promise<Blob | null> {
-    try {
-      const response = await fetch(
-        `${apiOrigin()}/v1/admin/kyc/submissions/${submissionId}/documents/${documentId}`,
-        { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) },
-      );
-      rememberCsrfToken(response.headers);
-      if (!response.ok) return null;
-      return await response.blob();
-    } catch {
-      return null;
-    }
+  photo(submissionId: string, documentId: string): Promise<Blob | null> {
+    return adminBlob(`/kyc/submissions/${submissionId}/documents/${documentId}`);
   },
 
   /** Nothing to send: approving asks nothing of the administrator. */

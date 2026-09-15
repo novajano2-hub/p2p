@@ -168,6 +168,11 @@ const SECTIONS: readonly { href: string; label: string; match: (pathname: string
     match: (pathname) => pathname.startsWith("/admin/withdrawals"),
   },
   {
+    href: "/admin/disputes",
+    label: "Disputes",
+    match: (pathname) => pathname.startsWith("/admin/disputes"),
+  },
+  {
     href: "/admin/reconciliation",
     label: "Reconciliation",
     match: (pathname) => pathname.startsWith("/admin/reconciliation"),

@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import { AppLink } from "@/components/ui/app-link";
 import { Button } from "@/components/ui/button";
 import { type LedgerReason, type LedgerScope } from "@/lib/admin/ledger";
+import { formatSantim } from "@/lib/market/money";
 import { formatMicro } from "@/lib/money";
 import { cn } from "@/lib/cn";
 
@@ -95,6 +96,15 @@ export function Amount({ value, className }: { value: string; className?: string
       {formatMicro(value)}
     </span>
   );
+}
+
+/**
+ * Birr, from santim. The customer's marketplace formats it with the same
+ * function on purpose: a trade's two sides are the same two numbers wherever
+ * they are read, and a second formatter is how they stop agreeing.
+ */
+export function Birr({ value, className }: { value: string; className?: string }) {
+  return <span className={cn("font-mono tabular-nums", className)}>{formatSantim(value)}</span>;
 }
 
 export function Code({ children, className }: { children: ReactNode; className?: string }) {
