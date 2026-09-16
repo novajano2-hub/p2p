@@ -7,23 +7,28 @@ import { AppLink } from "@/components/ui/app-link";
 /*
   The three things a customer comes here to do. Big targets, one line each:
   the marketplace is where the detail lives.
+
+  The first two carry the side the marketplace actually reads, so the toggle is
+  already where it should be on arrival. These were written before that screen
+  existed and invented their own names for it - side=buy, view=offers - which
+  nothing ever read, so all three landed on the default Buy view.
 */
 
 const actions = [
   {
-    href: "/trade?side=buy",
+    href: "/trade?want=BUY",
     title: "Buy USDT",
     description: "Pay birr to a seller; the USDT is held for you until it arrives.",
     Icon: ArrowCircleDown,
   },
   {
-    href: "/trade?side=sell",
+    href: "/trade?want=SELL",
     title: "Sell USDT",
     description: "Lock USDT in escrow, get paid in birr, then release it.",
     Icon: ArrowCircleUp,
   },
   {
-    href: "/trade?view=offers",
+    href: "/trade/ads/new",
     title: "Post an offer",
     description: "Set your own price and limits and let buyers come to you.",
     Icon: Megaphone,

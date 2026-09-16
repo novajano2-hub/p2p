@@ -1,7 +1,7 @@
 "use client";
 
 import { Storefront } from "@phosphor-icons/react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
@@ -49,9 +49,20 @@ type State =
   | { status: "ready"; offers: MarketOffer[]; nextCursor: string | null };
 
 export function Marketplace() {
+  /*
+    Which side is being browsed lives in the address rather than in state, so
+    that a link to it means something: /trade?want=SELL opens on Sell, and
+    flipping the toggle puts the side back into the address, which makes what
+    you are looking at shareable. Replaced rather than pushed, so that flicking
+    the toggle does not fill the history with entries and Back still leaves the
+    marketplace. Read loosely: a typed ?want=sell is the same request.
+  */
+  const router = useRouter();
   const params = useSearchParams();
-  const initialSide: OfferSide = params.get("want") === "SELL" ? "SELL" : "BUY";
-  const [want, setWant] = useState<OfferSide>(initialSide);
+  const want: OfferSide = params.get("want")?.toUpperCase() === "SELL" ? "SELL" : "BUY";
+  const setWant = (side: OfferSide) => {
+    router.replace(side === "SELL" ? "/trade?want=SELL" : "/trade", { scroll: false });
+  };
   const [amount, setAmount] = useState("");
   const [kind, setKind] = useState<PaymentMethodKind | "">("");
   const [state, setState] = useState<State>({ status: "loading" });
