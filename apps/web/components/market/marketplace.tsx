@@ -55,13 +55,23 @@ export function Marketplace() {
     flipping the toggle puts the side back into the address, which makes what
     you are looking at shareable. Replaced rather than pushed, so that flicking
     the toggle does not fill the history with entries and Back still leaves the
-    marketplace. Read loosely: a typed ?want=sell is the same request.
+    marketplace.
+
+    The side is always written out, including the default one: leaving ?want=BUY
+    off the way a first page leaves off ?page=1 would give one view two
+    addresses, and you would watch the link you arrived on rewrite itself the
+    moment you touched the toggle. This is the axis of the whole screen rather
+    than an incidental filter, so it says which side it is, always.
+
+    Read loosely on the way in - a bare /trade and a typed ?want=sell are both
+    understood - because an address a person types by hand should not have to
+    guess at capitals.
   */
   const router = useRouter();
   const params = useSearchParams();
   const want: OfferSide = params.get("want")?.toUpperCase() === "SELL" ? "SELL" : "BUY";
   const setWant = (side: OfferSide) => {
-    router.replace(side === "SELL" ? "/trade?want=SELL" : "/trade", { scroll: false });
+    router.replace(`/trade?want=${side}`, { scroll: false });
   };
   const [amount, setAmount] = useState("");
   const [kind, setKind] = useState<PaymentMethodKind | "">("");
