@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PageHeader, Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
@@ -10,15 +10,15 @@ import {
   BackTo,
   ListNotice,
   PaymentKindChips,
+  Segmented,
   birr,
   usdt,
 } from "@/components/market/bits";
 import { AppLink } from "@/components/ui/app-link";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
+import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Note, SummaryRow } from "@/components/wallet/shared";
-import { cn } from "@/lib/cn";
 import {
   marketClient,
   newClientId,
@@ -39,12 +39,10 @@ import { compareMicro, plainMicro, toMicro } from "@/lib/money";
 import { withNext } from "@/lib/next-path";
 
 /*
-  Taking an offer: Binance's "Buy USDT" card. The person chooses which side
-  of the pair to type - by birr or by USDT - and types it in large figures,
-  with the unit beside it and Max where Binance puts it; under that the ad's
-  limits, the other side of the pair, and a row of quick amounts. The
-  arithmetic is the server's own, so the trade that opens is the trade that
-  was previewed, to the santim.
+  Taking an offer: the Binance "I will pay / I will receive" screen. The
+  person types either side of the pair and sees the other, at the offer's
+  price, using the same arithmetic the server will use - so the trade that
+  opens is the trade that was previewed, to the santim.
 
   What the rail question is depends on which way the trade goes. Buying
   from a SELL offer, the buyer picks which of the seller's rails they will
@@ -69,58 +67,6 @@ type Mode = (typeof MODES)[number]["value"];
 const RECHECK_MS = 10_000;
 const GONE = "This ad is no longer available - its owner paused or closed it.";
 
-/*
-  The quick amounts, the way Binance's "Min · 50 · 100 · Max" row has them:
-  the offer's minimum, then round numbers that fall inside its limits and
-  inside what is left of it. Max is beside the figure, where Binance puts
-  it. Four rounds at most, so the row reads at a glance on a phone.
-*/
-const ROUND_BIRR = [500, 1_000, 2_000, 3_000, 5_000, 10_000, 20_000, 50_000, 100_000, 200_000];
-const ROUND_USDT = [5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000];
-const ROUNDS_MAX = 4;
-const grouped = new Intl.NumberFormat("en-GB");
-
-type Chip = { label: string; typed: string };
-
-/** "1000.00" -> "1000": what a person would have typed. */
-const compact = (plain: string): string => plain.replace(/\.0+$/, "");
-
-/** The most an offer allows: its own maximum, or what is left of it, whichever is less. */
-function ceilingSantimOf(offer: MarketOffer): string {
-  const worthOfAvailable = fiatForAmount(offer.available, offer.priceSantim);
-  return compareSantim(worthOfAvailable, offer.maxSantim) < 0 ? worthOfAvailable : offer.maxSantim;
-}
-
-function quickAmounts(mode: Mode, offer: MarketOffer): Chip[] {
-  const price = offer.priceSantim;
-  const ceilingSantim = ceilingSantimOf(offer);
-  if (compareSantim(offer.minSantim, ceilingSantim) > 0) return [];
-
-  if (mode === "fiat") {
-    const chips: Chip[] = [{ label: "Min", typed: compact(plainSantim(offer.minSantim)) }];
-    for (const round of ROUND_BIRR) {
-      const santim = `${round}00`;
-      if (compareSantim(santim, offer.minSantim) <= 0) continue;
-      if (compareSantim(santim, ceilingSantim) >= 0) break;
-      chips.push({ label: grouped.format(round), typed: String(round) });
-      if (chips.length > ROUNDS_MAX) break;
-    }
-    return chips;
-  }
-
-  const minMicro = amountForFiat(offer.minSantim, price);
-  const ceilingMicro = amountForFiat(ceilingSantim, price);
-  const chips: Chip[] = [{ label: "Min", typed: compact(plainMicro(minMicro)) }];
-  for (const round of ROUND_USDT) {
-    const micro = `${round}000000`;
-    if (compareMicro(micro, minMicro) <= 0) continue;
-    if (compareMicro(micro, ceilingMicro) >= 0) break;
-    chips.push({ label: grouped.format(round), typed: String(round) });
-    if (chips.length > ROUNDS_MAX) break;
-  }
-  return chips;
-}
-
 type State =
   | { status: "loading" }
   | { status: "error"; message: string }
@@ -128,7 +74,6 @@ type State =
 
 export function TakeOffer({ offerId }: { offerId: string }) {
   const router = useRouter();
-  const amountId = useId();
   const [state, setState] = useState<State>({ status: "loading" });
   const [mode, setMode] = useState<Mode>("fiat");
   const [typed, setTyped] = useState("");
@@ -256,9 +201,6 @@ export function TakeOffer({ offerId }: { offerId: string }) {
             ? `Only ${usdt(offer.available)} is available right now.`
             : null;
 
-  const chips = quickAmounts(mode, offer);
-  const ceilingSantim = ceilingSantimOf(offer);
-
   // The rails on offer, and whether the person has chosen one. A single
   // choice is chosen already, as Binance has it: a question with one answer
   // is not a question.
@@ -269,7 +211,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
     : rail !== "" || soleMethod !== null;
   const railValue = buying ? rail || offer.paymentKinds[0] || "" : rail || soleMethod?.id || "";
 
-  /** An amount, from the keyboard or from a chip. */
+  /** An amount, typed or from Max. */
   const enter = (value: string) => {
     setTyped(value);
     setNotice(null);
@@ -317,21 +259,6 @@ export function TakeOffer({ offerId }: { offerId: string }) {
   const title = buying
     ? `Buy ${ASSET} from ${offer.advertiser.username}`
     : `Sell ${ASSET} to ${offer.advertiser.username}`;
-  // What the figure is, and what the other side of it is called.
-  const amountLabel =
-    mode === "fiat"
-      ? buying
-        ? "I will pay"
-        : "I will receive"
-      : buying
-        ? "I want to buy"
-        : "I want to sell";
-  const otherSide =
-    mode === "fiat"
-      ? { label: buying ? "You receive" : "You give", value: micro ? usdt(micro) : `— ${ASSET}` }
-      : { label: buying ? "You pay" : "You receive", value: santim ? birr(santim) : `— ${FIAT}` };
-  const limitId = `${amountId}-limit`;
-  const problemId = `${amountId}-problem`;
 
   return (
     <>
@@ -356,7 +283,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
             </p>
           ) : null}
 
-          <div className="mb-4 flex items-baseline justify-between gap-4">
+          <div className="mb-5 flex items-baseline justify-between gap-4">
             <span className="text-muted-foreground text-[13px]">Price</span>
             <span className="text-foreground font-mono text-lg font-medium tabular-nums">
               {formatSantim(price)}{" "}
@@ -366,121 +293,67 @@ export function TakeOffer({ offerId }: { offerId: string }) {
             </span>
           </div>
 
-          {/* The amount, the way Binance's card has it. */}
-          <div
-            className={cn(
-              "bg-muted/70 rounded-surface px-4 pt-3 pb-4",
-              problem && "ring-destructive/40 ring-1",
-            )}
+          <Segmented value={mode} onChange={setMode} options={MODES} label="Enter the amount in" />
+
+          <Field
+            label={
+              mode === "fiat"
+                ? buying
+                  ? "I will pay"
+                  : "I will receive"
+                : buying
+                  ? "I want to buy"
+                  : "I want to sell"
+            }
+            hint={`Between ${formatSantim(offer.minSantim)} and ${birr(offer.maxSantim)} a trade.`}
+            error={problem ?? undefined}
+            className="mt-4"
           >
-            {/* A number typed in birr is not the same number in USDT: switching sides starts over. */}
-            <div role="group" aria-label="Enter the amount in" className="flex gap-5">
-              {MODES.map((option) => {
-                const selected = option.value === mode;
-                return (
+            {(control) => (
+              <div className="relative">
+                <Input
+                  {...control}
+                  value={typed}
+                  onChange={(event) => enter(event.target.value)}
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  autoComplete="off"
+                  className="pr-24 font-medium tabular-nums"
+                />
+                <div className="absolute inset-y-0 right-3.5 flex items-center gap-2">
                   <button
-                    key={option.value}
                     type="button"
-                    aria-pressed={selected}
                     onClick={() => {
-                      if (selected) return;
-                      setMode(option.value);
-                      setTyped("");
+                      // The most this offer allows: its own maximum, or what is left, whichever is less.
+                      const maxByAvailable = fiatForAmount(offer.available, price);
+                      const max =
+                        compareSantim(maxByAvailable, offer.maxSantim) < 0
+                          ? maxByAvailable
+                          : offer.maxSantim;
+                      enter(
+                        mode === "fiat" ? plainSantim(max) : plainMicro(amountForFiat(max, price)),
+                      );
                     }}
-                    className={cn(
-                      "relative pb-2 text-[13px] font-medium transition-colors duration-150",
-                      "after:bg-primary after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full after:transition-opacity after:duration-150",
-                      selected
-                        ? "text-foreground after:opacity-100"
-                        : "text-muted-foreground hover:text-foreground after:opacity-0",
-                    )}
+                    className="text-primary hover:text-primary-hover text-[13px] font-semibold"
                   >
-                    {option.label}
+                    Max
                   </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-3 flex items-baseline gap-3">
-              <label htmlFor={amountId} className="sr-only">
-                {amountLabel}
-              </label>
-              <input
-                id={amountId}
-                value={typed}
-                onChange={(event) => enter(event.target.value)}
-                inputMode="decimal"
-                placeholder="0"
-                autoComplete="off"
-                aria-describedby={problem ? `${problemId} ${limitId}` : limitId}
-                aria-invalid={problem ? true : undefined}
-                className="text-foreground placeholder:text-muted-foreground/60 min-w-0 flex-1 bg-transparent text-[32px] leading-none font-semibold tabular-nums outline-none"
-              />
-              <span className="text-muted-foreground shrink-0 text-[15px] font-medium">
-                {mode === "fiat" ? FIAT : ASSET}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  enter(
-                    mode === "fiat"
-                      ? compact(plainSantim(ceilingSantim))
-                      : compact(plainMicro(amountForFiat(ceilingSantim, price))),
-                  )
-                }
-                className="text-primary hover:text-primary-hover shrink-0 text-[15px] font-semibold"
-              >
-                Max
-              </button>
-            </div>
-
-            <p id={limitId} className="text-muted-foreground mt-2 text-[12px]">
-              Limit {formatSantim(offer.minSantim)} – {formatSantim(offer.maxSantim)} {FIAT}
-            </p>
-            <p className="text-foreground mt-2 text-[14px]">
-              <span className="text-muted-foreground">{otherSide.label}</span>{" "}
-              <span className="font-medium tabular-nums">{otherSide.value}</span>
-            </p>
-
-            {chips.length > 0 ? (
-              <div
-                role="group"
-                aria-label="Quick amounts"
-                className="border-border/70 mt-3.5 flex flex-wrap gap-2 border-t pt-3.5"
-              >
-                {chips.map((chip) => {
-                  const pressed = typed.trim() === chip.typed;
-                  return (
-                    <button
-                      key={chip.label}
-                      type="button"
-                      aria-pressed={pressed}
-                      onClick={() => enter(chip.typed)}
-                      className={cn(
-                        "rounded-control h-8 border px-3.5 text-[13px] font-medium tabular-nums transition-colors duration-150",
-                        pressed
-                          ? "border-primary bg-primary-soft text-primary-soft-foreground"
-                          : "border-border bg-surface text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {chip.label}
-                    </button>
-                  );
-                })}
+                  <span aria-hidden="true" className="bg-border h-4 w-px" />
+                  <span className="text-muted-foreground text-[13px] font-medium">
+                    {mode === "fiat" ? FIAT : ASSET}
+                  </span>
+                </div>
               </div>
-            ) : null}
-          </div>
-          {problem ? (
-            <p
-              id={problemId}
-              role="alert"
-              className="text-destructive mt-2 text-[13px] leading-relaxed"
-            >
-              {problem}
-            </p>
-          ) : null}
+            )}
+          </Field>
 
           <dl className="divide-border mt-4 divide-y">
+            <SummaryRow label={buying ? "You receive" : "You give"} strong>
+              {micro ? usdt(micro) : `— ${ASSET}`}
+            </SummaryRow>
+            <SummaryRow label={buying ? "You pay" : "You receive"} strong>
+              {santim ? birr(santim) : `— ${FIAT}`}
+            </SummaryRow>
             <SummaryRow label="Time to pay">{offer.paymentWindowMinutes} minutes</SummaryRow>
           </dl>
 

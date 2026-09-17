@@ -44,6 +44,16 @@ const SIDES = [
   { value: "SELL", label: "Sell USDT" },
 ] as const;
 
+/*
+  Binance's filter puts a row of amounts under the field - $20, $100, $500,
+  $1K on theirs - for the person who knows roughly what they want and would
+  rather tap than type. The same five-fold steps, in birr, at the sizes
+  trades here actually come in. Typing still works; a tapped amount can be
+  edited or tapped again to clear.
+*/
+const QUICK_AMOUNTS = [1_000, 5_000, 10_000, 50_000] as const;
+const grouped = new Intl.NumberFormat("en-GB");
+
 type State =
   | { status: "loading" }
   | { status: "error"; message: string }
@@ -180,6 +190,27 @@ export function Marketplace() {
               ]}
             />
           </div>
+        </div>
+        <div role="group" aria-label="Quick amounts" className="mt-2.5 flex flex-wrap gap-2">
+          {QUICK_AMOUNTS.map((value) => {
+            const pressed = amount.trim() === String(value);
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={pressed}
+                onClick={() => setAmount(pressed ? "" : String(value))}
+                className={cn(
+                  "rounded-control h-8 border px-3.5 text-[13px] font-medium tabular-nums transition-colors duration-150",
+                  pressed
+                    ? "border-primary bg-primary-soft text-primary-soft-foreground"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {grouped.format(value)}
+              </button>
+            );
+          })}
         </div>
         {amountProblem ? (
           <p role="alert" className="text-destructive mt-2 text-[13px]">

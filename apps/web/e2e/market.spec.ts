@@ -182,15 +182,7 @@ test.describe("an ad that changes while you are looking at it", () => {
     ]);
 
     await page.goto("/trade/offers/o1");
-    // Binance's row of amounts: the minimum, then round numbers inside the limits.
-    const quick = page.getByRole("group", { name: "Quick amounts" });
-    await expect(quick.getByRole("button")).toHaveText(["Min", "500", "1,000", "2,000", "3,000"]);
-    await quick.getByRole("button", { name: "1,000" }).click();
-    await expect(page.getByLabel("I will pay")).toHaveValue("1000");
-    await expect(quick.getByRole("button", { name: "1,000" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await page.getByLabel("I will pay").fill("1000");
     const buy = page.getByRole("button", { name: "Buy USDT" });
     await buy.click();
 
@@ -225,6 +217,51 @@ test.describe("an ad that changes while you are looking at it", () => {
       "160.00",
     );
     await expect(page.getByText("160.00").first()).toBeVisible();
+  });
+});
+
+test.describe("the amount filter", () => {
+  test("has Binance's quick amounts under it, and still takes a typed one", async ({
+    page,
+    context,
+  }) => {
+    await withSession(context);
+    const asked: string[] = [];
+    await stubApi(page, [
+      ...signedIn(),
+      {
+        method: "GET",
+        path: /^\/v1\/offers$/,
+        reply: (route) => {
+          asked.push(new URL(route.request().url()).search);
+          return ok({ offers: [], nextCursor: null });
+        },
+      },
+    ]);
+
+    await page.goto("/trade");
+    const quick = page.getByRole("group", { name: "Quick amounts" });
+    await expect(quick.getByRole("button")).toHaveText(["1,000", "5,000", "10,000", "50,000"]);
+    const field = page.getByLabel("Amount in birr");
+
+    // A tap fills the field and asks the market for offers that fit it.
+    await quick.getByRole("button", { name: "5,000" }).click();
+    await expect(field).toHaveValue("5000");
+    await expect(quick.getByRole("button", { name: "5,000" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect.poll(() => asked.at(-1)).toContain("amountSantim=500000");
+
+    // The same tap again clears it.
+    await quick.getByRole("button", { name: "5,000" }).click();
+    await expect(field).toHaveValue("");
+    await expect.poll(() => asked.at(-1)).not.toContain("amountSantim");
+
+    // Typing is still typing.
+    await field.fill("700");
+    await expect.poll(() => asked.at(-1)).toContain("amountSantim=70000");
+    await expect(quick.getByRole("button", { pressed: true })).toHaveCount(0);
   });
 });
 
