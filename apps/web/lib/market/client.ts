@@ -29,13 +29,20 @@ export const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 /* --------------------------------------------------------- payment methods */
 
-export const paymentMethodKind = z.enum(["TELEBIRR", "CBE_BIRR", "MPESA", "BANK_TRANSFER"]);
+export const paymentMethodKind = z.enum([
+  "TELEBIRR",
+  "CBE_BIRR",
+  "MPESA",
+  "CBE",
+  "DASHEN",
+  "ABYSSINIA",
+  "AWASH",
+]);
 export type PaymentMethodKind = z.infer<typeof paymentMethodKind>;
 
 const paymentMethodSchema = z.object({
   id: z.string(),
   kind: paymentMethodKind,
-  bankCode: z.string().nullable(),
   /** "Telebirr ····4821", composed by the server. */
   label: z.string(),
   hint: z.string(),
@@ -46,8 +53,6 @@ export type PaymentMethod = z.infer<typeof paymentMethodSchema>;
 
 const instructionsSchema = z.object({
   kind: paymentMethodKind,
-  bankCode: z.string().nullable(),
-  bankName: z.string().nullable(),
   accountHolder: z.string(),
   accountNumber: z.string(),
 });
@@ -56,11 +61,9 @@ export type PaymentInstructions = z.infer<typeof instructionsSchema>;
 export type NewPaymentMethod =
   | { kind: "TELEBIRR" | "CBE_BIRR" | "MPESA"; accountHolder: string; phone: string }
   | {
-      kind: "BANK_TRANSFER";
+      kind: "CBE" | "DASHEN" | "ABYSSINIA" | "AWASH";
       accountHolder: string;
-      bankCode: string;
       accountNumber: string;
-      branch?: string;
     };
 
 /* ------------------------------------------------------------------ offers */

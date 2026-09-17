@@ -136,17 +136,12 @@ export function LedgerTransactions() {
             <Select
               {...control}
               value={form.reason}
-              onChange={(event) =>
-                setForm({ ...form, reason: event.target.value as Form["reason"] })
-              }
-            >
-              <option value="">Any</option>
-              {LEDGER_REASONS.map((reason) => (
-                <option key={reason} value={reason}>
-                  {humanize(reason)}
-                </option>
-              ))}
-            </Select>
+              onChange={(value) => setForm({ ...form, reason: value as Form["reason"] })}
+              options={[
+                { value: "", label: "Any" },
+                ...LEDGER_REASONS.map((reason) => ({ value: reason, label: humanize(reason) })),
+              ]}
+            />
           )}
         </Field>
         <Field label="Reference type">

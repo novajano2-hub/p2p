@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Note, SummaryRow } from "@/components/wallet/shared";
+import { cn } from "@/lib/cn";
 import {
   marketClient,
   newClientId,
@@ -66,6 +67,55 @@ type Mode = (typeof MODES)[number]["value"];
 
 const RECHECK_MS = 10_000;
 const GONE = "This ad is no longer available - its owner paused or closed it.";
+
+/*
+  The amounts a chip offers, the way Binance's "Min · 50 · 100 · Max" row
+  does: the offer's minimum, then round numbers that fall inside its limits
+  and inside what is left of it. Max stays in the field. Four rounds at
+  most, so the row reads at a glance on a phone.
+*/
+const ROUND_BIRR = [500, 1_000, 2_000, 3_000, 5_000, 10_000, 20_000, 50_000, 100_000, 200_000];
+const ROUND_USDT = [5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000];
+const ROUNDS_MAX = 4;
+const grouped = new Intl.NumberFormat("en-GB");
+
+type Chip = { label: string; typed: string };
+
+/** "1000.00" -> "1000": what a person would have typed. */
+const compact = (plain: string): string => plain.replace(/\.0+$/, "");
+
+function quickAmounts(mode: Mode, offer: MarketOffer): Chip[] {
+  const price = offer.priceSantim;
+  // The most this offer allows: its own maximum, or what is left, whichever is less.
+  const worthOfAvailable = fiatForAmount(offer.available, price);
+  const ceilingSantim =
+    compareSantim(worthOfAvailable, offer.maxSantim) < 0 ? worthOfAvailable : offer.maxSantim;
+  if (compareSantim(offer.minSantim, ceilingSantim) > 0) return [];
+
+  if (mode === "fiat") {
+    const chips: Chip[] = [{ label: "Min", typed: compact(plainSantim(offer.minSantim)) }];
+    for (const round of ROUND_BIRR) {
+      const santim = `${round}00`;
+      if (compareSantim(santim, offer.minSantim) <= 0) continue;
+      if (compareSantim(santim, ceilingSantim) >= 0) break;
+      chips.push({ label: grouped.format(round), typed: String(round) });
+      if (chips.length > ROUNDS_MAX) break;
+    }
+    return chips;
+  }
+
+  const minMicro = amountForFiat(offer.minSantim, price);
+  const ceilingMicro = amountForFiat(ceilingSantim, price);
+  const chips: Chip[] = [{ label: "Min", typed: compact(plainMicro(minMicro)) }];
+  for (const round of ROUND_USDT) {
+    const micro = `${round}000000`;
+    if (compareMicro(micro, minMicro) <= 0) continue;
+    if (compareMicro(micro, ceilingMicro) >= 0) break;
+    chips.push({ label: grouped.format(round), typed: String(round) });
+    if (chips.length > ROUNDS_MAX) break;
+  }
+  return chips;
+}
 
 type State =
   | { status: "loading" }
@@ -201,10 +251,23 @@ export function TakeOffer({ offerId }: { offerId: string }) {
             ? `Only ${usdt(offer.available)} is available right now.`
             : null;
 
-  // The rails on offer, and whether the person has chosen one.
+  const chips = quickAmounts(mode, offer);
+
+  // The rails on offer, and whether the person has chosen one. A single
+  // choice is chosen already, as Binance has it: a question with one answer
+  // is not a question.
   const usableMethods = methods.filter((method) => offer.paymentKinds.includes(method.kind));
-  const railChosen = buying ? rail !== "" || offer.paymentKinds.length === 1 : rail !== "";
-  const railValue = buying ? rail || offer.paymentKinds[0] || "" : rail;
+  const soleMethod = usableMethods.length === 1 ? (usableMethods[0] ?? null) : null;
+  const railChosen = buying
+    ? rail !== "" || offer.paymentKinds.length === 1
+    : rail !== "" || soleMethod !== null;
+  const railValue = buying ? rail || offer.paymentKinds[0] || "" : rail || soleMethod?.id || "";
+
+  /** An amount, from the keyboard or from a chip. */
+  const enter = (value: string) => {
+    setTyped(value);
+    setNotice(null);
+  };
 
   const place = async () => {
     if (!micro || !santim || problem || !railChosen) {
@@ -282,7 +345,16 @@ export function TakeOffer({ offerId }: { offerId: string }) {
             </span>
           </div>
 
-          <Segmented value={mode} onChange={setMode} options={MODES} label="Enter the amount in" />
+          {/* A number typed in birr is not the same number in USDT: switching sides starts over. */}
+          <Segmented
+            value={mode}
+            onChange={(next) => {
+              setMode(next);
+              setTyped("");
+            }}
+            options={MODES}
+            label="Enter the amount in"
+          />
 
           <Field
             label={
@@ -299,43 +371,70 @@ export function TakeOffer({ offerId }: { offerId: string }) {
             className="mt-4"
           >
             {(control) => (
-              <div className="relative">
-                <Input
-                  {...control}
-                  value={typed}
-                  onChange={(event) => {
-                    setTyped(event.target.value);
-                    setNotice(null);
-                  }}
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  autoComplete="off"
-                  className="pr-24 font-medium tabular-nums"
-                />
-                <div className="absolute inset-y-0 right-3.5 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // The most this offer allows: its own maximum, or what is left, whichever is less.
-                      const maxByAvailable = fiatForAmount(offer.available, price);
-                      const max =
-                        compareSantim(maxByAvailable, offer.maxSantim) < 0
-                          ? maxByAvailable
-                          : offer.maxSantim;
-                      setTyped(
-                        mode === "fiat" ? plainSantim(max) : plainMicro(amountForFiat(max, price)),
-                      );
-                      setNotice(null);
-                    }}
-                    className="text-primary hover:text-primary-hover text-[13px] font-semibold"
-                  >
-                    Max
-                  </button>
-                  <span aria-hidden="true" className="bg-border h-4 w-px" />
-                  <span className="text-muted-foreground text-[13px] font-medium">
-                    {mode === "fiat" ? FIAT : ASSET}
-                  </span>
+              <div>
+                <div className="relative">
+                  <Input
+                    {...control}
+                    value={typed}
+                    onChange={(event) => enter(event.target.value)}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    autoComplete="off"
+                    className="pr-24 font-medium tabular-nums"
+                  />
+                  <div className="absolute inset-y-0 right-3.5 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // The most this offer allows: its own maximum, or what is left, whichever is less.
+                        const maxByAvailable = fiatForAmount(offer.available, price);
+                        const max =
+                          compareSantim(maxByAvailable, offer.maxSantim) < 0
+                            ? maxByAvailable
+                            : offer.maxSantim;
+                        enter(
+                          mode === "fiat"
+                            ? plainSantim(max)
+                            : plainMicro(amountForFiat(max, price)),
+                        );
+                      }}
+                      className="text-primary hover:text-primary-hover text-[13px] font-semibold"
+                    >
+                      Max
+                    </button>
+                    <span aria-hidden="true" className="bg-border h-4 w-px" />
+                    <span className="text-muted-foreground text-[13px] font-medium">
+                      {mode === "fiat" ? FIAT : ASSET}
+                    </span>
+                  </div>
                 </div>
+                {chips.length > 0 ? (
+                  <div
+                    role="group"
+                    aria-label="Quick amounts"
+                    className="mt-2.5 flex flex-wrap gap-2"
+                  >
+                    {chips.map((chip) => {
+                      const pressed = typed.trim() === chip.typed;
+                      return (
+                        <button
+                          key={chip.label}
+                          type="button"
+                          aria-pressed={pressed}
+                          onClick={() => enter(chip.typed)}
+                          className={cn(
+                            "rounded-control h-8 border px-3.5 text-[13px] font-medium tabular-nums transition-colors duration-150",
+                            pressed
+                              ? "border-primary bg-primary-soft text-primary-soft-foreground"
+                              : "border-border text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {chip.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             )}
           </Field>
@@ -360,15 +459,14 @@ export function TakeOffer({ offerId }: { offerId: string }) {
                     <Select
                       {...control}
                       value={rail}
-                      onChange={(event) => setRail(event.target.value)}
-                    >
-                      <option value="">Choose a payment method</option>
-                      {offer.paymentKinds.map((kind) => (
-                        <option key={kind} value={kind}>
-                          {PAYMENT_KINDS[kind].label}
-                        </option>
-                      ))}
-                    </Select>
+                      onChange={setRail}
+                      placeholder="Choose a payment method"
+                      options={offer.paymentKinds.map((kind) => ({
+                        value: kind,
+                        label: PAYMENT_KINDS[kind].label,
+                        bar: PAYMENT_KINDS[kind].bar,
+                      }))}
+                    />
                   )
                 }
               </Field>
@@ -392,16 +490,15 @@ export function TakeOffer({ offerId }: { offerId: string }) {
                   ) : (
                     <Select
                       {...control}
-                      value={rail}
-                      onChange={(event) => setRail(event.target.value)}
-                    >
-                      <option value="">Choose a payment method</option>
-                      {usableMethods.map((method) => (
-                        <option key={method.id} value={method.id}>
-                          {method.label}
-                        </option>
-                      ))}
-                    </Select>
+                      value={railValue}
+                      onChange={setRail}
+                      placeholder="Choose a payment method"
+                      options={usableMethods.map((method) => ({
+                        value: method.id,
+                        label: method.label,
+                        bar: PAYMENT_KINDS[method.kind].bar,
+                      }))}
+                    />
                   )
                 }
               </Field>

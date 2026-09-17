@@ -11,6 +11,10 @@ import { createApp } from "@/app";
 import { loadEnv, type Env } from "@/config/env";
 import { accounts } from "@/modules/ledger/account-code";
 import { LedgerService } from "@/modules/ledger/ledger.service";
+import {
+  PAYMENT_METHOD_PURPOSE,
+  PaymentDetailsCipher,
+} from "@/modules/payment-methods/payment-details.cipher";
 
 import { csrfFor, registerFully, uniqueEmail } from "./helpers";
 
@@ -32,6 +36,7 @@ let app: NestFastifyApplication;
 let db: PrismaClient;
 let env: Env;
 let ledger: LedgerService;
+let cipher: PaymentDetailsCipher;
 const server = () => app.getHttpServer() as Parameters<typeof request>[0];
 
 const run = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -46,6 +51,7 @@ beforeAll(async () => {
   await app.getHttpAdapter().getInstance().ready();
   db = createPrismaClient(env.DATABASE_URL);
   ledger = app.get(LedgerService);
+  cipher = app.get(PaymentDetailsCipher);
 });
 
 afterAll(async () => {
@@ -104,9 +110,8 @@ type Api = ReturnType<typeof api>;
 
 const TELEBIRR = { kind: "TELEBIRR", accountHolder: "Abebe Bikila", phone: "+251912345678" };
 const AWASH = {
-  kind: "BANK_TRANSFER",
+  kind: "AWASH",
   accountHolder: "Abebe Bikila",
-  bankCode: "AWASH",
   accountNumber: "01320123456789",
 };
 
@@ -159,6 +164,35 @@ async function listed(who: Api, want: "BUY" | "SELL", extra = ""): Promise<Marke
 /* ------------------------------------------------------ payment methods */
 
 describe("payment methods", () => {
+  it("reads a document from before the banks were kinds by the row's kind", async () => {
+    const { api: me, userId } = await customer();
+    // What such a row holds: the old shape inside, the corrected kind beside it.
+    const legacy = {
+      kind: "BANK_TRANSFER",
+      bankCode: "CBE",
+      bankName: "Commercial Bank of Ethiopia",
+      accountHolder: "Abebe Bikila",
+      accountNumber: "1000123456789",
+      branch: null,
+    };
+    const row = await db.paymentMethod.create({
+      data: {
+        userId,
+        kind: "CBE",
+        label: "CBE ····6789",
+        hint: "6789",
+        detailsEncrypted: cipher.encrypt(legacy as never, PAYMENT_METHOD_PURPOSE),
+      },
+    });
+
+    const read = await me.get(`/v1/payment-methods/${row.id}`).expect(200);
+    expect(read.body.instructions).toEqual({
+      kind: "CBE",
+      accountHolder: "Abebe Bikila",
+      accountNumber: "1000123456789",
+    });
+  });
+
   it("keeps the instructions encrypted and lists a method by its label alone", async () => {
     const { api: me, userId } = await customer();
 
@@ -168,8 +202,6 @@ describe("payment methods", () => {
     expect(created.hint).toBe("5678");
     expect(created.instructions).toEqual({
       kind: "TELEBIRR",
-      bankCode: null,
-      bankName: null,
       accountHolder: "Abebe Bikila",
       accountNumber: "0912345678",
     });
@@ -207,22 +239,32 @@ describe("payment methods", () => {
     expect(mpesa.instructions.accountNumber).toBe("0712345678");
   });
 
-  it("names the bank on a transfer and refuses a transfer without one", async () => {
+  it("treats a bank as a method of its own, named by the bank", async () => {
     const { api: me } = await customer();
-    // A branch was once asked for here. A client that still sends one is
-    // not refused; it is simply not kept - a transfer needs the account, not
-    // the desk it was opened at.
-    const bank = await addMethod(me, { ...AWASH, branch: "Bole" });
+    // A branch and a bank code were once asked for here. A client that still
+    // sends them is not refused; they are simply not kept - the bank is the
+    // kind, and a transfer needs the account, not the desk it was opened at.
+    const bank = await addMethod(me, { ...AWASH, bankCode: "AWASH", branch: "Bole" });
+    expect(bank.kind).toBe("AWASH");
     expect(bank.label).toBe("Awash Bank ····6789");
-    expect(bank.instructions).toMatchObject({
-      bankCode: "AWASH",
-      bankName: "Awash Bank",
+    expect(bank.instructions).toEqual({
+      kind: "AWASH",
+      accountHolder: "Abebe Bikila",
       accountNumber: "01320123456789",
     });
-    expect(bank.instructions).not.toHaveProperty("branch");
+    expect(bank).not.toHaveProperty("bankCode");
 
+    const cbe = await addMethod(me, { ...AWASH, kind: "CBE", accountNumber: "1000123456789" });
+    expect(cbe.label).toBe("CBE ····6789");
+
+    // The old catch-all is gone: a bank has to be named.
+    const generic = await me
+      .post("/v1/payment-methods", { ...AWASH, kind: "BANK_TRANSFER" })
+      .expect(400);
+    expect(generic.body.error.code).toBe("VALIDATION_FAILED");
+    // ...and a bank without an account number is not a place to pay.
     const missing = await me
-      .post("/v1/payment-methods", { ...AWASH, bankCode: undefined })
+      .post("/v1/payment-methods", { kind: "DASHEN", accountHolder: "Abebe Bikila" })
       .expect(400);
     expect(missing.body.error.code).toBe("VALIDATION_FAILED");
 

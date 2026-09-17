@@ -62,10 +62,19 @@ export const TRADE_EVENT_KINDS = [
 export type TradeEventKind = (typeof TRADE_EVENT_KINDS)[number];
 
 export type TradeRole = "BUYER" | "SELLER";
-export type PaymentKind = "TELEBIRR" | "CBE_BIRR" | "MPESA" | "BANK_TRANSFER";
+export type PaymentKind =
+  "TELEBIRR" | "CBE_BIRR" | "MPESA" | "CBE" | "DASHEN" | "ABYSSINIA" | "AWASH";
 
 const role = z.enum(["BUYER", "SELLER"]);
-const paymentKind = z.enum(["TELEBIRR", "CBE_BIRR", "MPESA", "BANK_TRANSFER"]);
+const paymentKind = z.enum([
+  "TELEBIRR",
+  "CBE_BIRR",
+  "MPESA",
+  "CBE",
+  "DASHEN",
+  "ABYSSINIA",
+  "AWASH",
+]);
 
 const customerSchema = z.object({
   userId: z.string(),
@@ -172,8 +181,6 @@ const detailSchema = itemSchema.extend({
     label: z.string(),
     instructions: z.object({
       kind: paymentKind,
-      bankCode: z.string().nullable(),
-      bankName: z.string().nullable(),
       accountHolder: z.string(),
       accountNumber: z.string(),
     }),

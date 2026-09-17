@@ -1,5 +1,6 @@
-import { paymentInstructions, type PaymentInstructions } from "@abay/contracts";
+import { type PaymentInstructions, type PaymentMethodKind } from "@abay/contracts";
 import { Inject, Injectable } from "@nestjs/common";
+import { z } from "zod";
 
 import { decryptField, encryptField, fieldEncryptionKey } from "@/common/security/field-encryption";
 import { ENV } from "@/config/config.module";
@@ -22,6 +23,12 @@ import { type Env } from "@/config/env";
 export const PAYMENT_METHOD_PURPOSE = "payment-method";
 export const TRADE_SNAPSHOT_PURPOSE = "trade-payment-snapshot";
 
+/**
+ * What is on disk: the two lines a buyer needs. Whatever else an older
+ * document carried - a bank code, a bank name, a branch - is read past.
+ */
+const storedDocument = z.object({ accountHolder: z.string(), accountNumber: z.string() });
+
 @Injectable()
 export class PaymentDetailsCipher {
   private readonly key: Buffer;
@@ -35,10 +42,14 @@ export class PaymentDetailsCipher {
   }
 
   /**
-   * The instructions back, validated: a row written by an older shape of the
-   * code is refused loudly here rather than shown to a buyer half-formed.
+   * The instructions back, validated: a document missing either line is
+   * refused loudly here rather than shown to a buyer half-formed. The kind
+   * is the row's, not the document's: a document written before the banks
+   * became kinds of their own still says "BANK_TRANSFER" inside, and the
+   * column beside it is what the migration corrected.
    */
-  decrypt(stored: string, purpose: string): PaymentInstructions {
-    return paymentInstructions.parse(JSON.parse(decryptField(stored, this.key, purpose)));
+  decrypt(stored: string, purpose: string, kind: PaymentMethodKind): PaymentInstructions {
+    const document = storedDocument.parse(JSON.parse(decryptField(stored, this.key, purpose)));
+    return { kind, accountHolder: document.accountHolder, accountNumber: document.accountNumber };
   }
 }

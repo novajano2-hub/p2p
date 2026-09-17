@@ -144,12 +144,15 @@ export const ACTOR_WORDS: Record<"BUYER" | "SELLER" | "ADMIN" | "SYSTEM", string
   SYSTEM: "system",
 };
 
-/** The same four rails the customer sees named, and what their number is called. */
+/** The same rails the customer sees named, and what their number is called. */
 export const PAYMENT_WORDS: Record<PaymentKind, { label: string; numberLabel: string }> = {
   TELEBIRR: { label: "Telebirr", numberLabel: "Telebirr phone number" },
   CBE_BIRR: { label: "CBE Birr", numberLabel: "CBE Birr phone number" },
   MPESA: { label: "M-Pesa", numberLabel: "M-Pesa phone number" },
-  BANK_TRANSFER: { label: "Bank transfer", numberLabel: "Account number" },
+  CBE: { label: "Commercial Bank of Ethiopia", numberLabel: "Account number" },
+  DASHEN: { label: "Dashen Bank", numberLabel: "Account number" },
+  ABYSSINIA: { label: "Bank of Abyssinia", numberLabel: "Account number" },
+  AWASH: { label: "Awash Bank", numberLabel: "Account number" },
 };
 
 /**

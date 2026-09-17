@@ -44,7 +44,6 @@ const offer = (side: "BUY" | "SELL", overrides: Record<string, unknown> = {}) =>
 const TELEBIRR = {
   id: "pm1",
   kind: "TELEBIRR",
-  bankCode: null,
   label: "Telebirr ····5678",
   hint: "5678",
   status: "ACTIVE",
@@ -183,7 +182,15 @@ test.describe("an ad that changes while you are looking at it", () => {
     ]);
 
     await page.goto("/trade/offers/o1");
-    await page.getByLabel("I will pay").fill("1000");
+    // Binance's row of amounts: the minimum, then round numbers inside the limits.
+    const quick = page.getByRole("group", { name: "Quick amounts" });
+    await expect(quick.getByRole("button")).toHaveText(["Min", "500", "1,000", "2,000", "3,000"]);
+    await quick.getByRole("button", { name: "1,000" }).click();
+    await expect(page.getByLabel("I will pay")).toHaveValue("1000");
+    await expect(quick.getByRole("button", { name: "1,000" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     const buy = page.getByRole("button", { name: "Buy USDT" });
     await buy.click();
 

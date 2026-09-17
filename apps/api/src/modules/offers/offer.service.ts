@@ -503,10 +503,11 @@ export class OfferService {
           },
         ]);
       }
-      return ids.map((id) => ({
-        kind: methods.find((method) => method.id === id)?.kind ?? "BANK_TRANSFER",
-        paymentMethodId: id,
-      }));
+      return ids.map((id) => {
+        const method = methods.find((candidate) => candidate.id === id);
+        if (!method) throw AppError.notFound("There is no such payment method.");
+        return { kind: method.kind, paymentMethodId: id };
+      });
     }
     const kinds = [...new Set(input.paymentKinds ?? [])];
     if (kinds.length === 0) {

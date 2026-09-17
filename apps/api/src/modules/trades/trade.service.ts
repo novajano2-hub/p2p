@@ -1155,7 +1155,11 @@ export class TradeService {
         // The seller's own, always; the buyer's while there is a payment to make.
         instructions:
           role === "SELLER" || open
-            ? this.cipher.decrypt(row.paymentSnapshotEncrypted, TRADE_SNAPSHOT_PURPOSE)
+            ? this.cipher.decrypt(
+                row.paymentSnapshotEncrypted,
+                TRADE_SNAPSHOT_PURPOSE,
+                row.paymentKind,
+              )
             : null,
         reference: typeof reference === "string" ? reference : null,
       },

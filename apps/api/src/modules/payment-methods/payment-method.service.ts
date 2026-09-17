@@ -1,5 +1,4 @@
 import {
-  ETHIOPIAN_BANKS,
   PAYMENT_METHOD_KINDS,
   PAYMENT_METHODS_MAX,
   type CreatePaymentMethodRequest,
@@ -59,7 +58,7 @@ export class PaymentMethodService {
     if (!row) throw AppError.notFound("There is no such payment method.");
     return {
       ...toView(row),
-      instructions: this.cipher.decrypt(row.detailsEncrypted, PAYMENT_METHOD_PURPOSE),
+      instructions: this.cipher.decrypt(row.detailsEncrypted, PAYMENT_METHOD_PURPOSE, row.kind),
     };
   }
 
@@ -78,16 +77,12 @@ export class PaymentMethodService {
 
     const instructions = toInstructions(input);
     const hint = instructions.accountNumber.slice(-HINT_DIGITS);
-    const institution =
-      instructions.kind === "BANK_TRANSFER" && instructions.bankName
-        ? instructions.bankName
-        : PAYMENT_METHOD_KINDS[instructions.kind].label;
+    const institution = PAYMENT_METHOD_KINDS[instructions.kind].label;
 
     const row = await this.prisma.client.paymentMethod.create({
       data: {
         userId,
         kind: instructions.kind,
-        bankCode: instructions.bankCode,
         label: `${institution} ····${hint}`,
         hint,
         detailsEncrypted: this.cipher.encrypt(instructions, PAYMENT_METHOD_PURPOSE),
@@ -163,7 +158,11 @@ export class PaymentMethodService {
     if (!method) return null;
     return {
       method,
-      instructions: this.cipher.decrypt(method.detailsEncrypted, PAYMENT_METHOD_PURPOSE),
+      instructions: this.cipher.decrypt(
+        method.detailsEncrypted,
+        PAYMENT_METHOD_PURPOSE,
+        method.kind,
+      ),
     };
   }
 }
@@ -171,21 +170,10 @@ export class PaymentMethodService {
 /* --------------------------------------------------------------- plumbing */
 
 function toInstructions(input: CreatePaymentMethodRequest): PaymentInstructions {
-  if (input.kind === "BANK_TRANSFER") {
-    return {
-      kind: input.kind,
-      bankCode: input.bankCode,
-      bankName: ETHIOPIAN_BANKS[input.bankCode],
-      accountHolder: input.accountHolder,
-      accountNumber: input.accountNumber,
-    };
-  }
   return {
     kind: input.kind,
-    bankCode: null,
-    bankName: null,
     accountHolder: input.accountHolder,
-    accountNumber: input.phone,
+    accountNumber: "accountNumber" in input ? input.accountNumber : input.phone,
   };
 }
 
@@ -193,7 +181,6 @@ export function toView(row: PaymentMethod): PaymentMethodView {
   return {
     id: row.id,
     kind: row.kind,
-    bankCode: row.bankCode as PaymentMethodView["bankCode"],
     label: row.label,
     hint: row.hint,
     status: row.status,

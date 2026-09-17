@@ -159,9 +159,6 @@ export function DisputeReview({ disputeId }: { disputeId: string }) {
             <Panel title="Where the buyer was told to pay">
               <DetailList>
                 <DetailRow label="Rail">{PAYMENT_WORDS[dispute.payment.kind].label}</DetailRow>
-                {dispute.payment.instructions.bankName ? (
-                  <DetailRow label="Bank">{dispute.payment.instructions.bankName}</DetailRow>
-                ) : null}
                 <DetailRow label="Account holder">
                   {dispute.payment.instructions.accountHolder}
                 </DetailRow>

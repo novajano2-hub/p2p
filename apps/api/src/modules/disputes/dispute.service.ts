@@ -441,6 +441,7 @@ export class DisputeService {
         instructions: this.cipher.decrypt(
           row.trade.paymentSnapshotEncrypted,
           TRADE_SNAPSHOT_PURPOSE,
+          row.trade.paymentKind,
         ),
       },
       evidence: row.evidence.map((file) => toEvidence(file, row.trade)),

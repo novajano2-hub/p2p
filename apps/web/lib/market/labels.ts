@@ -20,48 +20,73 @@ export const ASSET = "USDT";
 
 export const PAYMENT_KINDS: Record<
   PaymentMethodKind,
-  { label: string; numberLabel: string; /** The bar beside the name, Binance-style. */ bar: string }
+  {
+    /** What a list, a chip and a filter say. */
+    label: string;
+    /** What the payment instructions say: "CBE" alone is too little to type into a banking app. */
+    fullName: string;
+    numberLabel: string;
+    institution: "wallet" | "bank";
+    /** The bar beside the name, Binance-style. */
+    bar: string;
+  }
 > = {
   TELEBIRR: {
     label: "Telebirr",
+    fullName: "Telebirr",
     numberLabel: "Telebirr phone number",
+    institution: "wallet",
     bar: "bg-status-complete-fg",
   },
-  CBE_BIRR: { label: "CBE Birr", numberLabel: "CBE Birr phone number", bar: "bg-primary" },
-  MPESA: { label: "M-Pesa", numberLabel: "M-Pesa phone number", bar: "bg-status-pending-fg" },
-  BANK_TRANSFER: { label: "Bank transfer", numberLabel: "Account number", bar: "bg-sage" },
+  CBE_BIRR: {
+    label: "CBE Birr",
+    fullName: "CBE Birr",
+    numberLabel: "CBE Birr phone number",
+    institution: "wallet",
+    bar: "bg-primary",
+  },
+  MPESA: {
+    label: "M-Pesa",
+    fullName: "M-Pesa",
+    numberLabel: "M-Pesa phone number",
+    institution: "wallet",
+    bar: "bg-status-pending-fg",
+  },
+  CBE: {
+    label: "CBE",
+    fullName: "Commercial Bank of Ethiopia",
+    numberLabel: "Account number",
+    institution: "bank",
+    bar: "bg-sage",
+  },
+  DASHEN: {
+    label: "Dashen Bank",
+    fullName: "Dashen Bank",
+    numberLabel: "Account number",
+    institution: "bank",
+    bar: "bg-status-attention-fg",
+  },
+  ABYSSINIA: {
+    label: "Bank of Abyssinia",
+    fullName: "Bank of Abyssinia",
+    numberLabel: "Account number",
+    institution: "bank",
+    bar: "bg-foreground",
+  },
+  AWASH: {
+    label: "Awash Bank",
+    fullName: "Awash Bank",
+    numberLabel: "Account number",
+    institution: "bank",
+    bar: "bg-muted-foreground",
+  },
 };
 
 export const PAYMENT_KIND_LIST = Object.keys(PAYMENT_KINDS) as PaymentMethodKind[];
-
-/** Every bank a transfer may name, code and name, in the order the API lists them. */
-export const BANKS: readonly { code: string; name: string }[] = [
-  { code: "CBE", name: "Commercial Bank of Ethiopia" },
-  { code: "AWASH", name: "Awash Bank" },
-  { code: "DASHEN", name: "Dashen Bank" },
-  { code: "ABYSSINIA", name: "Bank of Abyssinia" },
-  { code: "WEGAGEN", name: "Wegagen Bank" },
-  { code: "NIB", name: "Nib International Bank" },
-  { code: "HIBRET", name: "Hibret Bank" },
-  { code: "ZEMEN", name: "Zemen Bank" },
-  { code: "BERHAN", name: "Berhan Bank" },
-  { code: "ABAY", name: "Abay Bank" },
-  { code: "BUNNA", name: "Bunna Bank" },
-  { code: "ENAT", name: "Enat Bank" },
-  { code: "COOP_OROMIA", name: "Cooperative Bank of Oromia" },
-  { code: "OROMIA", name: "Oromia Bank" },
-  { code: "LION", name: "Lion International Bank" },
-  { code: "AMHARA", name: "Amhara Bank" },
-  { code: "SIINQEE", name: "Siinqee Bank" },
-  { code: "TSEHAY", name: "Tsehay Bank" },
-  { code: "ZAMZAM", name: "ZamZam Bank" },
-  { code: "HIJRA", name: "Hijra Bank" },
-  { code: "GADAA", name: "Gadaa Bank" },
-  { code: "AHADU", name: "Ahadu Bank" },
-  { code: "GOH_BETOCH", name: "Goh Betoch Bank" },
-  { code: "TSEDEY", name: "Tsedey Bank" },
-  { code: "GLOBAL", name: "Global Bank Ethiopia" },
-];
+/** The three mobile wallets, in the order a form offers them. */
+export const WALLET_KINDS = ["TELEBIRR", "CBE_BIRR", "MPESA"] as const;
+/** The four launch banks, each a method of its own. */
+export const BANK_KINDS = ["CBE", "DASHEN", "ABYSSINIA", "AWASH"] as const;
 
 /** How long a buyer has to pay. The four the API accepts. */
 export const PAYMENT_WINDOWS = [15, 30, 45, 60] as const;

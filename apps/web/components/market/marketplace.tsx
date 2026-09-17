@@ -169,15 +169,16 @@ export function Marketplace() {
             <Select
               aria-label="Payment method"
               value={kind}
-              onChange={(event) => setKind(event.target.value as PaymentMethodKind | "")}
-            >
-              <option value="">All payment methods</option>
-              {PAYMENT_KIND_LIST.map((value) => (
-                <option key={value} value={value}>
-                  {PAYMENT_KINDS[value].label}
-                </option>
-              ))}
-            </Select>
+              onChange={(value) => setKind(value as PaymentMethodKind | "")}
+              options={[
+                { value: "", label: "All payment methods" },
+                ...PAYMENT_KIND_LIST.map((value) => ({
+                  value,
+                  label: PAYMENT_KINDS[value].label,
+                  bar: PAYMENT_KINDS[value].bar,
+                })),
+              ]}
+            />
           </div>
         </div>
         {amountProblem ? (

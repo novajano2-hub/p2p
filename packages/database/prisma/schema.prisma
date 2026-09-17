@@ -1287,13 +1287,18 @@ model MockCustodyDirective {
 // hundredths, and never enters the ledger (ledger-taxonomy.md 7).
 // ---------------------------------------------------------------------------
 
-/// The rails birr actually moves on in Ethiopia: the two mobile wallets, the
-/// M-Pesa launched by Safaricom Ethiopia, and an ordinary bank transfer.
+/// The rails birr actually moves on in Ethiopia: three mobile wallets and,
+/// each a method of its own the way Binance lists them, the four launch
+/// banks. A buyer choosing where to pay wants the bank by name - a transfer
+/// within one bank arrives at once, one between banks does not.
 enum PaymentMethodKind {
   TELEBIRR
   CBE_BIRR
   MPESA
-  BANK_TRANSFER
+  CBE
+  DASHEN
+  ABYSSINIA
+  AWASH
 
   @@map("payment_method_kind")
 }
@@ -1318,9 +1323,6 @@ model PaymentMethod {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   kind PaymentMethodKind
-  /// For BANK_TRANSFER, the bank's code from the contracts' list ("CBE",
-  /// "AWASH"). Null for the mobile wallets, which are their own institution.
-  bankCode String? @map("bank_code")
 
   /// What lists show: the rail and the last digits, "Telebirr ····4821".
   /// Composed by the service from data that is not secret; never typed.
