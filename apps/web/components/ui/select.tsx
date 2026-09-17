@@ -437,7 +437,7 @@ export function Select({
       {open && !phone ? (
         <div
           className={cn(
-            "border-border bg-surface shadow-panel rounded-surface absolute left-0 z-50 w-full min-w-[12rem] border p-1.5",
+            "border-border bg-surface shadow-panel rounded-surface absolute left-0 z-50 w-full border p-1.5",
             "motion-safe:animate-[menu-in_140ms_ease-out]",
             above ? "bottom-full mb-1.5" : "top-full mt-1.5",
           )}
