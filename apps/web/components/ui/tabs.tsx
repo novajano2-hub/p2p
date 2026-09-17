@@ -25,16 +25,30 @@ export type TabItem = {
 export function Tabs({
   items,
   defaultTab,
+  value,
+  onValueChange,
   className,
   label = "Sections",
 }: {
   items: readonly TabItem[];
   defaultTab?: string;
+  /**
+   * Which tab is open, when the caller keeps that somewhere of its own - the
+   * address bar, say, so the tab a person is on is part of the link they copy.
+   * Left out, the tabs keep it themselves.
+   */
+  value?: string;
+  onValueChange?: (id: string) => void;
   className?: string;
   /** What this set of tabs is, for a screen reader announcing the list. */
   label?: string;
 }) {
-  const [active, setActive] = useState(defaultTab ?? items[0]?.id ?? "");
+  const [own, setOwn] = useState(defaultTab ?? items[0]?.id ?? "");
+  const active = value ?? own;
+  const setActive = (id: string) => {
+    if (value === undefined) setOwn(id);
+    onValueChange?.(id);
+  };
   const baseId = useId();
   const listRef = useRef<HTMLDivElement>(null);
 

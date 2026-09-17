@@ -24,6 +24,61 @@ export const USER = {
   emailVerified: true,
 };
 
+/** An advertiser, as every screen that names one wants them. */
+export const ADVERTISER = {
+  userId: "0199f0b1-2c3d-7e4f-8a9b-0c1d2e3f4a5c",
+  username: "user_20482010",
+  verified: true,
+  tradesTotal: 14,
+  tradesCompleted: 13,
+  completionRate: 93,
+  avgReleaseSeconds: 240,
+  avgPaySeconds: 600,
+};
+
+/** An open order, carrying the terms it was taken under. */
+export const TRADE = {
+  id: "t1",
+  offerId: "o1",
+  offerSide: "SELL",
+  role: "BUYER",
+  status: "AWAITING_FIAT_PAYMENT",
+  message: "Pay the seller, then say you have paid.",
+  amount: "6309148",
+  fee: "0",
+  buyerReceives: "6309148",
+  priceSantim: "15850",
+  fiatSantim: "100000",
+  counterparty: ADVERTISER,
+  payment: {
+    kind: "TELEBIRR",
+    label: "Telebirr ····5678",
+    instructions: {
+      kind: "TELEBIRR",
+      accountHolder: "Abebe Bikila",
+      accountNumber: "0912345678",
+    },
+    reference: null,
+  },
+  terms: "No third-party payments. Send from an account in your own name.",
+  paymentDeadline: "2099-01-01T00:00:00.000Z",
+  paidAt: null,
+  closedAt: null,
+  closeReason: null,
+  dispute: null,
+  chat: { lastSeq: 0, unread: 0 },
+  actions: {
+    canMarkPaid: true,
+    canCancel: true,
+    canRelease: false,
+    canDispute: false,
+    canWithdrawDispute: false,
+    canChat: true,
+  },
+  createdAt: "2026-09-17T09:00:00.000Z",
+  updatedAt: "2026-09-17T09:00:00.000Z",
+};
+
 export type Reply = { status: number; body?: unknown };
 
 export const ok = (body: unknown, status = 200): Reply => ({ status, body });

@@ -357,6 +357,9 @@ describe("offers", () => {
     const offer = await sellOffer(verified, own.id);
     expect(offer.status).toBe("ACTIVE");
     expect(offer.remainingAmount).toBe(offer.totalAmount);
+    // A new ad is the first version of itself, with nothing running against it.
+    expect(offer.revision).toBe(1);
+    expect(offer.openOrders).toBe(0);
     expect(offer.paymentMethods).toEqual([
       { kind: "TELEBIRR", paymentMethodId: own.id, label: "Telebirr ····5678" },
     ]);

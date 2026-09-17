@@ -99,6 +99,8 @@ const marketOfferSchema = z.object({
   requireVerified: z.boolean(),
   minCompletedTrades: z.number(),
   advertiser: advertiserSchema,
+  /** What the ad's terms are a version of: an order quotes it back. */
+  revision: z.number(),
   isMine: z.boolean(),
 });
 export type MarketOffer = z.infer<typeof marketOfferSchema>;
@@ -129,6 +131,9 @@ const myOfferSchema = z.object({
   requireVerified: z.boolean(),
   minCompletedTrades: z.number(),
   status: offerStatus,
+  revision: z.number(),
+  /** Orders from this ad that are still running. Closing the ad leaves them alone. */
+  openOrders: z.number(),
   createdAt: z.string(),
 });
 export type MyOffer = z.infer<typeof myOfferSchema>;
@@ -205,6 +210,8 @@ const tradeSchema = z.object({
     instructions: instructionsSchema.nullable(),
     reference: z.string().nullable(),
   }),
+  /** The advertiser's terms as they stood when this order opened. */
+  terms: z.string().nullable(),
   paymentDeadline: z.string(),
   paidAt: z.string().nullable(),
   closedAt: z.string().nullable(),
@@ -377,6 +384,8 @@ export const marketClient = {
   createTrade: (
     input: {
       offerId: string;
+      /** The ad's version as the screen had it; the server refuses an order on a moved ad. */
+      offerRevision: number;
       amount?: string;
       fiatSantim?: string;
       paymentKind?: PaymentMethodKind;

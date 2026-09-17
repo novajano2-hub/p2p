@@ -435,6 +435,7 @@ export class DisputeService {
     });
     return {
       ...item,
+      terms: row.trade.offerTerms,
       payment: {
         kind: row.trade.paymentKind,
         label: row.trade.paymentLabel,

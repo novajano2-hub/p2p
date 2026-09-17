@@ -50,12 +50,14 @@ import { withNext } from "@/lib/next-path";
   one of their own payment methods, which must be of a kind the buyer said
   they can pay through. The escrow comes from whoever gives up USDT.
 
-  The ad can change under the person's feet: its owner may pause or close
-  it, change the price, or have most of it taken by somebody else while they
-  are still typing. So the screen looks at the offer again every ten seconds
-  while it is open, and whenever the tab comes back into view, and says what
-  changed at once - rather than leaving the order button to find out, and
-  then saying so at the top of a form the button is the bottom of.
+  The ad can change under the person's feet, and two different things can
+  happen to it. It can go away - taken offline, closed, its owner suspended -
+  and then there is nothing to do but say so. Or its terms can move: a new
+  price, new limits, new rails, a shorter window, different terms. The order
+  carries the version of the ad it was placed against, so a moved ad is
+  refused by the server rather than opened on terms nobody read. This screen
+  looks again every ten seconds and whenever the tab comes back, lists what
+  changed, and asks for one deliberate click before ordering at the new terms.
 */
 
 const MODES = [
@@ -65,7 +67,44 @@ const MODES = [
 type Mode = (typeof MODES)[number]["value"];
 
 const RECHECK_MS = 10_000;
-const GONE = "This ad is no longer available - its owner paused or closed it.";
+const GONE = "This ad is no longer available - its owner took it offline or closed it.";
+
+/** What moved between the ad as accepted and the ad as it is now. */
+function changesBetween(before: MarketOffer, after: MarketOffer): string[] {
+  const lines: string[] = [];
+  if (before.priceSantim !== after.priceSantim) {
+    lines.push(
+      `Price: ${formatSantim(before.priceSantim)} → ${formatSantim(after.priceSantim)} ${FIAT} per ${ASSET}`,
+    );
+  }
+  if (before.minSantim !== after.minSantim || before.maxSantim !== after.maxSantim) {
+    lines.push(
+      `Limits: ${formatSantim(before.minSantim)} – ${formatSantim(before.maxSantim)} → ${formatSantim(after.minSantim)} – ${formatSantim(after.maxSantim)} ${FIAT}`,
+    );
+  }
+  if (before.paymentWindowMinutes !== after.paymentWindowMinutes) {
+    lines.push(
+      `Time to pay: ${before.paymentWindowMinutes} → ${after.paymentWindowMinutes} minutes`,
+    );
+  }
+  const railsOf = (offer: MarketOffer) =>
+    offer.paymentKinds.map((kind) => PAYMENT_KINDS[kind].label).join(", ");
+  if (railsOf(before) !== railsOf(after)) {
+    lines.push(`Payment methods: now ${railsOf(after)}`);
+  }
+  if (before.terms !== after.terms) {
+    lines.push("The advertiser's terms changed - read them again.");
+  }
+  if (
+    before.requireVerified !== after.requireVerified ||
+    before.minCompletedTrades !== after.minCompletedTrades
+  ) {
+    lines.push("Who may take this ad changed.");
+  }
+  // The version moved on something this screen does not draw: say so plainly
+  // rather than show an empty list.
+  return lines.length > 0 ? lines : ["The advertiser updated this ad."];
+}
 
 type State =
   | { status: "loading" }
@@ -85,10 +124,15 @@ export function TakeOffer({ offerId }: { offerId: string }) {
   const [intentKey, setIntentKey] = useState<string | null>(null);
   // Found gone, by a look or by a refused order. There is no way back from it.
   const [gone, setGone] = useState(false);
-  // Something about the ad changed since it was loaded; cleared by typing.
+  // What is left of the ad, when somebody else has taken some of it.
   const [notice, setNotice] = useState<string | null>(null);
-  // The offer as last shown, for a look to compare against.
-  const shown = useRef<MarketOffer | null>(null);
+  /*
+    The ad as this person accepted it. An order is placed against its version,
+    so while it trails the ad on screen there are changes to read first.
+  */
+  const [accepted, setAccepted] = useState<MarketOffer | null>(null);
+  // What a look is comparing against, without making every look a new effect.
+  const view = useRef<{ offer: MarketOffer; methods: PaymentMethod[] } | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -107,6 +151,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
         if (mine.ok) methods = mine.paymentMethods.filter((method) => method.status === "ACTIVE");
       }
       setState({ status: "ready", offer: found.offer, methods });
+      setAccepted(found.offer);
     })();
     return () => {
       live = false;
@@ -114,29 +159,33 @@ export function TakeOffer({ offerId }: { offerId: string }) {
   }, [offerId]);
 
   useEffect(() => {
-    shown.current = state.status === "ready" ? state.offer : null;
+    view.current = state.status === "ready" ? { offer: state.offer, methods: state.methods } : null;
   }, [state]);
 
-  /** Another look at the offer, and a word about anything that changed. */
+  /** Another look at the ad, and a word about anything that moved. */
   const recheck = useCallback(async () => {
-    const before = shown.current;
+    const before = view.current;
     if (!before) return;
-    const found = await marketClient.offer(before.id);
+    const found = await marketClient.offer(before.offer.id);
     if (!found.ok) {
-      // Only a definite answer counts: a network blip is not a paused ad.
+      // Only a definite answer counts: a network blip is not an ad taken offline.
       if (found.code === "NOT_FOUND") setGone(true);
       return;
     }
-    if (found.offer.priceSantim !== before.priceSantim) {
-      setNotice(
-        `The price changed to ${formatSantim(found.offer.priceSantim)} ${FIAT} per ${ASSET} while you were here. Check the amounts before you continue.`,
-      );
-    } else if (compareMicro(found.offer.available, before.available) < 0) {
-      setNotice(`Only ${usdt(found.offer.available)} is left on this ad now.`);
+    const offer = found.offer;
+    if (compareMicro(offer.available, before.offer.available) < 0) {
+      setNotice(`Only ${usdt(offer.available)} is left on this ad now.`);
     }
-    setState((current) =>
-      current.status === "ready" ? { ...current, offer: found.offer } : current,
-    );
+    setState((current) => (current.status === "ready" ? { ...current, offer } : current));
+    // A payment choice the ad no longer offers is not a choice.
+    setRail((current) => {
+      if (current === "") return current;
+      if (offer.side === "SELL") {
+        return offer.paymentKinds.includes(current as PaymentMethodKind) ? current : "";
+      }
+      const method = before.methods.find((candidate) => candidate.id === current);
+      return method && offer.paymentKinds.includes(method.kind) ? current : "";
+    });
   }, []);
 
   const ready = state.status === "ready";
@@ -180,6 +229,8 @@ export function TakeOffer({ offerId }: { offerId: string }) {
   const price = offer.priceSantim;
   // The side of the market this offer was found on, which is where Back goes.
   const market = `/trade?want=${buying ? "BUY" : "SELL"}`;
+  const changes =
+    accepted && accepted.revision !== offer.revision ? changesBetween(accepted, offer) : [];
 
   // Both sides of the pair, from whichever the person typed.
   const typedSantim = mode === "fiat" ? toSantim(typed) : null;
@@ -217,7 +268,14 @@ export function TakeOffer({ offerId }: { offerId: string }) {
     setNotice(null);
   };
 
+  /** "I have read what changed": the ad on screen becomes the ad being ordered. */
+  const acceptChanges = () => {
+    setAccepted(offer);
+    setError(null);
+  };
+
   const place = async () => {
+    if (!accepted) return;
     if (!micro || !santim || problem || !railChosen) {
       setError(
         problem ?? (railChosen ? "Enter an amount." : "Choose how the payment will be made."),
@@ -231,6 +289,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
     const result = await marketClient.createTrade(
       {
         offerId: offer.id,
+        offerRevision: accepted.revision,
         ...(mode === "fiat" ? { fiatSantim: santim } : { amount: micro }),
         ...(buying
           ? { paymentKind: railValue as PaymentMethodKind }
@@ -245,9 +304,15 @@ export function TakeOffer({ offerId }: { offerId: string }) {
     }
     if (result.code !== "NETWORK") setIntentKey(null);
     if (result.code === "NOT_FOUND") {
-      // Paused, closed, or its owner's account is no longer active: the same
-      // answer a look gets, shown the same way.
+      // Taken offline, closed, or its owner's account is no longer active: the
+      // same answer a look gets, shown the same way.
       setGone(true);
+      return;
+    }
+    if (result.code === "OFFER_CHANGED") {
+      // The ad moved between the last look and this click. Fetch it again: the
+      // list of what changed is the answer, and it needs one more click.
+      await recheck();
       return;
     }
     setError(result.message);
@@ -274,13 +339,6 @@ export function TakeOffer({ offerId }: { offerId: string }) {
                 Back to the market
               </AppLink>
             </FormError>
-          ) : notice ? (
-            <p
-              role="status"
-              className="rounded-control bg-status-pending text-status-pending-fg mb-5 px-3.5 py-3 text-[13px] leading-relaxed"
-            >
-              {notice}
-            </p>
           ) : null}
 
           <div className="mb-5 flex items-baseline justify-between gap-4">
@@ -421,24 +479,46 @@ export function TakeOffer({ offerId }: { offerId: string }) {
             </Note>
           </div>
 
-          {/* A refusal is answered where the button is, which is where the person is looking. */}
+          {/* What changed, and any refusal, are answered where the button is. */}
           <div className="mt-6">
+            {changes.length > 0 ? (
+              <div
+                role="status"
+                className="rounded-control bg-status-pending text-status-pending-fg mb-4 px-3.5 py-3 text-[13px] leading-relaxed"
+              >
+                <p className="font-medium">The advertiser changed this ad</p>
+                <ul className="mt-1 list-disc pl-4">
+                  {changes.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : notice ? (
+              <p
+                role="status"
+                className="rounded-control bg-status-pending text-status-pending-fg mb-4 px-3.5 py-3 text-[13px] leading-relaxed"
+              >
+                {notice}
+              </p>
+            ) : null}
             <FormError message={error} />
             <Button
               type="button"
               size="lg"
               className="w-full"
               loading={submitting}
-              onClick={place}
+              onClick={changes.length > 0 ? acceptChanges : place}
               disabled={offer.isMine || gone}
             >
               {gone
                 ? "No longer available"
                 : offer.isMine
                   ? "This is your own ad"
-                  : buying
-                    ? `Buy ${ASSET}`
-                    : `Sell ${ASSET}`}
+                  : changes.length > 0
+                    ? "Accept the changes"
+                    : buying
+                      ? `Buy ${ASSET}`
+                      : `Sell ${ASSET}`}
             </Button>
           </div>
         </Panel>
@@ -461,7 +541,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
           </Panel>
           {offer.terms ? (
             <Panel title="Advertiser's terms">
-              <p className="text-foreground text-sm leading-relaxed whitespace-pre-line">
+              <p className="text-foreground text-sm leading-relaxed [overflow-wrap:anywhere] whitespace-pre-line">
                 {offer.terms}
               </p>
             </Panel>

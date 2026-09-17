@@ -135,7 +135,7 @@ async function opened() {
 
 async function take(who: Api, offerId: string): Promise<TradeView> {
   const response = await who
-    .post("/v1/trades", { offerId, amount: (20n * USDT).toString() }, uniq("key"))
+    .post("/v1/trades", { offerId, offerRevision: 1, amount: (20n * USDT).toString() }, uniq("key"))
     .expect(201);
   return response.body as TradeView;
 }

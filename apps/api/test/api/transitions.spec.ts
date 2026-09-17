@@ -125,7 +125,11 @@ beforeAll(async () => {
 /** A fresh 10 USDT trade on the shared offer. */
 async function opened(): Promise<TradeView> {
   const response = await pair.buyer.api
-    .post("/v1/trades", { offerId: pair.offerId, amount: (10n * USDT).toString() }, uniq("key"))
+    .post(
+      "/v1/trades",
+      { offerId: pair.offerId, offerRevision: 1, amount: (10n * USDT).toString() },
+      uniq("key"),
+    )
     .expect(201);
   return response.body as TradeView;
 }

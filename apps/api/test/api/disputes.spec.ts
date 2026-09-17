@@ -55,6 +55,7 @@ const uniq = (label: string) => `test-${run}-${label}-${++counter}`;
 const USDT = 1_000_000n;
 const ADMIN_PASSWORD = "correct horse battery staple";
 const AUTO_REPLY = "Thanks! Pay within 30 minutes.";
+const TERMS = "Pay from an account in your own name. No third parties.";
 const NOTE = "The buyer's receipt shows the transfer to the seller's Telebirr number.";
 
 beforeAll(async () => {
@@ -135,12 +136,17 @@ async function paidTrade() {
         paymentWindowMinutes: 30,
         paymentMethodIds: [method.id],
         autoReply: AUTO_REPLY,
+        terms: TERMS,
       })
       .expect(201)
   ).body as OfferView;
   const trade = (
     await buyer.api
-      .post("/v1/trades", { offerId: offer.id, amount: (40n * USDT).toString() }, uniq("key"))
+      .post(
+        "/v1/trades",
+        { offerId: offer.id, offerRevision: 1, amount: (40n * USDT).toString() },
+        uniq("key"),
+      )
       .expect(201)
   ).body as TradeView;
   await buyer.api.post(`/v1/trades/${trade.id}/paid`, { reference: "FT-2409-1123" }).expect(200);
@@ -382,6 +388,24 @@ describe("opening a dispute", () => {
 });
 
 describe("deciding a dispute (AT-8)", () => {
+  it("shows the resolver the terms the order was taken under", async () => {
+    const { seller, offer, dispute } = await disputed();
+    const resolver = await makeAdmin();
+
+    // The advertiser rewrites the ad after the dispute is open. What the buyer
+    // agreed to is part of the order, and does not move with it.
+    await request(server())
+      .patch(`/v1/offers/${offer.id}`)
+      .set("Cookie", seller.cookie)
+      .set("x-csrf-token", csrfFor(seller.cookie))
+      .send({ terms: "Third-party payments are fine, actually." })
+      .expect(200);
+
+    const detail = (await adminGet(resolver, `/${dispute.id}`).expect(200))
+      .body as AdminDisputeDetail;
+    expect(detail.terms).toBe(TERMS);
+  });
+
   it("is for the DISPUTE_RESOLVER role alone", async () => {
     const { buyer, seller, dispute } = await disputed();
     const body = { outcome: "RELEASE_TO_BUYER", note: NOTE };

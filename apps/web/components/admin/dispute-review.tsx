@@ -184,6 +184,17 @@ export function DisputeReview({ disputeId }: { disputeId: string }) {
               </p>
             </Panel>
 
+            {dispute.terms ? (
+              <Panel title="The advertiser's terms">
+                <p className="text-foreground px-4 py-3 text-[13px] leading-relaxed [overflow-wrap:anywhere] whitespace-pre-line">
+                  {dispute.terms}
+                </p>
+                <p className="text-muted-foreground border-border border-t px-4 py-3 text-[12px] leading-relaxed">
+                  As they stood when the order opened. The ad may say something else now.
+                </p>
+              </Panel>
+            ) : null}
+
             <Evidence dispute={dispute} />
             <Transcript dispute={dispute} />
 

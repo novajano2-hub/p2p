@@ -1,11 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import {
+  ADVERTISER,
   apiError,
   expectNoHorizontalOverflow,
   ok,
   signedIn,
   stubApi,
+  TRADE,
   USER,
   withSession,
 } from "./support";
@@ -19,17 +21,6 @@ import {
 
 const desktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1024;
 const mobile = (page: Page) => (page.viewportSize()?.width ?? 0) < 768;
-
-const ADVERTISER = {
-  userId: "0199f0b1-2c3d-7e4f-8a9b-0c1d2e3f4a5c",
-  username: "user_20482010",
-  verified: true,
-  tradesTotal: 14,
-  tradesCompleted: 13,
-  completionRate: 93,
-  avgReleaseSeconds: 240,
-  avgPaySeconds: 600,
-};
 
 /** 100 USDT at 158.50 birr, 10 to 20,000 birr a trade, paid through Telebirr. */
 const offer = (side: "BUY" | "SELL", overrides: Record<string, unknown> = {}) => ({
@@ -45,6 +36,7 @@ const offer = (side: "BUY" | "SELL", overrides: Record<string, unknown> = {}) =>
   requireVerified: false,
   minCompletedTrades: 0,
   advertiser: ADVERTISER,
+  revision: 1,
   isMine: false,
   ...overrides,
 });
@@ -205,30 +197,6 @@ test.describe("an ad that changes while you are looking at it", () => {
     expect(buttonBox!.y - (alertBox!.y + alertBox!.height)).toBeLessThan(80);
     await expectNoHorizontalOverflow(page);
   });
-
-  test("a changed price is announced before the order, not by it", async ({ page, context }) => {
-    test.skip(!desktop(page), "one viewport is enough for a sentence");
-    await withSession(context);
-    await stubApi(page, [
-      ...signedIn(),
-      {
-        method: "GET",
-        path: /^\/v1\/offers\/o1$/,
-        reply: (_route, calls) =>
-          ok(offer("SELL", { priceSantim: calls === 1 ? "15850" : "16000" })),
-      },
-    ]);
-
-    await page.goto("/trade/offers/o1");
-    await expect(page.getByText("158.50").first()).toBeVisible();
-
-    await lookAgain(page);
-
-    await expect(page.getByRole("status").filter({ hasText: "price changed" })).toContainText(
-      "160.00",
-    );
-    await expect(page.getByText("160.00").first()).toBeVisible();
-  });
 });
 
 test.describe("the amount filter", () => {
@@ -274,6 +242,139 @@ test.describe("the amount filter", () => {
     await expect.poll(() => asked.at(-1)).toContain("amountSantim=70000");
     await expect(quick.getByRole("button", { pressed: true })).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("an ad that moves while you are ordering", () => {
+  /*
+    The advertiser edits the ad while somebody is filling in the form in front
+    of it. The order carries the version it was placed against, so the screen
+    has to say what moved and be told, once, that it was read.
+  */
+  const moved = () =>
+    offer("SELL", {
+      revision: 2,
+      priceSantim: "16000",
+      paymentWindowMinutes: 15,
+      terms: "Pay from an account in your own name.",
+    });
+
+  test("lists what changed and asks for one deliberate click", async ({ page, context }) => {
+    await withSession(context);
+    const orders: unknown[] = [];
+    await stubApi(page, [
+      ...signedIn(),
+      {
+        method: "GET",
+        path: /^\/v1\/offers\/o1$/,
+        reply: (_route, calls) => ok(calls === 1 ? offer("SELL") : moved()),
+      },
+      {
+        method: "POST",
+        path: /^\/v1\/trades$/,
+        reply: (route) => {
+          orders.push(route.request().postDataJSON());
+          return ok(TRADE, 201);
+        },
+      },
+      { method: "GET", path: /^\/v1\/trades\/t1$/, reply: () => ok(TRADE) },
+      { method: "GET", path: /^\/v1\/trades\/t1\/events$/, reply: () => ok({ events: [] }) },
+      {
+        method: "GET",
+        path: /^\/v1\/trades\/t1\/messages$/,
+        reply: () =>
+          ok({ messages: [], lastSeq: 0, myLastReadSeq: 0, theirLastReadSeq: 0, open: true }),
+      },
+    ]);
+
+    await page.goto("/trade/offers/o1");
+    await page.getByLabel("I will pay").fill("1000");
+
+    await lookAgain(page);
+
+    const changed = page.getByRole("status").filter({ hasText: "changed this ad" });
+    await expect(changed).toContainText("158.50 → 160.00");
+    await expect(changed).toContainText("Time to pay: 30 → 15 minutes");
+    await expect(changed).toContainText("terms changed");
+    // The screen itself follows the ad, not only the notice about it.
+    await expect(page.getByText("160.00").first()).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    // Nothing is ordered until the changes have been taken in.
+    await page.getByRole("button", { name: "Accept the changes" }).click();
+    await expect(changed).toBeHidden();
+    expect(orders).toHaveLength(0);
+
+    await page.getByRole("button", { name: "Buy USDT" }).click();
+    await expect(page).toHaveURL(/\/orders\/t1$/);
+    expect(orders).toEqual([
+      expect.objectContaining({ offerId: "o1", offerRevision: 2, fiatSantim: "100000" }),
+    ]);
+  });
+
+  test("an order the server refuses because the ad moved says what moved", async ({
+    page,
+    context,
+  }) => {
+    await withSession(context);
+    await stubApi(page, [
+      ...signedIn(),
+      {
+        method: "GET",
+        path: /^\/v1\/offers\/o1$/,
+        reply: (_route, calls) => ok(calls === 1 ? offer("SELL") : moved()),
+      },
+      {
+        method: "POST",
+        path: /^\/v1\/trades$/,
+        reply: () =>
+          apiError(
+            "OFFER_CHANGED",
+            "This ad changed while you were ordering. Check what changed, then order again.",
+            409,
+          ),
+      },
+    ]);
+
+    await page.goto("/trade/offers/o1");
+    await page.getByLabel("I will pay").fill("1000");
+    await page.getByRole("button", { name: "Buy USDT" }).click();
+
+    const changed = page.getByRole("status").filter({ hasText: "changed this ad" });
+    await expect(changed).toContainText("158.50 → 160.00");
+    await expect(page.getByRole("button", { name: "Accept the changes" })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test("a payment method the ad no longer offers is not left chosen", async ({ page, context }) => {
+    test.skip(!desktop(page), "one viewport is enough for a cleared choice");
+    await withSession(context);
+    await stubApi(page, [
+      ...signedIn(),
+      {
+        method: "GET",
+        path: /^\/v1\/offers\/o1$/,
+        reply: (_route, calls) =>
+          ok(
+            calls === 1
+              ? offer("SELL", { paymentKinds: ["TELEBIRR", "DASHEN"] })
+              : offer("SELL", { revision: 2, paymentKinds: ["TELEBIRR", "AWASH"] }),
+          ),
+      },
+    ]);
+
+    await page.goto("/trade/offers/o1");
+    const railed = page.getByRole("combobox", { name: "Pay with" });
+    await railed.click();
+    await page.getByRole("option", { name: "Dashen Bank" }).click();
+    await expect(railed).toHaveText("Dashen Bank");
+
+    await lookAgain(page);
+
+    await expect(railed).toHaveText("Choose a payment method");
+    await expect(page.getByRole("status").filter({ hasText: "changed this ad" })).toContainText(
+      "Payment methods: now Telebirr, Awash Bank",
+    );
   });
 });
 

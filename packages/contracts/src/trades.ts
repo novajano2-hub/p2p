@@ -61,6 +61,13 @@ const positiveInteger = (what: string) =>
 export const createTradeRequest = z
   .object({
     offerId: z.uuid(),
+    /**
+     * The ad's `revision` as the taker's screen had it. The server refuses the
+     * order when the ad has moved since - a changed price, limits, rails,
+     * payment window, terms or eligibility - so an order is never opened on
+     * terms its taker never saw (error code OFFER_CHANGED).
+     */
+    offerRevision: z.number().int().positive(),
     amount: positiveInteger("an amount").optional(),
     fiatSantim: positiveInteger("an amount").optional(),
     paymentKind: paymentMethodKind.optional(),
@@ -172,6 +179,12 @@ export const tradeView = z.object({
     /** What the buyer said their bank called the transfer, if anything. */
     reference: z.string().nullable(),
   }),
+
+  /**
+   * The advertiser's terms as they stood when this order opened. The ad may
+   * have been edited since; what was agreed to has not.
+   */
+  terms: z.string().nullable(),
 
   paymentDeadline: z.string(),
   paidAt: z.string().nullable(),

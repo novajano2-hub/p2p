@@ -1410,6 +1410,13 @@ model Offer {
 
   status OfferStatus @default(ACTIVE)
 
+  /// Goes up whenever the advertiser changes something a taker reads before
+  /// committing: price, limits, rails, the payment window, the terms, who may
+  /// take it. An order names the version it was placed against and is refused
+  /// if it has moved (TradeService.create). Somebody else taking from the ad
+  /// does not move it, and neither does going offline and back.
+  revision Int @default(1)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1463,7 +1470,10 @@ model Trade {
   id String @id @default(uuid(7))
 
   offerId   String    @map("offer_id")
-  offer     Offer     @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  /// NoAction, never Cascade: deleting an ad row would otherwise take its
+  /// orders with it - and their chat, evidence and disputes - while the ledger
+  /// went on recording the money they moved. Ads are closed, never deleted.
+  offer     Offer     @relation(fields: [offerId], references: [id], onDelete: NoAction)
   offerSide OfferSide @map("offer_side")
 
   buyerId  String @map("buyer_id")
@@ -1493,6 +1503,11 @@ model Trade {
   paymentKind              PaymentMethodKind @map("payment_kind")
   paymentLabel             String            @map("payment_label")
   paymentSnapshotEncrypted String            @map("payment_snapshot_encrypted")
+
+  /// The advertiser's terms as they stood when this order opened. Kept here
+  /// rather than read from the ad, which its owner may edit afterwards: what
+  /// the taker agreed to is part of the order, and a dispute resolver reads it.
+  offerTerms String? @map("offer_terms")
 
   status TradeStatus @default(AWAITING_FIAT_PAYMENT)
 

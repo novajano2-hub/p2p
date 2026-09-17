@@ -20,6 +20,7 @@ import { assertTransition, type TransitionTable } from "@/common/state-machine/t
 import { ENV } from "@/config/config.module";
 import { type Env } from "@/config/env";
 import { PrismaService } from "@/infra/prisma/prisma.service";
+import { OPEN } from "@/modules/trades/trade.machine";
 import { PaymentMethodService } from "@/modules/payment-methods/payment-method.service";
 
 /*
@@ -86,6 +87,7 @@ interface MarketRow {
   terms: string | null;
   require_verified: boolean;
   min_completed_trades: number;
+  revision: number;
   username: string;
   kyc_status: string;
   available: bigint;
@@ -121,7 +123,23 @@ export class OfferService {
       orderBy: { createdAt: "desc" },
       take: 100,
     });
-    return rows.map(toView);
+    const open = await this.openOrders(rows.map((row) => row.id));
+    return rows.map((row) => toView(row, open.get(row.id) ?? 0));
+  }
+
+  /**
+   * Orders from these ads that are still running. The owner sees the number
+   * before closing an ad, because closing it leaves them running - the escrow
+   * and the terms of an order are its own from the moment it opens.
+   */
+  private async openOrders(offerIds: readonly string[]): Promise<Map<string, number>> {
+    if (offerIds.length === 0) return new Map();
+    const counts = await this.prisma.client.trade.groupBy({
+      by: ["offerId"],
+      where: { offerId: { in: [...offerIds] }, status: { in: [...OPEN] } },
+      _count: { _all: true },
+    });
+    return new Map(counts.map((row) => [row.offerId, row._count._all]));
   }
 
   async getMine(userId: string, id: string): Promise<OfferView> {
@@ -130,7 +148,8 @@ export class OfferService {
       include: WITH_METHODS,
     });
     if (!row) throw AppError.notFound("There is no such offer.");
-    return toView(row);
+    const open = await this.openOrders([row.id]);
+    return toView(row, open.get(row.id) ?? 0);
   }
 
   /*
@@ -183,7 +202,7 @@ export class OfferService {
       { event: "offer.posted", userId, offerId: row.id, side: row.side },
       "offer posted",
     );
-    return toView(row);
+    return toView(row, 0);
   }
 
   /*
@@ -221,6 +240,29 @@ export class OfferService {
           : patch.paymentKinds !== undefined;
       const rails = railsGiven ? await this.resolveRails(userId, current.side, patch, tx) : null;
 
+      /*
+        The version moves when the deal moves. Everything a taker reads before
+        they commit counts - the price, the limits, the rails, how long they
+        have to pay, the terms, who may take it - because an order carries the
+        version it was placed against and is refused if it has moved. What only
+        the advertiser sees does not count: the total behind the ad, whose
+        remainder is checked at order time anyway, and the auto-reply, which
+        nobody reads until the order exists.
+      */
+      const terms = patch.terms !== undefined ? blankAsNull(patch.terms) : current.terms;
+      const dealChanged =
+        shape.price !== current.priceSantim ||
+        shape.min !== current.minSantim ||
+        shape.max !== current.maxSantim ||
+        terms !== current.terms ||
+        (patch.paymentWindowMinutes !== undefined &&
+          patch.paymentWindowMinutes !== current.paymentWindowMinutes) ||
+        (patch.requireVerified !== undefined &&
+          patch.requireVerified !== current.requireVerified) ||
+        (patch.minCompletedTrades !== undefined &&
+          patch.minCompletedTrades !== current.minCompletedTrades) ||
+        (rails !== null && (await kindsOf(tx, id)) !== kindsIn(rails));
+
       await tx.offer.update({
         where: { id },
         data: {
@@ -241,11 +283,13 @@ export class OfferService {
             ? { minCompletedTrades: patch.minCompletedTrades }
             : {}),
           ...(rails ? { paymentMethods: { deleteMany: {}, create: rails } } : {}),
+          ...(dealChanged ? { revision: { increment: 1 } } : {}),
         },
       });
       return tx.offer.findUniqueOrThrow({ where: { id }, include: WITH_METHODS });
     });
-    return toView(row);
+    const open = await this.openOrders([row.id]);
+    return toView(row, open.get(row.id) ?? 0);
   }
 
   /** Pause, resume or close. Closed is for good; anything else can come back. */
@@ -256,7 +300,8 @@ export class OfferService {
       return tx.offer.update({ where: { id }, data: { status: to }, include: WITH_METHODS });
     });
     this.logger.info({ event: "offer.status", userId, offerId: id, status: to }, "offer status");
-    return toView(row);
+    const open = await this.openOrders([row.id]);
+    return toView(row, open.get(row.id) ?? 0);
   }
 
   /* --------------------------------------------------------- marketplace */
@@ -339,6 +384,7 @@ export class OfferService {
         SELECT o.id, o.user_id, o.side::text AS side, o.asset::text AS asset, o.fiat,
                o.price_santim, o.remaining_amount, o.min_santim, o.max_santim,
                o.payment_window_minutes, o.terms, o.require_verified, o.min_completed_trades,
+               o.revision,
                u.username, u.kyc_status::text AS kyc_status,
                CASE WHEN o.side = 'SELL'
                     THEN LEAST(o.remaining_amount, COALESCE(b.balance, 0))
@@ -396,6 +442,7 @@ export class OfferService {
         terms: row.terms,
         requireVerified: row.require_verified,
         minCompletedTrades: row.min_completed_trades,
+        revision: row.revision,
         advertiser: {
           userId: row.user_id,
           username: row.username,
@@ -547,12 +594,27 @@ function decodeCursor(cursor: string): { price: bigint; id: string } {
   return { price: BigInt(match[1]), id: match[2] };
 }
 
+/*
+  The kinds an ad can be paid through, as one comparable string. A taker reads
+  the kinds, never which of the advertiser's accounts is behind one, so swapping
+  the account behind a kind is not a change to the deal.
+*/
+const kindsIn = (rails: readonly { kind: string }[]): string =>
+  [...new Set(rails.map((rail) => rail.kind))].sort().join(",");
+
+async function kindsOf(tx: Tx, offerId: string): Promise<string> {
+  return kindsIn(
+    await tx.offerPaymentMethod.findMany({ where: { offerId }, select: { kind: true } }),
+  );
+}
+
 function toView(
   row:
     | OfferRow
     | (Offer & {
         paymentMethods: (OfferPaymentMethod & { paymentMethod: { label: string } | null })[];
       }),
+  openOrders: number,
 ): OfferView {
   return {
     id: row.id,
@@ -575,6 +637,8 @@ function toView(
     requireVerified: row.requireVerified,
     minCompletedTrades: row.minCompletedTrades,
     status: row.status,
+    revision: row.revision,
+    openOrders,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

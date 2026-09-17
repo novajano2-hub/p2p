@@ -91,9 +91,10 @@ export const BANK_KINDS = ["CBE", "DASHEN", "ABYSSINIA", "AWASH"] as const;
 /** How long a buyer has to pay. The four the API accepts. */
 export const PAYMENT_WINDOWS = [15, 30, 45, 60] as const;
 
+/** The three states an ad is in, in the words Binance uses for them. */
 export const OFFER_STATUS: Record<OfferStatus, { label: string; tone: StatusTone }> = {
-  ACTIVE: { label: "Live", tone: "complete" },
-  PAUSED: { label: "Paused", tone: "pending" },
+  ACTIVE: { label: "Online", tone: "complete" },
+  PAUSED: { label: "Offline", tone: "pending" },
   CLOSED: { label: "Closed", tone: "neutral" },
 };
 

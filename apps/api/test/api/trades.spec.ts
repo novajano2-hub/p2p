@@ -1,4 +1,9 @@
-import { type OfferView, type PaymentMethodDetailView, type TradeView } from "@abay/contracts";
+import {
+  type MarketplaceOffer,
+  type OfferView,
+  type PaymentMethodDetailView,
+  type TradeView,
+} from "@abay/contracts";
 import { createPrismaClient, type PrismaClient } from "@abay/database";
 import { type NestFastifyApplication } from "@nestjs/platform-fastify";
 import { PinoLogger } from "nestjs-pino";
@@ -79,6 +84,7 @@ function api(cookie: string) {
       const test = headers(request(server()).post(path));
       return (key ? test.set("Idempotency-Key", key) : test).send(body ?? {});
     },
+    patch: (path: string, body: object) => headers(request(server()).patch(path)).send(body),
   };
 }
 type Api = ReturnType<typeof api>;
@@ -136,8 +142,13 @@ async function sellOffer(
   return response.body as OfferView;
 }
 
+/*
+  Every order names the version of the ad it is placed against. Fresh ads are
+  at version 1, so that is the default here; a test that edits an ad first
+  passes the new number itself.
+*/
 function take(who: Api, body: object, key = uniq("key")) {
-  return who.post("/v1/trades", body, key);
+  return who.post("/v1/trades", { offerRevision: 1, ...body }, key);
 }
 
 const available = (userId: string) => ledger.balance(accounts.userAvailable(userId));
@@ -314,7 +325,7 @@ describe("opening a trade", () => {
       .post("/v1/trades")
       .set("Cookie", buyer.cookie)
       .set("x-csrf-token", csrfFor(buyer.cookie))
-      .send({ offerId: offer.id, amount: "1000000" })
+      .send({ offerId: offer.id, offerRevision: 1, amount: "1000000" })
       .expect(400);
   });
 
@@ -366,7 +377,10 @@ describe("opening a trade", () => {
   it("refuses to open at a price the taker never saw, and keeps the offer whole", async () => {
     const { seller, buyer, offer } = await pair();
     // The advertiser's edit lands between the taker's look and their take,
-    // committed outside the trade's transaction, as a real one would be.
+    // committed outside the trade's transaction, as a real one would be - and
+    // written straight to the row here, so the ad's version does not move. The
+    // price is compared under the lock as well as the version, so even an edit
+    // that never went through the service cannot sell at a number nobody saw.
     const reserve = offers.reserve.bind(offers);
     jest.spyOn(offers, "reserve").mockImplementationOnce(async (tx, id, amount) => {
       await db.offer.update({ where: { id }, data: { priceSantim: 16000n } });
@@ -377,7 +391,7 @@ describe("opening a trade", () => {
       offerId: offer.id,
       amount: (10n * USDT).toString(),
     }).expect(409);
-    expect(stale.body.error.message).toMatch(/price/i);
+    expect(stale.body.error.code).toBe("OFFER_CHANGED");
     expect(await available(seller.userId)).toBe(100n * USDT);
     const mine = await seller.api.get(`/v1/offers/${offer.id}/mine`).expect(200);
     expect(mine.body).toMatchObject({
@@ -810,4 +824,195 @@ describe("concurrency", () => {
     const mine = await seller.api.get(`/v1/offers/${offer.id}/mine`).expect(200);
     expect(mine.body.remainingAmount).toBe((1_000n * USDT).toString());
   }, 120_000);
+});
+
+/* --------------------------------------------------- the ad underneath it */
+
+/*
+  An ad is not a contract until somebody takes it, and its owner may edit it,
+  take it offline or close it at any moment - including the moment somebody is
+  filling in the form in front of it. Two rules hold that together. An order,
+  once open, is entirely its own: price, escrow, payment details, deadline and
+  the terms it was taken under. And an order is placed against a version of the
+  ad, so an ad that moved in the meantime refuses it rather than opening one on
+  terms its taker never read.
+*/
+describe("the ad underneath a trade", () => {
+  it("leaves an order already open exactly as it was", async () => {
+    const seller = await customer({ usdt: 100n });
+    const buyer = await customer();
+    const method = await addMethod(seller.api);
+    const offer = await sellOffer(seller.api, method.id, { terms: "Bank transfers only." });
+
+    const opened = (
+      await take(buyer.api, { offerId: offer.id, amount: (40n * USDT).toString() }).expect(201)
+    ).body as TradeView;
+    expect(opened.terms).toBe("Bank transfers only.");
+
+    const before = await seller.api.get(`/v1/offers/${offer.id}/mine`).expect(200);
+    expect(before.body.openOrders).toBe(1);
+
+    // Everything its owner can change, and then the ad itself, gone.
+    const elsewhere = await addMethod(seller.api, {
+      kind: "CBE",
+      accountHolder: "Abebe Bikila",
+      accountNumber: "1000123456789",
+    });
+    await seller.api
+      .patch(`/v1/offers/${offer.id}`, {
+        priceSantim: "16500",
+        minSantim: "5000",
+        maxSantim: "1000000",
+        paymentWindowMinutes: 15,
+        paymentMethodIds: [elsewhere.id],
+        terms: "Everything is different now.",
+      })
+      .expect(200);
+    await seller.api.post(`/v1/offers/${offer.id}/pause`).expect(200);
+    await seller.api.post(`/v1/offers/${offer.id}/close`).expect(200);
+
+    const after = await buyer.api.get(`/v1/trades/${opened.id}`).expect(200);
+    expect(after.body).toMatchObject({
+      status: "AWAITING_FIAT_PAYMENT",
+      amount: opened.amount,
+      priceSantim: opened.priceSantim,
+      fiatSantim: opened.fiatSantim,
+      paymentDeadline: opened.paymentDeadline,
+      terms: "Bank transfers only.",
+    });
+    expect(after.body.payment.instructions.accountNumber).toBe("0912345678");
+
+    // And it still finishes, on a closed ad, from both sides.
+    await buyer.api.post(`/v1/trades/${opened.id}/paid`).expect(200);
+    const released = await seller.api
+      .post(`/v1/trades/${opened.id}/release`, { password: PASSWORD })
+      .expect(200);
+    expect(released.body.status).toBe("COMPLETED");
+    const closed = await seller.api.get(`/v1/offers/${offer.id}/mine`).expect(200);
+    expect(closed.body.openOrders).toBe(0);
+  });
+
+  it("refuses an order placed against a version of the ad its taker never saw", async () => {
+    const seller = await customer({ usdt: 100n });
+    const buyer = await customer();
+    const method = await addMethod(seller.api);
+    const second = await addMethod(seller.api, {
+      kind: "CBE",
+      accountHolder: "Abebe Bikila",
+      accountNumber: "1000123456789",
+    });
+    const offer = await sellOffer(seller.api, method.id);
+    expect(offer.revision).toBe(1);
+
+    // What a taker reads before committing, one change at a time.
+    const deal: [string, object][] = [
+      ["the price", { priceSantim: "16000" }],
+      ["the limits", { minSantim: "2000" }],
+      ["the time to pay", { paymentWindowMinutes: 15 }],
+      ["the terms", { terms: "Read this first." }],
+      ["the rails", { paymentMethodIds: [method.id, second.id] }],
+      ["who may take it", { requireVerified: true }],
+    ];
+
+    let version = 1;
+    for (const [what, patch] of deal) {
+      const edited = await seller.api.patch(`/v1/offers/${offer.id}`, patch).expect(200);
+      version += 1;
+      expect([what, edited.body.revision]).toEqual([what, version]);
+
+      const stale = await take(buyer.api, {
+        offerId: offer.id,
+        amount: (10n * USDT).toString(),
+        offerRevision: version - 1,
+      }).expect(409);
+      expect(stale.body.error.code).toBe("OFFER_CHANGED");
+      // Refused before anything was taken off the ad.
+      const mine = await seller.api.get(`/v1/offers/${offer.id}/mine`).expect(200);
+      expect(mine.body.remainingAmount).toBe(mine.body.totalAmount);
+    }
+
+    // The version the taker is actually looking at is the one that works.
+    const listed = (await buyer.api.get("/v1/offers?want=BUY").expect(200)).body
+      .offers as MarketplaceOffer[];
+    expect(listed.find((one) => one.id === offer.id)?.revision).toBe(version);
+    await take(buyer.api, {
+      offerId: offer.id,
+      amount: (10n * USDT).toString(),
+      offerRevision: version,
+    }).expect(201);
+  });
+
+  it("moves the version only when the deal moves", async () => {
+    const seller = await customer({ usdt: 100n });
+    const buyer = await customer();
+    const method = await addMethod(seller.api);
+    const offer = await sellOffer(seller.api, method.id, { autoReply: "Hello." });
+    const version = async (): Promise<number> => {
+      const mine = await seller.api.get(`/v1/offers/${offer.id}/mine`).expect(200);
+      return (mine.body as OfferView).revision;
+    };
+
+    // Somebody else taking part of it.
+    await take(buyer.api, { offerId: offer.id, amount: (10n * USDT).toString() }).expect(201);
+    expect(await version()).toBe(1);
+
+    // A trip offline and back.
+    await seller.api.post(`/v1/offers/${offer.id}/pause`).expect(200);
+    await seller.api.post(`/v1/offers/${offer.id}/resume`).expect(200);
+    expect(await version()).toBe(1);
+
+    // What only the advertiser sees: the total behind the ad, the auto-reply.
+    await seller.api
+      .patch(`/v1/offers/${offer.id}`, {
+        totalAmount: (90n * USDT).toString(),
+        autoReply: "Hello again.",
+      })
+      .expect(200);
+    expect(await version()).toBe(1);
+
+    // The same figures sent again.
+    await seller.api.patch(`/v1/offers/${offer.id}`, { priceSantim: "15850" }).expect(200);
+    expect(await version()).toBe(1);
+
+    // A different account of the seller's behind a rail the ad already offers:
+    // a taker reads the kind, never which account is behind it.
+    const another = await addMethod(seller.api, {
+      kind: "TELEBIRR",
+      accountHolder: "Abebe Bikila",
+      phone: "0911111111",
+    });
+    await seller.api
+      .patch(`/v1/offers/${offer.id}`, { paymentMethodIds: [another.id] })
+      .expect(200);
+    expect(await version()).toBe(1);
+  });
+
+  it("says an ad taken offline in the moment of ordering is not available", async () => {
+    const { buyer, offer } = await pair();
+    const offers = app.get(OfferService);
+    const reserve = offers.reserve.bind(offers);
+    // The ad goes offline inside the transaction, between the check the order
+    // began with and the reservation it ends with: the narrowest window there
+    // is, and the sentence has to be the right one even there.
+    jest.spyOn(offers, "reserve").mockImplementationOnce(async (tx, id, amount) => {
+      await tx.offer.update({ where: { id }, data: { status: "PAUSED" } });
+      return reserve(tx, id, amount);
+    });
+
+    const refused = await take(buyer.api, {
+      offerId: offer.id,
+      amount: (10n * USDT).toString(),
+    }).expect(404);
+    expect(refused.body.error.message).toMatch(/not available/i);
+  });
+
+  it("cannot be deleted out from under its orders", async () => {
+    const { offer, trade } = await opened();
+    await expect(db.offer.delete({ where: { id: offer.id } })).rejects.toMatchObject({
+      code: "P2003",
+    });
+    // Still there, with its money and its history.
+    expect(await escrow(trade.id)).toBe(40n * USDT);
+    await db.trade.findUniqueOrThrow({ where: { id: trade.id } });
+  });
 });

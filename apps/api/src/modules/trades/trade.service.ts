@@ -159,6 +159,15 @@ export class TradeService {
     }
     if (offer.userId === takerId) throw AppError.conflict("You cannot take your own offer.");
 
+    /*
+      The order carries the version of the ad its taker was reading. Anything
+      else would be an order on terms they never saw: the advertiser may have
+      moved the price, the limits, the rails, the window or the terms in the
+      seconds since the screen was drawn. Refused here, checked again under the
+      row lock below, and the screen says what changed before asking again.
+    */
+    if (offer.revision !== input.offerRevision) throw AppError.offerChanged();
+
     const taker = await this.prisma.client.user.findUniqueOrThrow({
       where: { id: takerId },
       select: { status: true, kycStatus: true, username: true },
@@ -236,17 +245,25 @@ export class TradeService {
       async (tx) => {
         const reserved = await this.offers.reserve(tx, offer.id, amount);
         if (!reserved) {
+          // One "could not reserve" covers two different refusals: the ad went
+          // offline or closed in this moment, or somebody else took what was
+          // left of it. They are not the same sentence to the person reading.
+          const now = await tx.offer.findUnique({
+            where: { id: offer.id },
+            select: { status: true },
+          });
+          if (now?.status !== "ACTIVE") {
+            throw AppError.notFound("That offer is not available right now.");
+          }
           throw AppError.conflict(
             "That offer no longer has enough available. Try a smaller amount or another offer.",
           );
         }
-        // The price the taker was quoted is the price they get, or no trade:
-        // an advertiser editing the ad at this very moment gets a taker who
-        // looks again, not one who bought at a number they never saw.
-        if (reserved.priceSantim !== price) {
-          throw AppError.conflict(
-            "The price of this offer just changed. Look at it again before you take it.",
-          );
+        // The version again, now under the offer's row lock, so an edit landing
+        // in the moment between the first check and this one cannot slip past:
+        // the price the taker was quoted is the price they get, or no trade.
+        if (reserved.revision !== input.offerRevision || reserved.priceSantim !== price) {
+          throw AppError.offerChanged();
         }
         const snapshot = await this.paymentMethods.instructions(tx, rail.paymentMethodId);
         if (snapshot?.method.status !== "ACTIVE") {
@@ -306,6 +323,9 @@ export class TradeService {
               snapshot.instructions,
               TRADE_SNAPSHOT_PURPOSE,
             ),
+            // What was agreed to, as it read at this moment. The ad may be
+            // edited afterwards; this order was not taken under those words.
+            offerTerms: reserved.terms,
             paymentDeadline: deadline,
             escrowTransactionId: posted.id,
             clientKey,
@@ -1163,6 +1183,7 @@ export class TradeService {
             : null,
         reference: typeof reference === "string" ? reference : null,
       },
+      terms: row.offerTerms,
       paymentDeadline: row.paymentDeadline.toISOString(),
       paidAt: row.paidAt?.toISOString() ?? null,
       closedAt: row.closedAt?.toISOString() ?? null,

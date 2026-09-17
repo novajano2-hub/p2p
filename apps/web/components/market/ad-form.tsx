@@ -246,6 +246,12 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
         <Panel>
           <ListNotice>{state.message}</ListNotice>
         </Panel>
+      ) : editing?.status === "CLOSED" ? (
+        <Panel>
+          <ListNotice>
+            This ad is closed, and a closed ad cannot be changed. Post a new one instead.
+          </ListNotice>
+        </Panel>
       ) : (
         <div className="grid gap-4 lg:grid-cols-5 lg:gap-6">
           <Panel className="lg:col-span-3">
@@ -482,7 +488,9 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                   Buyers see your price, your limits, your record and your terms - never your
                   payment details until a trade between you is open.
                 </li>
-                <li>You can pause an ad any time. Trades already running are not affected.</li>
+                <li>
+                  You can take an ad offline any time. Orders already running are not affected.
+                </li>
               </ul>
             </Panel>
             <Note>Verified accounts can post up to 5 live ads.</Note>

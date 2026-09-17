@@ -176,6 +176,8 @@ export type AdminDispute = z.infer<typeof itemSchema>;
   API audits the read, so nothing here should be fetched idly.
 */
 const detailSchema = itemSchema.extend({
+  /** The advertiser's terms as they stood when the order opened, whatever the ad says now. */
+  terms: z.string().nullable(),
   payment: z.object({
     kind: paymentKind,
     label: z.string(),
