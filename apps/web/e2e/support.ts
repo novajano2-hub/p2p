@@ -1,4 +1,4 @@
-import type { BrowserContext, Page, Route } from "@playwright/test";
+import { expect, type BrowserContext, type Page, type Route } from "@playwright/test";
 
 /*
   The API, stubbed at the network boundary, for specs that drive signed-in
@@ -104,6 +104,34 @@ export function signedIn(user: typeof USER = USER): Handler[] {
       reply: () => ok({ notifications: [], unreadCount: 0 }),
     },
   ];
+}
+
+/*
+  The page is never wider than the viewport. A grid column that will not
+  shrink below its content, a string with nowhere to break, a panel that
+  escapes its column: each ends as a horizontal scrollbar on a phone, and
+  each is invisible on the desktop the page was written on. Named for what
+  crossed the edge, so the failure says where to look.
+*/
+export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
+  const overflow = await page.evaluate(() => {
+    const width = window.innerWidth;
+    const across = Array.from(document.querySelectorAll<HTMLElement>("body *"))
+      .filter((element) => {
+        const box = element.getBoundingClientRect();
+        return box.width > 0 && box.right > width + 1;
+      })
+      .slice(0, 5)
+      .map(
+        (element) =>
+          `<${element.tagName.toLowerCase()} class="${element.className}"> reaches ${Math.round(element.getBoundingClientRect().right)}px`,
+      );
+    return { width, scrollWidth: document.documentElement.scrollWidth, across };
+  });
+  expect(
+    overflow.scrollWidth,
+    `the page is ${overflow.scrollWidth}px wide in a ${overflow.width}px viewport:\n${overflow.across.join("\n")}`,
+  ).toBeLessThanOrEqual(overflow.width);
 }
 
 /*

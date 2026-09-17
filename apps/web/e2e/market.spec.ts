@@ -1,6 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { apiError, ok, signedIn, stubApi, USER, withSession } from "./support";
+import {
+  apiError,
+  expectNoHorizontalOverflow,
+  ok,
+  signedIn,
+  stubApi,
+  USER,
+  withSession,
+} from "./support";
 
 /*
   The market's screens, against a stubbed API (support.ts). What is under
@@ -107,6 +115,7 @@ test.describe("adding a payment method from the middle of something", () => {
     // Back on the offer, with the new method there to choose.
     await expect(page).toHaveURL(/\/trade\/offers\/o1$/);
     await expect(page.getByLabel("Receive the payment to")).toContainText(TELEBIRR.label);
+    await expectNoHorizontalOverflow(page);
   });
 
   test("does not follow a link off the site", async ({ page, context }) => {
@@ -162,6 +171,7 @@ test.describe("an ad that changes while you are looking at it", () => {
       "href",
       "/trade?want=BUY",
     );
+    await expectNoHorizontalOverflow(page);
   });
 
   test("a refused order says why where the button is", async ({ page, context }) => {
@@ -193,6 +203,7 @@ test.describe("an ad that changes while you are looking at it", () => {
     expect(alertBox).not.toBeNull();
     expect(buttonBox).not.toBeNull();
     expect(buttonBox!.y - (alertBox!.y + alertBox!.height)).toBeLessThan(80);
+    await expectNoHorizontalOverflow(page);
   });
 
   test("a changed price is announced before the order, not by it", async ({ page, context }) => {
@@ -262,6 +273,7 @@ test.describe("the amount filter", () => {
     await field.fill("700");
     await expect.poll(() => asked.at(-1)).toContain("amountSantim=70000");
     await expect(quick.getByRole("button", { pressed: true })).toHaveCount(0);
+    await expectNoHorizontalOverflow(page);
   });
 });
 
@@ -281,6 +293,8 @@ test.describe("a new page starts at the top", () => {
     ]);
 
     await page.goto("/trade");
+    await expect(page.locator('a[href="/trade/offers/o1"]')).toBeVisible();
+    await expectNoHorizontalOverflow(page);
     const last = page.locator('a[href="/trade/offers/o30"]');
     await last.scrollIntoViewIfNeeded();
     expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
@@ -313,6 +327,7 @@ test.describe("a new page starts at the top", () => {
     await page.goto("/verify");
     const steps = page.getByRole("list").filter({ hasText: "1. Document" });
     await expect(steps).toBeVisible();
+    await expectNoHorizontalOverflow(page);
 
     // The radio's real input is sr-only under its label; a person taps the words.
     await page.getByText("National ID card", { exact: true }).click();

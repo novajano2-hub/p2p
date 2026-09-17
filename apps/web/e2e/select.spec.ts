@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { ok, signedIn, stubApi, withSession } from "./support";
+import { expectNoHorizontalOverflow, ok, signedIn, stubApi, withSession } from "./support";
 
 /*
   The select drawn from our own tokens (components/ui/select.tsx), on the
@@ -41,11 +41,13 @@ test.describe("the select", () => {
       "true",
     );
 
+    await expectNoHorizontalOverflow(page);
     await list.getByRole("option", { name: "Awash Bank" }).click();
     await expect(list).toBeHidden();
     await expect(type).toHaveText("Awash Bank");
     await expect(page.getByLabel("Account number")).toBeVisible();
     await expect(page.getByLabel("Telebirr phone number")).toBeHidden();
+    await expectNoHorizontalOverflow(page);
     // Focus comes back to the field, so the keyboard carries on from here.
     await expect(type).toBeFocused();
   });
@@ -97,6 +99,7 @@ test.describe("the select", () => {
     // The page behind it does not scroll.
     expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
 
+    await expectNoHorizontalOverflow(page);
     await sheet.getByRole("option", { name: "Dashen Bank" }).click();
     await expect(sheet).toBeHidden();
     await expect(type).toHaveText("Dashen Bank");
