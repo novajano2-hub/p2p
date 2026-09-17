@@ -496,10 +496,16 @@ describe("paying and releasing", () => {
 
     const stats = await db.traderStats.findUniqueOrThrow({ where: { userId: seller.userId } });
     expect(stats).toMatchObject({ tradesTotal: 1, tradesCompleted: 1, releaseCount: 1 });
+    // Both parties get a record of it: the credit for the buyer, the receipt
+    // for the seller. Each links to the trade.
     const credited = await db.notification.findFirst({
       where: { userId: buyer.userId, type: "TRADE_RELEASED" },
     });
-    expect(credited).not.toBeNull();
+    expect(credited).toMatchObject({ title: "USDT received", link: `/orders/${trade.id}` });
+    const receipt = await db.notification.findFirst({
+      where: { userId: seller.userId, type: "TRADE_RELEASED" },
+    });
+    expect(receipt).toMatchObject({ title: "USDT sent", link: `/orders/${trade.id}` });
 
     const events = await buyer.api.get(`/v1/trades/${trade.id}/events`).expect(200);
     const timeline = events.body.events as { kind: string; actor: string }[];

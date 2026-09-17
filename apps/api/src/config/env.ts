@@ -152,10 +152,14 @@ export const envSchema = z
     SESSION_IDLE_TTL_HOURS: z.coerce.number().int().min(1).max(8_760).default(168),
 
     /* An administrator's session, which is a different thing (threat model
-       B7.3): hours rather than weeks, and idle-out in minutes. Somebody at a
-       desk doing a task, not a phone carried around for a month. */
-    ADMIN_SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(24).default(8),
-    ADMIN_SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).max(480).default(30),
+       B7.3): a day at the very most, and it idles out after a working day
+       away. Somebody at a desk doing a task, not a phone carried around for a
+       month. Raised from 8 h / 30 min on 2026-09-17 for the testing period;
+       the production numbers are decided again before deployment
+       (open-questions.md, section 5). The caps are these same numbers, so
+       nothing can be configured longer without a change here. */
+    ADMIN_SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(24).default(24),
+    ADMIN_SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).max(480).default(480),
     /* Defaults closed: a session cookie must not travel over plain HTTP. Local
        development over http://localhost is the only reason to turn it off. */
     COOKIE_SECURE: z

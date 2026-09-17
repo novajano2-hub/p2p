@@ -108,7 +108,6 @@ const AWASH = {
   accountHolder: "Abebe Bikila",
   bankCode: "AWASH",
   accountNumber: "01320123456789",
-  branch: "Bole",
 };
 
 async function addMethod(who: Api, body: object = TELEBIRR): Promise<PaymentMethodDetailView> {
@@ -173,7 +172,6 @@ describe("payment methods", () => {
       bankName: null,
       accountHolder: "Abebe Bikila",
       accountNumber: "0912345678",
-      branch: null,
     });
 
     // What the database holds: a versioned ciphertext, and not a digit of the number.
@@ -211,14 +209,17 @@ describe("payment methods", () => {
 
   it("names the bank on a transfer and refuses a transfer without one", async () => {
     const { api: me } = await customer();
-    const bank = await addMethod(me, AWASH);
+    // A branch was once asked for here. A client that still sends one is
+    // not refused; it is simply not kept - a transfer needs the account, not
+    // the desk it was opened at.
+    const bank = await addMethod(me, { ...AWASH, branch: "Bole" });
     expect(bank.label).toBe("Awash Bank ····6789");
     expect(bank.instructions).toMatchObject({
       bankCode: "AWASH",
       bankName: "Awash Bank",
       accountNumber: "01320123456789",
-      branch: "Bole",
     });
+    expect(bank.instructions).not.toHaveProperty("branch");
 
     const missing = await me
       .post("/v1/payment-methods", { ...AWASH, bankCode: undefined })

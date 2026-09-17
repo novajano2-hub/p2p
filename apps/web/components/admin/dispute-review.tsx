@@ -174,9 +174,6 @@ export function DisputeReview({ disputeId }: { disputeId: string }) {
                     label="Account number"
                   />
                 </DetailRow>
-                {dispute.payment.instructions.branch ? (
-                  <DetailRow label="Branch">{dispute.payment.instructions.branch}</DetailRow>
-                ) : null}
                 <DetailRow label="Buyer's reference">
                   {dispute.trade.paymentReference ?? (
                     <span className="text-muted-foreground">none given</span>

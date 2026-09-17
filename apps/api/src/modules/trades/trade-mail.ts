@@ -58,8 +58,12 @@ export function tradeMail(
       body = `${other} has marked their trade for ${usdt} as paid. Check that ${birr} has actually arrived in your account, and only then release the USDT in the app.`;
       break;
     case "RELEASED":
-      subject = `${usdt} is in your balance`;
-      body = `${other} has released ${usdt} to you. It is in your available balance now.`;
+      subject =
+        input.role === "SELLER" ? `You sent ${usdt} to ${other}` : `${usdt} is in your balance`;
+      body =
+        input.role === "SELLER"
+          ? `You released ${usdt} to ${other}, who paid you ${birr}. The trade is complete.`
+          : `${other} has released ${usdt} to you. It is in your available balance now.`;
       break;
     case "CANCELLED":
       subject = `Trade for ${usdt} cancelled`;

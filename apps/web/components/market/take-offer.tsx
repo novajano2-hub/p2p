@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PageHeader, Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
@@ -36,6 +36,7 @@ import {
   toSantim,
 } from "@/lib/market/money";
 import { compareMicro, plainMicro, toMicro } from "@/lib/money";
+import { withNext } from "@/lib/next-path";
 
 /*
   Taking an offer: the Binance "I will pay / I will receive" screen. The
@@ -48,6 +49,13 @@ import { compareMicro, plainMicro, toMicro } from "@/lib/money";
   pay through. Selling to a BUY offer, the taker is the seller and names
   one of their own payment methods, which must be of a kind the buyer said
   they can pay through. The escrow comes from whoever gives up USDT.
+
+  The ad can change under the person's feet: its owner may pause or close
+  it, change the price, or have most of it taken by somebody else while they
+  are still typing. So the screen looks at the offer again every ten seconds
+  while it is open, and whenever the tab comes back into view, and says what
+  changed at once - rather than leaving the order button to find out, and
+  then saying so at the top of a form the button is the bottom of.
 */
 
 const MODES = [
@@ -55,6 +63,9 @@ const MODES = [
   { value: "usdt", label: `By ${ASSET}` },
 ] as const;
 type Mode = (typeof MODES)[number]["value"];
+
+const RECHECK_MS = 10_000;
+const GONE = "This ad is no longer available - its owner paused or closed it.";
 
 type State =
   | { status: "loading" }
@@ -72,6 +83,12 @@ export function TakeOffer({ offerId }: { offerId: string }) {
   // One key per intent (ADR-0007): kept across a retry the network failed,
   // replaced once the server has answered either way.
   const [intentKey, setIntentKey] = useState<string | null>(null);
+  // Found gone, by a look or by a refused order. There is no way back from it.
+  const [gone, setGone] = useState(false);
+  // Something about the ad changed since it was loaded; cleared by typing.
+  const [notice, setNotice] = useState<string | null>(null);
+  // The offer as last shown, for a look to compare against.
+  const shown = useRef<MarketOffer | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -95,6 +112,46 @@ export function TakeOffer({ offerId }: { offerId: string }) {
       live = false;
     };
   }, [offerId]);
+
+  useEffect(() => {
+    shown.current = state.status === "ready" ? state.offer : null;
+  }, [state]);
+
+  /** Another look at the offer, and a word about anything that changed. */
+  const recheck = useCallback(async () => {
+    const before = shown.current;
+    if (!before) return;
+    const found = await marketClient.offer(before.id);
+    if (!found.ok) {
+      // Only a definite answer counts: a network blip is not a paused ad.
+      if (found.code === "NOT_FOUND") setGone(true);
+      return;
+    }
+    if (found.offer.priceSantim !== before.priceSantim) {
+      setNotice(
+        `The price changed to ${formatSantim(found.offer.priceSantim)} ${FIAT} per ${ASSET} while you were here. Check the amounts before you continue.`,
+      );
+    } else if (compareMicro(found.offer.available, before.available) < 0) {
+      setNotice(`Only ${usdt(found.offer.available)} is left on this ad now.`);
+    }
+    setState((current) =>
+      current.status === "ready" ? { ...current, offer: found.offer } : current,
+    );
+  }, []);
+
+  const ready = state.status === "ready";
+  useEffect(() => {
+    if (!ready || gone) return;
+    const timer = window.setInterval(() => void recheck(), RECHECK_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void recheck();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [ready, gone, recheck]);
 
   if (state.status === "loading") {
     return (
@@ -121,6 +178,8 @@ export function TakeOffer({ offerId }: { offerId: string }) {
   // The viewer buys from a SELL offer and sells to a BUY offer.
   const buying = offer.side === "SELL";
   const price = offer.priceSantim;
+  // The side of the market this offer was found on, which is where Back goes.
+  const market = `/trade?want=${buying ? "BUY" : "SELL"}`;
 
   // Both sides of the pair, from whichever the person typed.
   const typedSantim = mode === "fiat" ? toSantim(typed) : null;
@@ -174,7 +233,16 @@ export function TakeOffer({ offerId }: { offerId: string }) {
       return;
     }
     if (result.code !== "NETWORK") setIntentKey(null);
+    if (result.code === "NOT_FOUND") {
+      // Paused, closed, or its owner's account is no longer active: the same
+      // answer a look gets, shown the same way.
+      setGone(true);
+      return;
+    }
     setError(result.message);
+    // "No longer has enough", "the seller cannot fund this": the numbers on
+    // screen are stale, so look again now rather than in ten seconds.
+    if (result.code === "CONFLICT" || result.code === "INSUFFICIENT_FUNDS") void recheck();
   };
 
   const title = buying
@@ -183,12 +251,26 @@ export function TakeOffer({ offerId }: { offerId: string }) {
 
   return (
     <>
-      <BackTo href="/trade">Marketplace</BackTo>
+      <BackTo href={market}>Marketplace</BackTo>
       <PageHeader title={title} />
 
       <div className="grid gap-4 lg:grid-cols-5 lg:gap-6">
         <Panel className="lg:col-span-3">
-          <FormError message={error} />
+          {gone ? (
+            <FormError>
+              {GONE}{" "}
+              <AppLink href={market} className="font-medium underline underline-offset-4">
+                Back to the market
+              </AppLink>
+            </FormError>
+          ) : notice ? (
+            <p
+              role="status"
+              className="rounded-control bg-status-pending text-status-pending-fg mb-5 px-3.5 py-3 text-[13px] leading-relaxed"
+            >
+              {notice}
+            </p>
+          ) : null}
 
           <div className="mb-5 flex items-baseline justify-between gap-4">
             <span className="text-muted-foreground text-[13px]">Price</span>
@@ -221,7 +303,10 @@ export function TakeOffer({ offerId }: { offerId: string }) {
                 <Input
                   {...control}
                   value={typed}
-                  onChange={(event) => setTyped(event.target.value)}
+                  onChange={(event) => {
+                    setTyped(event.target.value);
+                    setNotice(null);
+                  }}
                   inputMode="decimal"
                   placeholder="0.00"
                   autoComplete="off"
@@ -240,6 +325,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
                       setTyped(
                         mode === "fiat" ? plainSantim(max) : plainMicro(amountForFiat(max, price)),
                       );
+                      setNotice(null);
                     }}
                     className="text-primary hover:text-primary-hover text-[13px] font-semibold"
                   >
@@ -298,7 +384,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
                 {(control) =>
                   usableMethods.length === 0 ? (
                     <AppLink
-                      href="/trade/payment-methods"
+                      href={withNext("/trade/payment-methods", `/trade/offers/${offer.id}`)}
                       className="text-primary hover:text-primary-hover text-sm font-medium underline-offset-4 hover:underline"
                     >
                       Add a payment method
@@ -330,16 +416,26 @@ export function TakeOffer({ offerId }: { offerId: string }) {
             </Note>
           </div>
 
-          <Button
-            type="button"
-            size="lg"
-            className="mt-6 w-full"
-            loading={submitting}
-            onClick={place}
-            disabled={offer.isMine}
-          >
-            {offer.isMine ? "This is your own ad" : buying ? `Buy ${ASSET}` : `Sell ${ASSET}`}
-          </Button>
+          {/* A refusal is answered where the button is, which is where the person is looking. */}
+          <div className="mt-6">
+            <FormError message={error} />
+            <Button
+              type="button"
+              size="lg"
+              className="w-full"
+              loading={submitting}
+              onClick={place}
+              disabled={offer.isMine || gone}
+            >
+              {gone
+                ? "No longer available"
+                : offer.isMine
+                  ? "This is your own ad"
+                  : buying
+                    ? `Buy ${ASSET}`
+                    : `Sell ${ASSET}`}
+            </Button>
+          </div>
         </Panel>
 
         <div className="flex flex-col gap-4 lg:col-span-2">

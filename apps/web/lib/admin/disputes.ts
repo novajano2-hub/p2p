@@ -176,7 +176,6 @@ const detailSchema = itemSchema.extend({
       bankName: z.string().nullable(),
       accountHolder: z.string(),
       accountNumber: z.string(),
-      branch: z.string().nullable(),
     }),
   }),
   evidence: z.array(evidenceSchema),

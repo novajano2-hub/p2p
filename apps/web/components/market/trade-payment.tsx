@@ -237,8 +237,6 @@ function detailRows(
     copy: true,
     mono: false,
   });
-  if (instructions.branch)
-    rows.push({ label: "Branch", value: instructions.branch, copy: false, mono: false });
   return rows;
 }
 

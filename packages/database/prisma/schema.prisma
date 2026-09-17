@@ -1308,7 +1308,7 @@ enum PaymentMethodStatus {
 }
 
 /// Where a seller receives birr. The details - account holder, account or
-/// phone number, branch - are RESTRICTED (data-classification.md): held as
+/// phone number - are RESTRICTED (data-classification.md): held as
 /// one AES-256-GCM document under FIELD_ENCRYPTION_KEY, decrypted for the
 /// owner, for the counterparty of an open trade, and for a dispute resolver
 /// with an audit row. Nothing else reads them.

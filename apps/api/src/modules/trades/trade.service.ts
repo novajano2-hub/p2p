@@ -613,8 +613,15 @@ export class TradeService {
         },
         tx,
       );
+      // Both sides get a record of it. The buyer's is the credit; the
+      // seller's is the receipt for what they gave up, which is the one they
+      // will want to find again if the birr turns out to be short.
       const seller = await tx.user.findUniqueOrThrow({
         where: { id: userId },
+        select: { username: true },
+      });
+      const buyer = await tx.user.findUniqueOrThrow({
+        where: { id: trade.buyerId },
         select: { username: true },
       });
       await this.tell(tx, {
@@ -629,6 +636,21 @@ export class TradeService {
           amount: receives,
           fiatSantim: trade.fiatSantim,
           counterparty: seller.username,
+        },
+        correlationId: context.correlationId,
+      });
+      await this.tell(tx, {
+        userId,
+        type: "TRADE_RELEASED",
+        title: "USDT sent",
+        body: `You released ${formatUsdt(trade.amount)} USDT to ${buyer.username}. The trade is complete.`,
+        tradeId: id,
+        mail: {
+          kind: "RELEASED",
+          role: "SELLER",
+          amount: trade.amount,
+          fiatSantim: trade.fiatSantim,
+          counterparty: buyer.username,
         },
         correlationId: context.correlationId,
       });

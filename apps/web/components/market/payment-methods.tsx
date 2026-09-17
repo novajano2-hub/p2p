@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CreditCard } from "@phosphor-icons/react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
@@ -17,6 +18,7 @@ import { Note } from "@/components/wallet/shared";
 import { cn } from "@/lib/cn";
 import { marketClient, type PaymentMethod, type PaymentMethodKind } from "@/lib/market/client";
 import { BANKS, PAYMENT_KINDS, PAYMENT_KIND_LIST } from "@/lib/market/labels";
+import { safeNext } from "@/lib/next-path";
 
 /*
   Where a seller is paid. A payment method is the account a buyer will be
@@ -25,6 +27,12 @@ import { BANKS, PAYMENT_KINDS, PAYMENT_KIND_LIST } from "@/lib/market/labels";
   checked to the digit before it is stored, and a method that is wrong is
   archived and replaced rather than edited - the trades that showed the old
   details still say what they said.
+
+  Reached from the middle of something as often as from the market: an offer
+  that needs a method of a kind the buyer pays through, an ad being posted.
+  Those links carry ?next= with their own address, and this page goes back
+  there - from its Back link, and on its own the moment the method is added,
+  since adding one was the whole errand.
 */
 
 const ethiopianPhone = z
@@ -43,7 +51,6 @@ const formSchema = z
     phone: z.string(),
     bankCode: z.string(),
     accountNumber: z.string().trim(),
-    branch: z.string().trim().max(120, { error: "That is too long." }),
   })
   .superRefine((value, ctx) => {
     if (value.kind === "BANK_TRANSFER") {
@@ -72,7 +79,20 @@ type State =
   | { status: "error"; message: string }
   | { status: "ready"; methods: PaymentMethod[] };
 
+/** What the Back link calls the place it goes to. */
+function placeName(path: string): string {
+  if (path.startsWith("/trade/offers/")) return "The offer";
+  if (path.startsWith("/trade/ads/")) return "Your ad";
+  return "Marketplace";
+}
+
+/** An errand: sent here from a screen that is waiting for the method. */
+const isErrand = (path: string) =>
+  path.startsWith("/trade/offers/") || path.startsWith("/trade/ads/");
+
 export function PaymentMethods() {
+  const router = useRouter();
+  const next = safeNext(useSearchParams().get("next"), "/trade");
   const [state, setState] = useState<State>({ status: "loading" });
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -102,7 +122,6 @@ export function PaymentMethods() {
       phone: "",
       bankCode: "",
       accountNumber: "",
-      branch: "",
     },
   });
   const kind = useWatch({ control, name: "kind" });
@@ -117,12 +136,15 @@ export function PaymentMethods() {
             accountHolder: values.accountHolder,
             bankCode: values.bankCode,
             accountNumber: values.accountNumber,
-            ...(values.branch ? { branch: values.branch } : {}),
           }
         : { kind: values.kind, accountHolder: values.accountHolder, phone: values.phone },
     );
     if (!result.ok) {
       setError(result.message);
+      return;
+    }
+    if (isErrand(next)) {
+      router.push(next);
       return;
     }
     setSaved(result.paymentMethod.label);
@@ -144,7 +166,7 @@ export function PaymentMethods() {
 
   return (
     <>
-      <BackTo href="/trade">Marketplace</BackTo>
+      <BackTo href={next}>{placeName(next)}</BackTo>
       <PageHeader
         title="Payment methods"
         description="The accounts a buyer is told to pay you at. Shown to a buyer only while a trade between you is open."
@@ -264,9 +286,6 @@ export function PaymentMethods() {
                       autoComplete="off"
                     />
                   )}
-                </Field>
-                <Field label="Branch" hint="Optional." error={errors.branch?.message}>
-                  {(control) => <Input {...control} {...register("branch")} autoComplete="off" />}
                 </Field>
               </>
             ) : (

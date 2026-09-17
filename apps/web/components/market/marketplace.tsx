@@ -25,6 +25,7 @@ import {
 } from "@/lib/market/client";
 import { FIAT, PAYMENT_KINDS, PAYMENT_KIND_LIST } from "@/lib/market/labels";
 import { formatSantim, toSantim } from "@/lib/market/money";
+import { withNext } from "@/lib/next-path";
 
 /*
   The marketplace, the way Binance lays it out and this audience already
@@ -131,7 +132,12 @@ export function Marketplace() {
         title="Trade"
         description="Buy and sell USDT for birr with other customers. Every trade is held in escrow until the seller confirms the birr arrived."
       >
-        <ButtonLink href="/trade/payment-methods" variant="secondary" size="sm" arrow={false}>
+        <ButtonLink
+          href={withNext("/trade/payment-methods", `/trade?want=${want}`)}
+          variant="secondary"
+          size="sm"
+          arrow={false}
+        >
           Payment methods
         </ButtonLink>
         <ButtonLink href="/trade/ads" variant="secondary" size="sm" arrow={false}>

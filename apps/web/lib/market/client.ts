@@ -50,7 +50,6 @@ const instructionsSchema = z.object({
   bankName: z.string().nullable(),
   accountHolder: z.string(),
   accountNumber: z.string(),
-  branch: z.string().nullable(),
 });
 export type PaymentInstructions = z.infer<typeof instructionsSchema>;
 

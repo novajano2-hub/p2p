@@ -30,6 +30,7 @@ import {
 } from "@/lib/market/labels";
 import { compareSantim, plainSantim, toSantim } from "@/lib/market/money";
 import { plainMicro, toMicro } from "@/lib/money";
+import { withNext } from "@/lib/next-path";
 
 /*
   Posting an ad, or changing one. The Binance form in the order it asks:
@@ -361,7 +362,10 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                     <p className="text-muted-foreground text-[13px]">
                       You have no payment method yet.{" "}
                       <AppLink
-                        href="/trade/payment-methods"
+                        href={withNext(
+                          "/trade/payment-methods",
+                          offerId ? `/trade/ads/${offerId}/edit` : "/trade/ads/new",
+                        )}
                         className="text-primary font-medium underline-offset-4 hover:underline"
                       >
                         Add one

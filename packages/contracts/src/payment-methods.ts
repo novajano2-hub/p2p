@@ -131,8 +131,6 @@ export const accountNumber = z
   .trim()
   .regex(/^\d{6,24}$/, { error: "Enter the account number, digits only" });
 
-const branch = z.string().trim().max(80, { error: "That branch name is too long" });
-
 /**
  * Adding a method. The shape follows the rail: a wallet is a phone number, a
  * bank transfer is a bank and an account number. There is no edit: a method
@@ -147,7 +145,6 @@ export const createPaymentMethodRequest = z.discriminatedUnion("kind", [
     accountHolder,
     bankCode,
     accountNumber,
-    branch: branch.optional(),
   }),
 ]);
 export type CreatePaymentMethodRequest = z.infer<typeof createPaymentMethodRequest>;
@@ -164,7 +161,6 @@ export const paymentInstructions = z.object({
   accountHolder: z.string(),
   /** The phone number for a wallet, the account number for a bank. */
   accountNumber: z.string(),
-  branch: z.string().nullable(),
 });
 export type PaymentInstructions = z.infer<typeof paymentInstructions>;
 

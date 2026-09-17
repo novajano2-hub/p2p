@@ -178,7 +178,6 @@ function toInstructions(input: CreatePaymentMethodRequest): PaymentInstructions 
       bankName: ETHIOPIAN_BANKS[input.bankCode],
       accountHolder: input.accountHolder,
       accountNumber: input.accountNumber,
-      branch: input.branch && input.branch.length > 0 ? input.branch : null,
     };
   }
   return {
@@ -187,7 +186,6 @@ function toInstructions(input: CreatePaymentMethodRequest): PaymentInstructions 
     bankName: null,
     accountHolder: input.accountHolder,
     accountNumber: input.phone,
-    branch: null,
   };
 }
 
