@@ -44,7 +44,7 @@ export function TransferView() {
     amount field is a statement about somebody's money, and there is no
     version of showing a wrong one that is better than showing none.
   */
-  const [available, setAvailable] = useState("0");
+  const [available, setAvailable] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -132,7 +132,7 @@ export function TransferView() {
             <Field
               label={`How much ${ASSET.symbol}`}
               error={errors.amount?.message}
-              hint={`Available: ${formatMicro(available)} ${ASSET.symbol}`}
+              hint={`Available: ${available === null ? "—" : formatMicro(available)} ${ASSET.symbol}`}
             >
               {(a11y) => (
                 <Controller
@@ -145,7 +145,7 @@ export function TransferView() {
                       invalid={a11y["aria-invalid"]}
                       value={field.value}
                       onChange={field.onChange}
-                      available={available}
+                      available={available ?? "0"}
                     />
                   )}
                 />

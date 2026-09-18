@@ -76,9 +76,14 @@ export type KycRejectionReason = keyof typeof KYC_REJECTION_REASONS;
 
 export type Failure = {
   ok: false;
-  /** "MFA": the password was right and a 6-digit code is (also) needed. */
-  code: "AUTH" | "MFA" | "FORBIDDEN" | "CONFLICT" | "OTHER";
+  /**
+   * "MFA": the password was right and a 6-digit code is (also) needed.
+   * "NOT_FOUND": no such item - a link that was wrong, or out of date.
+   */
+  code: "AUTH" | "MFA" | "FORBIDDEN" | "CONFLICT" | "NOT_FOUND" | "OTHER";
   message: string;
+  /** The server's id for the request, when the fault was its own. */
+  reference?: string | undefined;
 };
 export type Result<T> = ({ ok: true } & T) | Failure;
 
@@ -99,6 +104,11 @@ const identitySchema = z.object({
   mfaEnrolled: z.boolean(),
 });
 const sessionSchema = z.object({ admin: identitySchema });
+
+/** Mirrors adminSessionTiming in @abay/contracts. */
+const timingSchema = z.object({ expiresAt: z.string(), idleMinutes: z.number() });
+export type AdminSessionTiming = z.infer<typeof timingSchema>;
+const meSchema = sessionSchema.extend({ session: timingSchema });
 const mfaSetupSchema = z.object({ secret: z.string(), otpauthUri: z.string() });
 
 const reviewItemSchema = z.object({
@@ -128,9 +138,53 @@ const errorSchema = z.object({
   error: z.object({
     code: z.string(),
     message: z.string(),
+    correlationId: z.string().optional(),
     details: z.array(z.object({ path: z.string(), message: z.string() })).optional(),
   }),
 });
+
+/*
+  The session behind an open admin screen can end - its idle window ran out,
+  its time was up, it was revoked - and every request after that answers 401.
+  That is said once, here, for every screen; AdminShell does the leaving. The
+  two exceptions are signing in, where a 401 is about the password, and the
+  shell's own first look, which sends the person to sign in by itself.
+*/
+const sessionEndedListeners = new Set<() => void>();
+
+export function onAdminSessionEnded(listener: () => void): () => void {
+  sessionEndedListeners.add(listener);
+  return () => {
+    sessionEndedListeners.delete(listener);
+  };
+}
+
+const endsSession = (path: string): boolean =>
+  !path.startsWith("/auth/login") && path !== "/auth/me";
+
+/*
+  When the server last saw this session. Every answer but a 401 means a
+  request reached a live session and moved its idle window, so the warning
+  that it is about to run out counts from here.
+*/
+let lastActivity = 0;
+const activityListeners = new Set<() => void>();
+
+export const adminActivity = {
+  subscribe(listener: () => void): () => void {
+    activityListeners.add(listener);
+    return () => {
+      activityListeners.delete(listener);
+    };
+  },
+  /** Milliseconds since the epoch, or 0 before the first answer. */
+  last: (): number => lastActivity,
+};
+
+function sawActivity(): void {
+  lastActivity = Date.now();
+  for (const listener of activityListeners) listener();
+}
 
 /*
   The CSRF token for the administrator session this tab is holding, kept apart
@@ -183,17 +237,24 @@ export async function adminRequest<T>(
   }
 
   rememberCsrfToken(response.headers);
+  if (response.status !== 401) sawActivity();
 
   const text = await response.text();
   if (!response.ok) {
+    if (response.status === 401 && endsSession(path)) {
+      for (const listener of sessionEndedListeners) listener();
+      return fail("AUTH", "Your session has ended. Sign in again to carry on where you were.");
+    }
     const parsed = errorSchema.safeParse(parseJson(text));
     if (!parsed.success) return UNEXPECTED;
-    const { code, message, details } = parsed.data.error;
+    const { code, message, details, correlationId } = parsed.data.error;
     if (code === "UNAUTHENTICATED") return fail("AUTH", message);
     if (code === "MFA_REQUIRED") return fail("MFA", message);
     if (code === "FORBIDDEN") return fail("FORBIDDEN", message);
     if (code === "CONFLICT") return fail("CONFLICT", message);
+    if (code === "NOT_FOUND") return fail("NOT_FOUND", message);
     if (code === "VALIDATION_FAILED") return fail("OTHER", details?.[0]?.message ?? message);
+    if (code === "INTERNAL") return { ...fail("OTHER", message), reference: correlationId };
     return fail("OTHER", message);
   }
 
@@ -255,9 +316,12 @@ export const adminClient = {
     return result.ok ? { ok: true, admin: result.data.admin } : result;
   },
 
-  async me(): Promise<Result<{ admin: AdminIdentity }>> {
-    const result = await adminRequest("/auth/me", sessionSchema, { method: "GET" });
-    return result.ok ? { ok: true, admin: result.data.admin } : result;
+  /** Who is signed in, and how long the session has left. Asking is itself a request. */
+  async me(): Promise<Result<{ admin: AdminIdentity; session: AdminSessionTiming }>> {
+    const result = await adminRequest("/auth/me", meSchema, { method: "GET" });
+    return result.ok
+      ? { ok: true, admin: result.data.admin, session: result.data.session }
+      : result;
   },
 
   /*

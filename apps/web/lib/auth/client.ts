@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { apiOrigin } from "@/lib/api-origin";
+import { endsSession } from "@/lib/auth/session-paths";
 import { IMAGE_LIMITS } from "@/lib/image";
 
 /*
@@ -49,6 +50,11 @@ export type AuthErrorCode =
   | "NOT_AVAILABLE"
   /** The ad moved while somebody was taking it: look again, say what changed, ask again. */
   | "OFFER_CHANGED"
+  /**
+   * The session behind a signed-in screen ended - it expired, or was ended
+   * elsewhere. Not a wrong password: a reason to sign in again and come back.
+   */
+  | "SESSION_ENDED"
   | "NETWORK"
   | "SERVER";
 
@@ -314,6 +320,35 @@ const OFFLINE = failure(
   "We could not reach the server. Check your connection and try again.",
 );
 
+const SESSION_ENDED = failure(
+  "SESSION_ENDED",
+  "Your session has ended. Log in again to carry on where you were.",
+);
+
+/*
+  A session can end while a screen is open: it expired, it was ended from
+  another device, the password changed. Every request after that answers 401,
+  and on a signed-in screen that is not a wrong password - it is a reason to
+  sign in again and come straight back. The request helper says so once, for
+  every screen (lib/auth/session-paths.ts says which answers count);
+  SessionProvider does the leaving.
+*/
+
+const sessionEndedListeners = new Set<() => void>();
+
+/** Hears that the session ended. Returns the way to stop hearing. */
+export function onSessionEnded(listener: () => void): () => void {
+  sessionEndedListeners.add(listener);
+  return () => {
+    sessionEndedListeners.delete(listener);
+  };
+}
+
+/** Says the session ended: a 401 above, or the socket closing with the same news. */
+export function announceSessionEnded(): void {
+  for (const listener of sessionEndedListeners) listener();
+}
+
 const UNEXPECTED = failure("SERVER", "Something went wrong on our side. Please try again.");
 
 const PHOTO_TOO_LARGE = failure(
@@ -362,7 +397,13 @@ export async function send<T>(
   rememberCsrfToken(response.headers);
 
   const text = await response.text();
-  if (!response.ok) return failureFrom(response.status, text);
+  if (!response.ok) {
+    if (response.status === 401 && endsSession(path)) {
+      announceSessionEnded();
+      return SESSION_ENDED;
+    }
+    return failureFrom(response.status, text);
+  }
 
   // An empty body parses as undefined, which is what the `empty` schema expects.
   const parsed = schema.safeParse(parseJson(text));
@@ -662,6 +703,10 @@ export const apiAuthClient: AuthClient = {
       xhr.send(file);
     });
     if (!outcome) return OFFLINE;
+    if (outcome.status === 401) {
+      announceSessionEnded();
+      return SESSION_ENDED;
+    }
     if (outcome.status < 200 || outcome.status >= 300) {
       return failureFrom(outcome.status, outcome.text);
     }

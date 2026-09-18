@@ -593,12 +593,12 @@ test.describe("account", () => {
     await expect(page.getByRole("heading", { level: 1, name: ACCOUNT_GREETING })).toBeVisible();
   });
 
-  test("without a session it goes to the landing page rather than saying so", async ({ page }) => {
+  test("without a session it goes to log in rather than saying so", async ({ page }) => {
     await mockApi(page, { me: rejected("UNAUTHENTICATED", "Sign in to continue.", 401) });
     await page.goto("/account");
 
-    await expect(page).toHaveURL(/:\d+\/$/);
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Log in" })).toBeVisible();
     // Being signed out is normal, so nothing is dressed up as a failure.
     // Filtered on having any text: Next keeps an empty role="alert" route
     // announcer in the DOM at all times, and it is not an error message.
@@ -624,10 +624,7 @@ test.describe("the landing page and a session", () => {
     await expect(page.getByRole("heading", { level: 1, name: ACCOUNT_GREETING })).toBeVisible();
   });
 
-  test("a stale cookie is cleared, so the landing page does not become unreachable", async ({
-    page,
-    context,
-  }) => {
+  test("a stale cookie is cleared on the way to logging in again", async ({ page, context }) => {
     // The cookie is still in the jar but the session behind it is gone.
     await mockApi(page, { me: rejected("UNAUTHENTICATED", "Sign in to continue.", 401) });
     await withSession(context);
@@ -638,7 +635,11 @@ test.describe("the landing page and a session", () => {
     await page.goto("/");
     // Bounced to /account, which finds the session dead, clears the cookie...
     await cleared;
-    // ...and comes back here, where the cleared cookie lets the page through.
+    // ...and asks for a log-in that will come back to it.
+    await expect(page).toHaveURL(/\/login\?next=%2Faccount&why=ended$/);
+    await expect(page.getByText("Your session ended")).toBeVisible();
+    // With the cookie gone, the landing page is reachable again.
+    await page.goto("/");
     await expect(page).toHaveURL(/:\d+\/$/);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });

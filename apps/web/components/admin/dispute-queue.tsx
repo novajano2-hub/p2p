@@ -31,6 +31,11 @@ export function DisputeQueue() {
   const admin = useAdmin();
   const may = admin.roles.includes("DISPUTE_RESOLVER");
   const [state, setState] = useState<State>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => {
+    setState({ status: "loading" });
+    setAttempt((value) => value + 1);
+  };
 
   useEffect(() => {
     if (!may) return;
@@ -46,7 +51,7 @@ export function DisputeQueue() {
     return () => {
       live = false;
     };
-  }, [may]);
+  }, [may, attempt]);
 
   const heading = (
     <PageHeading
@@ -70,7 +75,9 @@ export function DisputeQueue() {
         {state.status === "loading" ? (
           <Notice tone="loading">Loading the queue&hellip;</Notice>
         ) : (
-          <Notice tone="error">{state.message}</Notice>
+          <Notice tone="error" onRetry={retry}>
+            {state.message}
+          </Notice>
         )}
       </>
     );

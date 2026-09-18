@@ -1,9 +1,4 @@
-import {
-  type MarketplaceOffer,
-  type OfferView,
-  type PaymentMethodDetailView,
-  type TradeView,
-} from "@abay/contracts";
+import { type OfferView, type PaymentMethodDetailView, type TradeView } from "@abay/contracts";
 import { createPrismaClient, type PrismaClient } from "@abay/database";
 import { type NestFastifyApplication } from "@nestjs/platform-fastify";
 import { PinoLogger } from "nestjs-pino";
@@ -19,7 +14,7 @@ import { EXPIRER_LOCK_KEY, TradeExpirer } from "@/modules/trades/trade-expirer";
 import { OPEN, SETTLED, TRADE_TRANSITIONS } from "@/modules/trades/trade.machine";
 import { TradeService } from "@/modules/trades/trade.service";
 
-import { csrfFor, PASSWORD, registerFully, uniqueEmail } from "./helpers";
+import { csrfFor, listed, PASSWORD, registerFully, uniqueEmail } from "./helpers";
 
 /*
   Phase 4, stage 2: the trade engine, end to end.
@@ -932,9 +927,8 @@ describe("the ad underneath a trade", () => {
     }
 
     // The version the taker is actually looking at is the one that works.
-    const listed = (await buyer.api.get("/v1/offers?want=BUY").expect(200)).body
-      .offers as MarketplaceOffer[];
-    expect(listed.find((one) => one.id === offer.id)?.revision).toBe(version);
+    const market = await listed(buyer.api, "BUY");
+    expect(market.find((one) => one.id === offer.id)?.revision).toBe(version);
     await take(buyer.api, {
       offerId: offer.id,
       amount: (10n * USDT).toString(),

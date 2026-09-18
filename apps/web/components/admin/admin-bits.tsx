@@ -3,6 +3,7 @@
 import { CheckCircle, Copy } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 
+import { LoadFailed } from "@/components/app/load-failed";
 import { AppLink } from "@/components/ui/app-link";
 import { Button } from "@/components/ui/button";
 import { type LedgerReason, type LedgerScope } from "@/lib/admin/ledger";
@@ -154,7 +155,17 @@ export function RowLink({ href, children }: { href: string; children: ReactNode 
   );
 }
 
-export function Notice({ tone, children }: { tone: "loading" | "error"; children: ReactNode }) {
+export function Notice({
+  tone,
+  children,
+  onRetry,
+}: {
+  tone: "loading" | "error";
+  children: ReactNode;
+  /** For a load that failed: offers to ask again, and asks by itself when the connection returns. */
+  onRetry?: (() => void) | undefined;
+}) {
+  if (tone === "error" && onRetry) return <LoadFailed message={children} onRetry={onRetry} />;
   return tone === "error" ? (
     <p role="alert" className="text-destructive text-sm">
       {children}

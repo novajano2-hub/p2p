@@ -39,6 +39,11 @@ export function LedgerOverview() {
   const admin = useAdmin();
   const may = admin.roles.includes("LEDGER_VIEWER");
   const [state, setState] = useState<State>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => {
+    setState({ status: "loading" });
+    setAttempt((value) => value + 1);
+  };
 
   useEffect(() => {
     if (!may) return;
@@ -54,7 +59,7 @@ export function LedgerOverview() {
     return () => {
       live = false;
     };
-  }, [may]);
+  }, [may, attempt]);
 
   const heading = (
     <PageHeading
@@ -88,7 +93,9 @@ export function LedgerOverview() {
         {state.status === "loading" ? (
           <Notice tone="loading">Checking the ledger&hellip;</Notice>
         ) : (
-          <Notice tone="error">{state.message}</Notice>
+          <Notice tone="error" onRetry={retry}>
+            {state.message}
+          </Notice>
         )}
       </>
     );

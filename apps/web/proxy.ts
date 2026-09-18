@@ -3,13 +3,14 @@ import { NextResponse, type NextRequest } from "next/server";
 /*
   Sends people to the side of the app they belong on, before a page is even
   rendered: a signed-in customer landing on / goes to /account, and a signed-out
-  visitor asking for /account goes back to the landing page rather than looking
-  at a card telling them what they already know.
+  visitor asking for a page of the app goes to log in, with ?next= set to the
+  page, so that signing in brings them to it - a link to an order, opened on a
+  phone that was signed out, ends at the order.
 
   These are routing hints, not authorisation, and they deliberately only look at
   whether the cookie EXISTS. Validating it would mean a call to the API on every
-  request; /account resolves the session properly and leaves for the landing
-  page itself if the cookie turns out to be stale. Nothing here is what keeps
+  request; the app resolves the session properly and leaves for the log-in page
+  itself if the cookie turns out to be stale. Nothing here is what keeps
   anything private - the API refuses every request without a live session.
 
   The two rules are exact opposites on the same condition, so they cannot bounce
@@ -27,6 +28,8 @@ const SESSION_COOKIE = "birq_session";
 const LANDING = "/";
 /** Where an authenticated customer belongs. Mirrors `afterAuth` in lib/site.ts. */
 const APP_ENTRY = "/account";
+/** Mirrors `cta.login.href` in lib/site.ts. */
+const LOG_IN = "/login";
 /**
  * Every route behind a session, as prefixes. Mirrors `appRoutes` in
  * lib/app-nav.ts. Prefixes rather than exact paths because sections have
@@ -46,7 +49,12 @@ export function proxy(request: NextRequest): NextResponse {
     return NextResponse.redirect(new URL(APP_ENTRY, request.url));
   }
   if (!signedIn && isAppRoute(pathname)) {
-    return NextResponse.redirect(new URL(LANDING, request.url));
+    const login = new URL(LOG_IN, request.url);
+    // The front door of the app is where signing in lands anyway.
+    if (pathname !== APP_ENTRY) {
+      login.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+    }
+    return NextResponse.redirect(login);
   }
   return NextResponse.next();
 }

@@ -5,6 +5,7 @@ import QRCode from "qrcode";
 import { useCallback, useEffect, useState } from "react";
 
 import { CopyButton } from "@/components/app/copy-button";
+import { LoadFailed } from "@/components/app/load-failed";
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
 import { ActivityList, fromDeposit } from "@/components/wallet/activity";
 import { BackLink, NetworkPicker, Note, SummaryRow } from "@/components/wallet/shared";
@@ -38,6 +39,7 @@ export function DepositView() {
   const [networkId, setNetworkId] = useState<NetworkId>(DEFAULT_NETWORK);
   const [state, setState] = useState<State>({ status: "loading" });
   const [deposits, setDeposits] = useState<Deposit[]>([]);
+  const [attempt, setAttempt] = useState(0);
   const network = networkById(networkId);
 
   useEffect(() => {
@@ -58,7 +60,7 @@ export function DepositView() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [attempt]);
 
   const loadDeposits = useCallback(() => {
     void walletClient.deposits().then((result) => {
@@ -95,9 +97,14 @@ export function DepositView() {
 
           <Panel title="Your deposit address">
             {state.status === "error" ? (
-              <p role="alert" className="text-destructive text-[13px]">
-                {state.message}
-              </p>
+              <LoadFailed
+                message={state.message}
+                onRetry={() => {
+                  setState({ status: "loading" });
+                  setAttempt((value) => value + 1);
+                }}
+                className="py-4"
+              />
             ) : null}
 
             <div className="flex flex-col items-center gap-5 py-2 sm:flex-row sm:items-start sm:gap-6">

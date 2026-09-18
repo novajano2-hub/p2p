@@ -79,7 +79,19 @@ export const TRADE = {
   updatedAt: "2026-09-17T09:00:00.000Z",
 };
 
-export type Reply = { status: number; body?: unknown };
+export type Reply = {
+  status: number;
+  body?: unknown;
+  /** Fail the request the way a dead network does, instead of answering it. */
+  abort?: "internetdisconnected" | "connectionrefused";
+};
+
+/*
+  Offline, for a request the stub would otherwise answer: Playwright still
+  routes requests while the browser is emulating offline, so a stub that
+  should see nothing has to fail the request itself.
+*/
+export const unreachable = (): Reply => ({ status: 0, abort: "internetdisconnected" });
 
 export const ok = (body: unknown, status = 200): Reply => ({ status, body });
 
@@ -137,6 +149,10 @@ export async function stubApi(page: Page, handlers: Handler[]): Promise<void> {
       reply = apiError("NOT_FOUND", `No stub answers ${request.method()} ${pathname}.`, 404);
     }
 
+    if (reply.abort) {
+      await route.abort(reply.abort);
+      return;
+    }
     const hasBody = reply.body !== undefined;
     await route.fulfill({
       status: reply.status,
@@ -214,23 +230,87 @@ export const toastSaying = (page: Page, text: string | RegExp) =>
     .getByRole("listitem")
     .filter({ hasText: text });
 
-export type LiveSocket = { send: (frame: object) => void };
+export type LiveSocket = {
+  send: (frame: object) => void;
+  /** Hangs up, the way the server does: 4001 the session ended, 4002 too many tabs, 1001 going away. */
+  close: (code: number, reason?: string) => Promise<void>;
+};
 
 /*
   The API's socket, played by the test. Register it before the page opens;
   `connected` resolves once the app has connected, with a way to push frames
   at it the way the server would. What the app sends back - subscriptions,
   typing - is heard and dropped: nothing in these tests depends on it.
+
+  `refuse(true)` sends every later connection on to the real address, where no
+  socket server answers these tests, so it fails the way it does when the
+  API is down; `refuse(false)` lets them in again.
 */
-export async function stubSocket(page: Page): Promise<{ connected: Promise<LiveSocket> }> {
+export async function stubSocket(
+  page: Page,
+): Promise<{ connected: Promise<LiveSocket>; refuse: (refusing: boolean) => void }> {
   let resolve: (socket: LiveSocket) => void = () => {};
   const connected = new Promise<LiveSocket>((done) => {
     resolve = done;
   });
+  let refusing = false;
   await page.routeWebSocket(/\/v1\/ws$/, (ws) => {
+    if (refusing) {
+      ws.connectToServer();
+      return;
+    }
     ws.onMessage(() => {});
     ws.send(JSON.stringify({ type: "hello", userId: USER.id, heartbeatSeconds: 30 }));
-    resolve({ send: (frame) => ws.send(JSON.stringify(frame)) });
+    resolve({
+      send: (frame) => ws.send(JSON.stringify(frame)),
+      close: (code, reason) => ws.close({ code, reason: reason ?? "" }),
+    });
   });
-  return { connected };
+  return {
+    connected,
+    refuse: (value) => {
+      refusing = value;
+    },
+  };
+}
+
+/** An administrator with every role and a second factor, as the admin screens want one. */
+export const ADMIN = {
+  id: "0199f0b1-2c3d-7e4f-8a9b-0c1d2e3f4aad",
+  email: "resolver@example.com",
+  name: "Test Resolver",
+  roles: [
+    "KYC_REVIEWER",
+    "DISPUTE_RESOLVER",
+    "WITHDRAWAL_APPROVER",
+    "FINANCIAL_ADJUSTER",
+    "LEDGER_VIEWER",
+    "DEPOSIT_REVIEWER",
+  ],
+  mfaEnrolled: true,
+};
+
+/**
+ * GET /v1/admin/auth/me, signed in. The session ends a day from now and after
+ * `idleMinutes` without a request; a test of the "still there?" prompt
+ * shortens the second.
+ */
+export function adminSignedIn(
+  options: { idleMinutes?: number; roles?: string[]; now?: Date } = {},
+): Handler[] {
+  const now = options.now ?? new Date();
+  return [
+    {
+      method: "GET",
+      path: /^\/v1\/admin\/auth\/me$/,
+      reply: () =>
+        ok({
+          admin: { ...ADMIN, roles: options.roles ?? ADMIN.roles },
+          session: {
+            expiresAt: new Date(now.getTime() + 24 * 3_600_000).toISOString(),
+            idleMinutes: options.idleMinutes ?? 480,
+          },
+        }),
+    },
+  ];
 }

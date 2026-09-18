@@ -1,12 +1,14 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { AuthCard } from "@/components/auth/auth-card";
 import { FormError } from "@/components/auth/notices";
 import { Button, ButtonLink } from "@/components/ui/button";
-import { authClient, type AuthResult, type SessionUser } from "@/lib/auth/client";
-import { cta } from "@/lib/site";
+import { authClient, onSessionEnded, type AuthResult, type SessionUser } from "@/lib/auth/client";
+import { signInAgain, takeStashedNext } from "@/lib/next-path";
+import { afterAuth, cta } from "@/lib/site";
 
 /*
   The gate on the signed-in app, and the one place the session is resolved.
@@ -14,10 +16,13 @@ import { cta } from "@/lib/site";
   the answer through useSession() rather than asking again.
 
   There is no signed-out state here. Being signed out is not something a
-  screen has to say; it is a reason to be somewhere else, so this leaves for
-  the landing page. proxy.ts already turns away anyone arriving without a
-  cookie at all; what is left for this component is the case the cookie cannot
-  answer, where the cookie is present but the session behind it is gone.
+  screen has to say; it is a reason to be somewhere else. proxy.ts already
+  sends anyone arriving without a cookie to the log-in page; what is left for
+  this component is the case the cookie cannot answer, where the cookie is
+  present but the session behind it is gone - found on arrival, or later, by
+  any request a screen makes (lib/auth/client.ts announces it) or by the
+  socket. Either way the person is sent to log in with ?next= set to where
+  they were, and comes straight back to it.
 
   The session is resolved on the client rather than on the server because the
   cookie belongs to the API's host, not to this app's server. A server
@@ -61,9 +66,28 @@ function leaveForLandingPage(): void {
   window.location.replace("/");
 }
 
+/*
+  The session behind this tab has ended. The cookie goes first - the proxy
+  routes on it, and a stale one would send /account straight back here - and
+  if even that fails, the log-in page is reachable with it in the jar anyway.
+  Once only: every screen's requests fail together when a session ends.
+*/
+let leaving = false;
+async function leaveToSignIn(): Promise<void> {
+  if (leaving) return;
+  leaving = true;
+  await authClient.logout();
+  const here = `${window.location.pathname}${window.location.search}`;
+  window.location.replace(signInAgain(cta.login.href, here, "ended"));
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [state, setState] = useState<State>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+
+  // Any request, from any screen, that finds the session gone.
+  useEffect(() => onSessionEnded(() => void leaveToSignIn()), []);
 
   useEffect(() => {
     // Guards against a state write after the provider is gone.
@@ -75,24 +99,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
       if (result.ok) {
         setState({ status: "signed-in", user: result.user });
+        // Back from Google, which always lands here: go where the log-in page was sent from.
+        const pending = window.location.pathname === afterAuth ? takeStashedNext() : null;
+        if (pending && pending !== afterAuth) router.replace(pending);
         return;
       }
 
-      if (result.code === "INVALID_CREDENTIALS") {
-        // Signed out. The cookie outlived the session behind it, so it has to
-        // be cleared before leaving: the proxy reads that cookie, and would
-        // send the landing page straight back here.
-        const cleared = await authClient.logout();
-        if (!live) return;
-        if (cleared.ok) {
-          leaveForLandingPage();
-          return;
-        }
-        // Leaving with the cookie still in place would bounce between the two
-        // pages, so this stops and says what happened instead.
-        setState({ status: "error", message: cleared.message });
-        return;
-      }
+      // The cookie outlived the session behind it: the listener above is already leaving.
+      if (result.code === "SESSION_ENDED") return;
 
       setState({ status: "error", message: result.message });
     })();
@@ -100,7 +114,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false;
     };
-  }, [attempt]);
+  }, [attempt, router]);
 
   if (state.status === "loading") {
     return (

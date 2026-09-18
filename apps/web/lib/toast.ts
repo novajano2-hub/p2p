@@ -64,8 +64,15 @@ export const toast = {
   dismiss: (id?: string) => sonner.dismiss(id),
 };
 
-/** A refusal as the API gave it: its sentence, and the reference when the fault was the server's. */
-export type Refusal = { message: string; reference?: string | undefined };
+/**
+ * A refusal as the API gave it: its sentence, the reference when the fault
+ * was the server's, and its code for a screen that answers some differently.
+ */
+export type Refusal = {
+  message: string;
+  reference?: string | undefined;
+  code?: string | undefined;
+};
 
 /**
  * A refusal from the API, in the server's own words - they are written to be

@@ -1,10 +1,11 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
+import { notFound, useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
+import { LoadFailed } from "@/components/app/load-failed";
 import { PageHeader, Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
 import { BackTo, ListNotice, Segmented } from "@/components/market/bits";
@@ -74,6 +75,8 @@ const EMPTY: AdDraft = {
 
 type State =
   | { status: "loading" }
+  /** An ad to edit that is not there, or not this person's: the not-found page. */
+  | { status: "missing" }
   | { status: "error"; message: string }
   | { status: "ready"; methods: PaymentMethod[]; editing: MyOffer | null };
 
@@ -104,6 +107,7 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
   const router = useRouter();
   const [state, setState] = useState<State>({ status: "loading" });
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
   const railsErrorId = useId();
 
@@ -138,7 +142,11 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
         return;
       }
       if (editing && !editing.ok) {
-        setState({ status: "error", message: editing.message });
+        setState(
+          editing.code === "NOT_FOUND"
+            ? { status: "missing" }
+            : { status: "error", message: editing.message },
+        );
         return;
       }
       const offer = editing?.ok ? editing.offer : null;
@@ -152,8 +160,9 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
     return () => {
       live = false;
     };
-  }, [offerId, reset]);
+  }, [offerId, reset, attempt]);
 
+  if (state.status === "missing") notFound();
   const editing = state.status === "ready" ? state.editing : null;
   const methods = state.status === "ready" ? state.methods : [];
 
@@ -202,7 +211,13 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
         </Panel>
       ) : state.status === "error" ? (
         <Panel>
-          <ListNotice>{state.message}</ListNotice>
+          <LoadFailed
+            message={state.message}
+            onRetry={() => {
+              setState({ status: "loading" });
+              setAttempt((value) => value + 1);
+            }}
+          />
         </Panel>
       ) : editing?.status === "CLOSED" ? (
         <Panel>

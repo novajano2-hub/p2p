@@ -28,6 +28,8 @@ export const ADMIN_SESSION_COOKIE = "birq_admin_session";
 export interface AdminSessionContext {
   sessionId: string;
   admin: AdminUser;
+  /** When the session ends whatever happens. The idle end moves with every request. */
+  expiresAt: Date;
   /**
    * What a mutation on this session has to present in the x-csrf-token header.
    * A different value from the one the same token would produce in the customer
@@ -126,7 +128,12 @@ export class AdminSessionService {
       });
     }
 
-    return { sessionId: session.id, admin: adminUser, csrfToken: csrfTokenFor("admin", token) };
+    return {
+      sessionId: session.id,
+      admin: adminUser,
+      expiresAt: session.expiresAt,
+      csrfToken: csrfTokenFor("admin", token),
+    };
   }
 
   /** Revocation is a write, never a delete: the row is part of the trail. */

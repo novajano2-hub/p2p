@@ -1,9 +1,11 @@
 "use client";
 
 import { ArrowLeft, CheckCircle, Warning, WarningCircle } from "@phosphor-icons/react";
+import { notFound } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { ActionButton, NeedsRole, useAdmin } from "@/components/admin/admin-shell";
+import { LoadFailed } from "@/components/app/load-failed";
 import { ButtonLink } from "@/components/ui/button";
 import { AppLink } from "@/components/ui/app-link";
 import { Field } from "@/components/ui/field";
@@ -52,6 +54,8 @@ export function KycReview({ submissionId }: { submissionId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [reason, setReason] = useState<KycRejectionReason | "">("");
   const [decided, setDecided] = useState<"APPROVED" | "REJECTED" | null>(null);
+  const [missing, setMissing] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   const mayReview = admin.roles.includes("KYC_REVIEWER");
   const loaded = useRef<Photo[]>([]);
@@ -72,7 +76,8 @@ export function KycReview({ submissionId }: { submissionId: string }) {
       const result = await adminClient.submission(submissionId);
       if (!live) return;
       if (!result.ok) {
-        setError(result.message);
+        if (result.code === "NOT_FOUND") setMissing(true);
+        else setError(result.message);
         return;
       }
       setItem(result.submission);
@@ -94,8 +99,9 @@ export function KycReview({ submissionId }: { submissionId: string }) {
     return () => {
       live = false;
     };
-  }, [submissionId, mayReview]);
+  }, [submissionId, mayReview, attempt]);
 
+  if (missing) notFound();
   if (!mayReview) return <NeedsRole role="KYC_REVIEWER" />;
 
   return (
@@ -108,7 +114,15 @@ export function KycReview({ submissionId }: { submissionId: string }) {
         Queue
       </AppLink>
 
-      {error ? (
+      {error && !item ? (
+        <LoadFailed
+          message={error}
+          onRetry={() => {
+            setError(null);
+            setAttempt((value) => value + 1);
+          }}
+        />
+      ) : error ? (
         <p role="alert" className="text-destructive mb-4 text-sm">
           {error}
         </p>

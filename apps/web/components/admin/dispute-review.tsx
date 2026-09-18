@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft, Eye, ImageBroken, Paperclip } from "@phosphor-icons/react";
+import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
@@ -59,6 +60,8 @@ export function DisputeReview({ disputeId }: { disputeId: string }) {
   const may = admin.roles.includes("DISPUTE_RESOLVER");
   const [dispute, setDispute] = useState<AdminDisputeDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!may) return;
@@ -66,12 +69,15 @@ export function DisputeReview({ disputeId }: { disputeId: string }) {
     void disputesClient.one(disputeId).then((result) => {
       if (!live) return;
       if (result.ok) setDispute(result.dispute);
+      else if (result.code === "NOT_FOUND") setMissing(true);
       else setError(result.message);
     });
     return () => {
       live = false;
     };
-  }, [disputeId, may]);
+  }, [disputeId, may, attempt]);
+
+  if (missing) notFound();
 
   if (!may) return <NeedsRole role="DISPUTE_RESOLVER" />;
 
@@ -87,7 +93,17 @@ export function DisputeReview({ disputeId }: { disputeId: string }) {
         Disputes
       </AppLink>
 
-      {error ? <Notice tone="error">{error}</Notice> : null}
+      {error ? (
+        <Notice
+          tone="error"
+          onRetry={() => {
+            setError(null);
+            setAttempt((value) => value + 1);
+          }}
+        >
+          {error}
+        </Notice>
+      ) : null}
       {!dispute && !error ? <Notice tone="loading">Loading&hellip;</Notice> : null}
 
       {dispute && said ? (

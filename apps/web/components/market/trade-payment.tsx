@@ -35,16 +35,27 @@ export function PaymentPanel({
   trade,
   expired,
   onUpdated,
+  onConflict,
 }: {
   trade: Trade;
   expired: boolean;
   onUpdated: (trade: Trade) => void;
+  /** An action refused as out of date: the page looks again and says what the order is now. */
+  onConflict?: ((refusal: Refusal) => Promise<void>) | undefined;
 }) {
   const [error, setShownError] = useState<string | null>(null);
-  const setError = useCallback((refusal: Refusal | null) => {
-    setShownError(refusal?.message ?? null);
-    if (refusal) toastFailure(refusal);
-  }, []);
+  const setError = useCallback(
+    (refusal: Refusal | null) => {
+      if (refusal?.code === "CONFLICT" && onConflict) {
+        setShownError(null);
+        void onConflict(refusal);
+        return;
+      }
+      setShownError(refusal?.message ?? null);
+      if (refusal) toastFailure(refusal);
+    },
+    [onConflict],
+  );
   const buying = trade.role === "BUYER";
   const other = trade.counterparty.username;
 

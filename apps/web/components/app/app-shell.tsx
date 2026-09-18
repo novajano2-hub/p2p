@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { AppHeader } from "@/components/app/app-header";
+import { LiveConnectionBanner } from "@/components/app/live-connection-banner";
 import { MobileTabBar } from "@/components/app/mobile-tab-bar";
 import { AppLink } from "@/components/ui/app-link";
 import { site } from "@/lib/site";
@@ -21,6 +22,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
 
       <AppHeader />
+      <LiveConnectionBanner />
 
       <main
         id="main"

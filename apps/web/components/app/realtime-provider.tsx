@@ -1,10 +1,20 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 
+import { announceSessionEnded } from "@/lib/auth/client";
 import {
   RealtimeClient,
   realtimeUrl,
+  type ConnectionState,
   type FrameOf,
   type RealtimeEvent,
   type ServerFrame,
@@ -16,9 +26,10 @@ import {
   not touch the socket; they subscribe to a trade for as long as they are
   showing it, and listen for the frames they care about.
 
-  If the server says the session has ended (4001), the app leaves for the
-  landing page the same way SessionProvider does on a stale cookie: a full
-  document load, so nothing from the session that just ended is kept.
+  If the server says the session has ended (4001), that is the same news a
+  401 brings, and it is handled the same way: SessionProvider sends the person
+  to log in, and back here afterwards. Too many tabs (4002) only stands this
+  one down; the connection banner says so and offers a reload.
 */
 
 const RealtimeContext = createContext<RealtimeClient | null>(null);
@@ -29,12 +40,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     client.connect();
     const stop = client.on("disconnected", () => {
-      if (client.state === "ended") {
-        // A guess would be wrong more often than a check: the cookie may be
-        // gone, or this may be the ninth tab. Either way the landing page
-        // and the proxy sort out where this tab belongs.
-        window.location.replace("/");
-      }
+      if (client.state === "ended") announceSessionEnded();
     });
     return () => {
       stop();
@@ -73,6 +79,16 @@ export function useRealtimeEvent<T extends RealtimeEvent>(
       latest.current(frame as Payload<T>);
     });
   }, [client, type]);
+}
+
+/** How the live connection is doing, for the banner that says so. */
+export function useConnectionState(): ConnectionState {
+  const client = useRealtime();
+  return useSyncExternalStore(
+    (listener) => client.subscribeState(listener),
+    () => client.state,
+    () => "connecting",
+  );
 }
 
 /** Watches a trade while the component that shows it is mounted. */

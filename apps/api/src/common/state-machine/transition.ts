@@ -11,13 +11,24 @@ import { AppError } from "@/common/errors/app-error";
 
 export type TransitionTable<S extends string> = Readonly<Record<S, readonly S[]>>;
 
+/*
+  The message is the one a person sees, so it is written for them. What
+  happened is nearly always that somebody - the other party, another
+  administrator, a timer - moved the thing on between the screen being drawn
+  and the button being pressed. The states themselves stay on the error, for
+  the log line; they mean nothing on a screen.
+*/
 export class IllegalTransitionError extends AppError {
   constructor(
     readonly machine: string,
     readonly from: string,
     readonly to: string,
   ) {
-    super("CONFLICT", 409, `A ${machine} cannot go from ${from} to ${to}.`);
+    super(
+      "CONFLICT",
+      409,
+      `This ${machine} has moved on since you last looked, so that cannot be done now.`,
+    );
   }
 }
 

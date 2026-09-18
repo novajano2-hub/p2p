@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft } from "@phosphor-icons/react";
+import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
@@ -37,6 +38,8 @@ export function ReconciliationBreakView({ breakId }: { breakId: string }) {
   const mayRead = admin.roles.includes("LEDGER_VIEWER");
   const [item, setItem] = useState<ReconciliationBreak | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!mayRead) return;
@@ -44,12 +47,15 @@ export function ReconciliationBreakView({ breakId }: { breakId: string }) {
     void reconciliationClient.one(breakId).then((result) => {
       if (!live) return;
       if (result.ok) setItem(result.break);
+      else if (result.code === "NOT_FOUND") setMissing(true);
       else setError(result.message);
     });
     return () => {
       live = false;
     };
-  }, [breakId, mayRead]);
+  }, [breakId, mayRead, attempt]);
+
+  if (missing) notFound();
 
   if (!mayRead) return <NeedsRole role="LEDGER_VIEWER" />;
 
@@ -63,7 +69,17 @@ export function ReconciliationBreakView({ breakId }: { breakId: string }) {
         Reconciliation
       </AppLink>
 
-      {error ? <Notice tone="error">{error}</Notice> : null}
+      {error ? (
+        <Notice
+          tone="error"
+          onRetry={() => {
+            setError(null);
+            setAttempt((value) => value + 1);
+          }}
+        >
+          {error}
+        </Notice>
+      ) : null}
       {!item && !error ? <Notice tone="loading">Loading&hellip;</Notice> : null}
 
       {item ? (

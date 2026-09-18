@@ -3,6 +3,7 @@
 import { ChatCircleDots, Receipt } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 
+import { LoadFailed } from "@/components/app/load-failed";
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
 import { useRealtimeEvent } from "@/components/app/realtime-provider";
 import { ListNotice, TradePill, birr, timeAgo, useCountdown, usdt } from "@/components/market/bits";
@@ -63,7 +64,17 @@ function OrderList({ scope }: { scope: "open" | "closed" }) {
   useRealtimeEvent("connected", load);
 
   if (state.status === "loading") return <ListNotice>Loading…</ListNotice>;
-  if (state.status === "error") return <ListNotice>{state.message}</ListNotice>;
+  if (state.status === "error") {
+    return (
+      <LoadFailed
+        message={state.message}
+        onRetry={() => {
+          setState({ status: "loading" });
+          load();
+        }}
+      />
+    );
+  }
   if (state.trades.length === 0) {
     return (
       <EmptyState

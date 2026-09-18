@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
+import { LoadFailed } from "@/components/app/load-failed";
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
 import { BackTo, ConfirmButton, ListNotice } from "@/components/market/bits";
@@ -213,7 +214,13 @@ export function PaymentMethods() {
           {state.status === "loading" ? (
             <ListNotice>Loading…</ListNotice>
           ) : state.status === "error" ? (
-            <ListNotice>{state.message}</ListNotice>
+            <LoadFailed
+              message={state.message}
+              onRetry={() => {
+                setState({ status: "loading" });
+                refresh();
+              }}
+            />
           ) : active.length === 0 ? (
             <EmptyState
               icon={CreditCard}

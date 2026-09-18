@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft, ShieldWarning } from "@phosphor-icons/react";
+import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
@@ -38,6 +39,8 @@ export function WithdrawalReview({ withdrawalId }: { withdrawalId: string }) {
   const may = admin.roles.includes("WITHDRAWAL_APPROVER");
   const [withdrawal, setWithdrawal] = useState<AdminWithdrawal | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!may) return;
@@ -45,12 +48,15 @@ export function WithdrawalReview({ withdrawalId }: { withdrawalId: string }) {
     void withdrawalsClient.one(withdrawalId).then((result) => {
       if (!live) return;
       if (result.ok) setWithdrawal(result.withdrawal);
+      else if (result.code === "NOT_FOUND") setMissing(true);
       else setError(result.message);
     });
     return () => {
       live = false;
     };
-  }, [withdrawalId, may]);
+  }, [withdrawalId, may, attempt]);
+
+  if (missing) notFound();
 
   if (!may) return <NeedsRole role="WITHDRAWAL_APPROVER" />;
 
@@ -66,7 +72,17 @@ export function WithdrawalReview({ withdrawalId }: { withdrawalId: string }) {
         Withdrawals
       </AppLink>
 
-      {error ? <Notice tone="error">{error}</Notice> : null}
+      {error ? (
+        <Notice
+          tone="error"
+          onRetry={() => {
+            setError(null);
+            setAttempt((value) => value + 1);
+          }}
+        >
+          {error}
+        </Notice>
+      ) : null}
       {!withdrawal && !error ? <Notice tone="loading">Loading&hellip;</Notice> : null}
 
       {withdrawal && said ? (

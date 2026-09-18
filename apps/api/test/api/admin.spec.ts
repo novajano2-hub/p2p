@@ -1,4 +1,4 @@
-import { KYC_REJECTION_REASONS } from "@abay/contracts";
+import { type AdminMeResponse, KYC_REJECTION_REASONS } from "@abay/contracts";
 import { createPrismaClient, type PrismaClient } from "@abay/database";
 import { type NestFastifyApplication } from "@nestjs/platform-fastify";
 import request from "supertest";
@@ -125,6 +125,13 @@ describe("the admin realm", () => {
 
     const me = await request(server()).get("/v1/admin/auth/me").set("Cookie", cookie).expect(200);
     expect(me.body.admin).toMatchObject({ email: admin.email, roles: ["KYC_REVIEWER"] });
+    // And when it ends, so the screen can warn before it does.
+    const env = loadEnv();
+    const { session } = me.body as AdminMeResponse;
+    expect(session.idleMinutes).toBe(env.ADMIN_SESSION_IDLE_MINUTES);
+    const endsIn = new Date(session.expiresAt).getTime() - Date.now();
+    expect(endsIn).toBeGreaterThan((env.ADMIN_SESSION_TTL_HOURS * 60 - 5) * 60_000);
+    expect(endsIn).toBeLessThanOrEqual(env.ADMIN_SESSION_TTL_HOURS * 3_600_000);
     // The hash never has a shape that reaches a client.
     expect(JSON.stringify(me.body)).not.toContain("passwordHash");
 

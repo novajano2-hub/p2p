@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft } from "@phosphor-icons/react";
+import { notFound } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { NeedsRole, useAdmin } from "@/components/admin/admin-shell";
@@ -34,6 +35,7 @@ import { ledgerClient, type LedgerTransactionDetail } from "@/lib/admin/ledger";
 
 type State =
   | { status: "loading" }
+  | { status: "missing" }
   | { status: "ready"; transaction: LedgerTransactionDetail }
   | { status: "error"; message: string };
 
@@ -41,6 +43,11 @@ export function LedgerTransactionView({ transactionId }: { transactionId: string
   const admin = useAdmin();
   const may = admin.roles.includes("LEDGER_VIEWER");
   const [state, setState] = useState<State>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => {
+    setState({ status: "loading" });
+    setAttempt((value) => value + 1);
+  };
 
   useEffect(() => {
     if (!may) return;
@@ -50,13 +57,17 @@ export function LedgerTransactionView({ transactionId }: { transactionId: string
       setState(
         result.ok
           ? { status: "ready", transaction: result.transaction }
-          : { status: "error", message: result.message },
+          : result.code === "NOT_FOUND"
+            ? { status: "missing" }
+            : { status: "error", message: result.message },
       );
     });
     return () => {
       live = false;
     };
-  }, [may, transactionId]);
+  }, [may, transactionId, attempt]);
+
+  if (state.status === "missing") notFound();
 
   const back = (
     <AppLink
@@ -83,7 +94,9 @@ export function LedgerTransactionView({ transactionId }: { transactionId: string
         {state.status === "loading" ? (
           <Notice tone="loading">Loading the transaction&hellip;</Notice>
         ) : (
-          <Notice tone="error">{state.message}</Notice>
+          <Notice tone="error" onRetry={retry}>
+            {state.message}
+          </Notice>
         )}
       </>
     );

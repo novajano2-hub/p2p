@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { expectNoHorizontalOverflow, ok, stubApi } from "./support";
+import { adminSignedIn, expectNoHorizontalOverflow, ok, stubApi } from "./support";
 
 /*
   The resolver's screen. What it has to show, beyond the money and the chat,
@@ -69,20 +69,7 @@ const DISPUTE = {
 
 test("the resolver reads the terms the order was taken under", async ({ page }) => {
   await stubApi(page, [
-    {
-      method: "GET",
-      path: /^\/v1\/admin\/auth\/me$/,
-      reply: () =>
-        ok({
-          admin: {
-            id: "ad1",
-            email: "resolver@example.com",
-            name: "Test Resolver",
-            roles: ["DISPUTE_RESOLVER"],
-            mfaEnrolled: true,
-          },
-        }),
-    },
+    ...adminSignedIn({ roles: ["DISPUTE_RESOLVER"] }),
     { method: "GET", path: /^\/v1\/admin\/disputes\/d1$/, reply: () => ok(DISPUTE) },
   ]);
 

@@ -21,7 +21,7 @@ describe("transition tables", () => {
     }).toThrow(IllegalTransitionError);
     expect(() => {
       assertTransition("widget", table, "A", "C");
-    }).toThrow("A widget cannot go from A to C.");
+    }).toThrow("This widget has moved on since you last looked, so that cannot be done now.");
     expect(() => {
       assertTransition("widget", table, "A", "B");
     }).not.toThrow();

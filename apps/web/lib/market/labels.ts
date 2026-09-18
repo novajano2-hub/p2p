@@ -129,6 +129,17 @@ export function tradeStatusPill(
   }
 }
 
+/** Where a trade stands, as the end of "It is ... now." */
+export const TRADE_STATUS_NOW: Record<TradeStatus, string> = {
+  AWAITING_FIAT_PAYMENT: "waiting for the buyer to pay",
+  BUYER_MARKED_PAID: "marked as paid",
+  DISPUTED: "in dispute",
+  COMPLETED: "complete",
+  CANCELLED: "cancelled",
+  EXPIRED: "expired",
+  REFUNDED: "refunded to the seller",
+};
+
 export const DISPUTE_REASONS: Record<DisputeReason, string> = {
   PAYMENT_NOT_RECEIVED: "I have not received the payment",
   PAYMENT_NOT_RELEASED: "I paid and the seller has not released",

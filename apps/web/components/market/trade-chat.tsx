@@ -3,6 +3,7 @@
 import { Image as ImageIcon, PaperPlaneRight } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { LoadFailed } from "@/components/app/load-failed";
 import { Panel } from "@/components/app/panel";
 import { useRealtime, useRealtimeEvent } from "@/components/app/realtime-provider";
 import { clockTime } from "@/components/market/bits";
@@ -182,7 +183,16 @@ export function ChatPanel({ trade, myUserId }: { trade: Trade; myUserId: string 
         aria-live="polite"
         aria-label="Messages"
       >
-        {!loaded ? (
+        {!loaded && error ? (
+          <LoadFailed
+            message={error}
+            onRetry={() => {
+              setError(null);
+              catchUp(0);
+            }}
+            className="m-auto"
+          />
+        ) : !loaded ? (
           <p className="text-muted-foreground m-auto text-[13px]">Loading…</p>
         ) : messages.length === 0 ? (
           <p className="text-muted-foreground m-auto text-center text-[13px]">
@@ -232,7 +242,7 @@ export function ChatPanel({ trade, myUserId }: { trade: Trade; myUserId: string 
         )}
       </div>
 
-      {error ? (
+      {error && loaded ? (
         <p role="alert" className="text-destructive mt-2 text-[13px]">
           {error}
         </p>
