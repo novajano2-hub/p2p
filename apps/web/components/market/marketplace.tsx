@@ -25,6 +25,7 @@ import {
 } from "@/lib/market/client";
 import { FIAT, PAYMENT_KINDS, PAYMENT_KIND_LIST } from "@/lib/market/labels";
 import { formatSantim, toSantim } from "@/lib/market/money";
+import { withNext } from "@/lib/next-path";
 
 /*
   The marketplace, the way Binance lays it out and this audience already
@@ -42,6 +43,16 @@ const SIDES = [
   { value: "BUY", label: "Buy USDT" },
   { value: "SELL", label: "Sell USDT" },
 ] as const;
+
+/*
+  Binance's filter puts a row of amounts under the field - $20, $100, $500,
+  $1K on theirs - for the person who knows roughly what they want and would
+  rather tap than type. The same five-fold steps, in birr, at the sizes
+  trades here actually come in. Typing still works; a tapped amount can be
+  edited or tapped again to clear.
+*/
+const QUICK_AMOUNTS = [1_000, 5_000, 10_000, 50_000] as const;
+const grouped = new Intl.NumberFormat("en-GB");
 
 type State =
   | { status: "loading" }
@@ -131,7 +142,12 @@ export function Marketplace() {
         title="Trade"
         description="Buy and sell USDT for birr with other customers. Every trade is held in escrow until the seller confirms the birr arrived."
       >
-        <ButtonLink href="/trade/payment-methods" variant="secondary" size="sm" arrow={false}>
+        <ButtonLink
+          href={withNext("/trade/payment-methods", `/trade?want=${want}`)}
+          variant="secondary"
+          size="sm"
+          arrow={false}
+        >
           Payment methods
         </ButtonLink>
         <ButtonLink href="/trade/ads" variant="secondary" size="sm" arrow={false}>
@@ -163,16 +179,38 @@ export function Marketplace() {
             <Select
               aria-label="Payment method"
               value={kind}
-              onChange={(event) => setKind(event.target.value as PaymentMethodKind | "")}
-            >
-              <option value="">All payment methods</option>
-              {PAYMENT_KIND_LIST.map((value) => (
-                <option key={value} value={value}>
-                  {PAYMENT_KINDS[value].label}
-                </option>
-              ))}
-            </Select>
+              onChange={(value) => setKind(value as PaymentMethodKind | "")}
+              options={[
+                { value: "", label: "All payment methods" },
+                ...PAYMENT_KIND_LIST.map((value) => ({
+                  value,
+                  label: PAYMENT_KINDS[value].label,
+                  bar: PAYMENT_KINDS[value].bar,
+                })),
+              ]}
+            />
           </div>
+        </div>
+        <div role="group" aria-label="Quick amounts" className="mt-2.5 flex flex-wrap gap-2">
+          {QUICK_AMOUNTS.map((value) => {
+            const pressed = amount.trim() === String(value);
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={pressed}
+                onClick={() => setAmount(pressed ? "" : String(value))}
+                className={cn(
+                  "rounded-control h-8 border px-3.5 text-[13px] font-medium tabular-nums transition-colors duration-150",
+                  pressed
+                    ? "border-primary bg-primary-soft text-primary-soft-foreground"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {grouped.format(value)}
+              </button>
+            );
+          })}
         </div>
         {amountProblem ? (
           <p role="alert" className="text-destructive mt-2 text-[13px]">

@@ -28,6 +28,11 @@ describe("loadEnv", () => {
     expect(env.TRUST_PROXY).toBe(false);
     expect(env.SHUTDOWN_TIMEOUT_MS).toBe(10_000);
     expect(env.CORS_ORIGINS).toEqual(["http://localhost:3000", "https://app.example.com"]);
+    // The owner's numbers for the testing period, and the schema's own caps.
+    expect(env.ADMIN_SESSION_TTL_HOURS).toBe(24);
+    expect(env.ADMIN_SESSION_IDLE_MINUTES).toBe(480);
+    expect(() => loadEnv({ ...valid, ADMIN_SESSION_TTL_HOURS: "25" })).toThrow(EnvError);
+    expect(() => loadEnv({ ...valid, ADMIN_SESSION_IDLE_MINUTES: "481" })).toThrow(EnvError);
   });
 
   it("coerces numbers and flags from strings", () => {

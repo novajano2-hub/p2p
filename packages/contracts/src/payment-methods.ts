@@ -10,88 +10,95 @@ import { z } from "zod";
   to the counterparty of an open trade, and to a dispute resolver with an
   audit row - so a list of methods carries a label and the last digits, and
   the instructions themselves are a separate, deliberate read.
+
+  A bank is a payment method of its own, the way Binance lists "BCA" and
+  "Bank BRI" rather than one "bank transfer": a buyer choosing where to pay
+  wants the bank by name, because a transfer within one bank arrives at once
+  and one between banks does not. Four banks at launch. A fifth is a value in
+  the enum, a row in the table below, and a value in the database's enum.
 */
 
-/** The rails birr actually moves on in Ethiopia. */
-export const paymentMethodKind = z.enum(["TELEBIRR", "CBE_BIRR", "MPESA", "BANK_TRANSFER"]);
+/** The rails birr actually moves on in Ethiopia: three mobile wallets and four banks. */
+export const paymentMethodKind = z.enum([
+  "TELEBIRR",
+  "CBE_BIRR",
+  "MPESA",
+  "CBE",
+  "DASHEN",
+  "ABYSSINIA",
+  "AWASH",
+]);
 export type PaymentMethodKind = z.infer<typeof paymentMethodKind>;
+
+export const WALLET_KINDS = ["TELEBIRR", "CBE_BIRR", "MPESA"] as const;
+export type WalletKind = (typeof WALLET_KINDS)[number];
+
+export const BANK_KINDS = ["CBE", "DASHEN", "ABYSSINIA", "AWASH"] as const;
+export type BankKind = (typeof BANK_KINDS)[number];
+
+export const isBankKind = (kind: PaymentMethodKind): kind is BankKind =>
+  (BANK_KINDS as readonly string[]).includes(kind);
 
 export const paymentMethodStatus = z.enum(["ACTIVE", "ARCHIVED"]);
 export type PaymentMethodStatus = z.infer<typeof paymentMethodStatus>;
 
-/** How each rail is named on a screen, and what its number is called. */
+/**
+ * How each rail is named on a screen. `label` is what a list, a chip and a
+ * filter say - short, the way a person says it; `fullName` is what the
+ * payment instructions say, where "CBE" alone would be too little to type
+ * into a banking app; `numberLabel` is what its number is called.
+ */
 export const PAYMENT_METHOD_KINDS: Record<
   PaymentMethodKind,
-  { readonly label: string; readonly numberLabel: string }
+  {
+    readonly label: string;
+    readonly fullName: string;
+    readonly numberLabel: string;
+    readonly institution: "wallet" | "bank";
+  }
 > = {
-  TELEBIRR: { label: "Telebirr", numberLabel: "Telebirr phone number" },
-  CBE_BIRR: { label: "CBE Birr", numberLabel: "CBE Birr phone number" },
-  MPESA: { label: "M-Pesa", numberLabel: "M-Pesa phone number" },
-  BANK_TRANSFER: { label: "Bank transfer", numberLabel: "Account number" },
-};
-
-/**
- * The banks a transfer can name. A closed list rather than free text so a
- * buyer reads "Awash Bank" spelled one way, a filter can match it, and a
- * typo cannot send money to a bank that does not exist.
- */
-export const BANK_CODES = [
-  "CBE",
-  "AWASH",
-  "DASHEN",
-  "ABYSSINIA",
-  "WEGAGEN",
-  "NIB",
-  "HIBRET",
-  "ZEMEN",
-  "BERHAN",
-  "ABAY",
-  "BUNNA",
-  "ENAT",
-  "COOP_OROMIA",
-  "OROMIA",
-  "LION",
-  "AMHARA",
-  "SIINQEE",
-  "TSEHAY",
-  "ZAMZAM",
-  "HIJRA",
-  "GADAA",
-  "AHADU",
-  "GOH_BETOCH",
-  "TSEDEY",
-  "GLOBAL",
-] as const;
-export type BankCode = (typeof BANK_CODES)[number];
-
-export const bankCode = z.enum(BANK_CODES);
-
-export const ETHIOPIAN_BANKS: Record<BankCode, string> = {
-  CBE: "Commercial Bank of Ethiopia",
-  AWASH: "Awash Bank",
-  DASHEN: "Dashen Bank",
-  ABYSSINIA: "Bank of Abyssinia",
-  WEGAGEN: "Wegagen Bank",
-  NIB: "Nib International Bank",
-  HIBRET: "Hibret Bank",
-  ZEMEN: "Zemen Bank",
-  BERHAN: "Berhan Bank",
-  ABAY: "Abay Bank",
-  BUNNA: "Bunna Bank",
-  ENAT: "Enat Bank",
-  COOP_OROMIA: "Cooperative Bank of Oromia",
-  OROMIA: "Oromia Bank",
-  LION: "Lion International Bank",
-  AMHARA: "Amhara Bank",
-  SIINQEE: "Siinqee Bank",
-  TSEHAY: "Tsehay Bank",
-  ZAMZAM: "ZamZam Bank",
-  HIJRA: "Hijra Bank",
-  GADAA: "Gadaa Bank",
-  AHADU: "Ahadu Bank",
-  GOH_BETOCH: "Goh Betoch Bank",
-  TSEDEY: "Tsedey Bank",
-  GLOBAL: "Global Bank Ethiopia",
+  TELEBIRR: {
+    label: "Telebirr",
+    fullName: "Telebirr",
+    numberLabel: "Telebirr phone number",
+    institution: "wallet",
+  },
+  CBE_BIRR: {
+    label: "CBE Birr",
+    fullName: "CBE Birr",
+    numberLabel: "CBE Birr phone number",
+    institution: "wallet",
+  },
+  MPESA: {
+    label: "M-Pesa",
+    fullName: "M-Pesa",
+    numberLabel: "M-Pesa phone number",
+    institution: "wallet",
+  },
+  CBE: {
+    label: "CBE",
+    fullName: "Commercial Bank of Ethiopia",
+    numberLabel: "Account number",
+    institution: "bank",
+  },
+  DASHEN: {
+    label: "Dashen Bank",
+    fullName: "Dashen Bank",
+    numberLabel: "Account number",
+    institution: "bank",
+  },
+  ABYSSINIA: {
+    label: "Bank of Abyssinia",
+    fullName: "Bank of Abyssinia",
+    numberLabel: "Account number",
+    institution: "bank",
+  },
+  AWASH: {
+    label: "Awash Bank",
+    fullName: "Awash Bank",
+    numberLabel: "Account number",
+    institution: "bank",
+  },
 };
 
 /** How many a customer may keep. Binance allows a handful; nobody needs more. */
@@ -131,40 +138,37 @@ export const accountNumber = z
   .trim()
   .regex(/^\d{6,24}$/, { error: "Enter the account number, digits only" });
 
-const branch = z.string().trim().max(80, { error: "That branch name is too long" });
+const wallet = <K extends WalletKind>(kind: K) =>
+  z.object({ kind: z.literal(kind), accountHolder, phone: ethiopianPhone });
+const bank = <K extends BankKind>(kind: K) =>
+  z.object({ kind: z.literal(kind), accountHolder, accountNumber });
 
 /**
  * Adding a method. The shape follows the rail: a wallet is a phone number, a
- * bank transfer is a bank and an account number. There is no edit: a method
- * whose number changed is a different method, and the old one is archived.
+ * bank is an account number. There is no edit: a method whose number changed
+ * is a different method, and the old one is archived.
  */
 export const createPaymentMethodRequest = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("TELEBIRR"), accountHolder, phone: ethiopianPhone }),
-  z.object({ kind: z.literal("CBE_BIRR"), accountHolder, phone: ethiopianPhone }),
-  z.object({ kind: z.literal("MPESA"), accountHolder, phone: ethiopianPhone }),
-  z.object({
-    kind: z.literal("BANK_TRANSFER"),
-    accountHolder,
-    bankCode,
-    accountNumber,
-    branch: branch.optional(),
-  }),
+  wallet("TELEBIRR"),
+  wallet("CBE_BIRR"),
+  wallet("MPESA"),
+  bank("CBE"),
+  bank("DASHEN"),
+  bank("ABYSSINIA"),
+  bank("AWASH"),
 ]);
 export type CreatePaymentMethodRequest = z.infer<typeof createPaymentMethodRequest>;
 
 /**
  * The instructions, in the clear: what a buyer needs to make the payment.
  * Read by the owner, by the counterparty of an open trade, and by a dispute
- * resolver - and by nobody else, ever.
+ * resolver - and by nobody else, ever. The institution is the kind.
  */
 export const paymentInstructions = z.object({
   kind: paymentMethodKind,
-  bankCode: bankCode.nullable(),
-  bankName: z.string().nullable(),
   accountHolder: z.string(),
   /** The phone number for a wallet, the account number for a bank. */
   accountNumber: z.string(),
-  branch: z.string().nullable(),
 });
 export type PaymentInstructions = z.infer<typeof paymentInstructions>;
 
@@ -172,7 +176,6 @@ export type PaymentInstructions = z.infer<typeof paymentInstructions>;
 export const paymentMethodView = z.object({
   id: z.string(),
   kind: paymentMethodKind,
-  bankCode: bankCode.nullable(),
   /** "Telebirr ····4821", "Awash Bank ····0193". Composed by the server. */
   label: z.string(),
   /** The last digits of the number. */

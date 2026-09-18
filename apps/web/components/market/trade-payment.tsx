@@ -224,8 +224,8 @@ function detailRows(
   const kind = PAYMENT_KINDS[instructions.kind];
   const rows = [
     {
-      label: kind.label === "Bank transfer" ? "Bank" : "Pay through",
-      value: instructions.bankName ?? kind.label,
+      label: kind.institution === "bank" ? "Bank" : "Pay through",
+      value: kind.fullName,
       copy: false,
       mono: false,
     },
@@ -237,8 +237,6 @@ function detailRows(
     copy: true,
     mono: false,
   });
-  if (instructions.branch)
-    rows.push({ label: "Branch", value: instructions.branch, copy: false, mono: false });
   return rows;
 }
 

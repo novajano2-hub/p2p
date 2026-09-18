@@ -62,10 +62,19 @@ export const TRADE_EVENT_KINDS = [
 export type TradeEventKind = (typeof TRADE_EVENT_KINDS)[number];
 
 export type TradeRole = "BUYER" | "SELLER";
-export type PaymentKind = "TELEBIRR" | "CBE_BIRR" | "MPESA" | "BANK_TRANSFER";
+export type PaymentKind =
+  "TELEBIRR" | "CBE_BIRR" | "MPESA" | "CBE" | "DASHEN" | "ABYSSINIA" | "AWASH";
 
 const role = z.enum(["BUYER", "SELLER"]);
-const paymentKind = z.enum(["TELEBIRR", "CBE_BIRR", "MPESA", "BANK_TRANSFER"]);
+const paymentKind = z.enum([
+  "TELEBIRR",
+  "CBE_BIRR",
+  "MPESA",
+  "CBE",
+  "DASHEN",
+  "ABYSSINIA",
+  "AWASH",
+]);
 
 const customerSchema = z.object({
   userId: z.string(),
@@ -167,16 +176,15 @@ export type AdminDispute = z.infer<typeof itemSchema>;
   API audits the read, so nothing here should be fetched idly.
 */
 const detailSchema = itemSchema.extend({
+  /** The advertiser's terms as they stood when the order opened, whatever the ad says now. */
+  terms: z.string().nullable(),
   payment: z.object({
     kind: paymentKind,
     label: z.string(),
     instructions: z.object({
       kind: paymentKind,
-      bankCode: z.string().nullable(),
-      bankName: z.string().nullable(),
       accountHolder: z.string(),
       accountNumber: z.string(),
-      branch: z.string().nullable(),
     }),
   }),
   evidence: z.array(evidenceSchema),

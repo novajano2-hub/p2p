@@ -163,6 +163,10 @@ export const offerView = z.object({
   requireVerified: z.boolean(),
   minCompletedTrades: z.number().int().nonnegative(),
   status: offerStatus,
+  /** Goes up when the advertiser changes a term of the deal. See `createTradeRequest`. */
+  revision: z.number().int().positive(),
+  /** Orders from this ad that are still running. Closing the ad leaves them alone. */
+  openOrders: z.number().int().nonnegative(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -209,6 +213,8 @@ export const marketplaceOffer = z.object({
   requireVerified: z.boolean(),
   minCompletedTrades: z.number().int().nonnegative(),
   advertiser: advertiserView,
+  /** What this ad's terms are a version of: an order quotes it back. */
+  revision: z.number().int().positive(),
   /** The viewer's own, shown so they can see their place in the list, and not takeable. */
   isMine: z.boolean(),
 });

@@ -135,7 +135,7 @@ async function opened() {
 
 async function take(who: Api, offerId: string): Promise<TradeView> {
   const response = await who
-    .post("/v1/trades", { offerId, amount: (20n * USDT).toString() }, uniq("key"))
+    .post("/v1/trades", { offerId, offerRevision: 1, amount: (20n * USDT).toString() }, uniq("key"))
     .expect(201);
   return response.body as TradeView;
 }
@@ -416,9 +416,13 @@ describe("watching a trade", () => {
     await seller.api.post(`/v1/trades/${trade.id}/release`, { password: PASSWORD }).expect(200);
     expect((await buyerTab.next("trade")).status).toBe("COMPLETED");
     expect((await buyerTab.next("notification")).notification.type).toBe("TRADE_RELEASED");
-    // The seller's own act reaches their other tabs too, with nothing to ring a bell about.
+    // The seller's own act reaches their other tabs too, and rings their bell
+    // once: the receipt for what they sent.
     expect((await sellerTab.next("trade")).status).toBe("COMPLETED");
-    await sellerTab.none("notification");
+    expect((await sellerTab.next("notification")).notification).toMatchObject({
+      type: "TRADE_RELEASED",
+      title: "USDT sent",
+    });
 
     // The expirer's refund arrives the same way, from a pass the worker runs.
     const second = await take(buyer.api, offer.id);

@@ -1287,13 +1287,18 @@ model MockCustodyDirective {
 // hundredths, and never enters the ledger (ledger-taxonomy.md 7).
 // ---------------------------------------------------------------------------
 
-/// The rails birr actually moves on in Ethiopia: the two mobile wallets, the
-/// M-Pesa launched by Safaricom Ethiopia, and an ordinary bank transfer.
+/// The rails birr actually moves on in Ethiopia: three mobile wallets and,
+/// each a method of its own the way Binance lists them, the four launch
+/// banks. A buyer choosing where to pay wants the bank by name - a transfer
+/// within one bank arrives at once, one between banks does not.
 enum PaymentMethodKind {
   TELEBIRR
   CBE_BIRR
   MPESA
-  BANK_TRANSFER
+  CBE
+  DASHEN
+  ABYSSINIA
+  AWASH
 
   @@map("payment_method_kind")
 }
@@ -1308,7 +1313,7 @@ enum PaymentMethodStatus {
 }
 
 /// Where a seller receives birr. The details - account holder, account or
-/// phone number, branch - are RESTRICTED (data-classification.md): held as
+/// phone number - are RESTRICTED (data-classification.md): held as
 /// one AES-256-GCM document under FIELD_ENCRYPTION_KEY, decrypted for the
 /// owner, for the counterparty of an open trade, and for a dispute resolver
 /// with an audit row. Nothing else reads them.
@@ -1318,9 +1323,6 @@ model PaymentMethod {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   kind PaymentMethodKind
-  /// For BANK_TRANSFER, the bank's code from the contracts' list ("CBE",
-  /// "AWASH"). Null for the mobile wallets, which are their own institution.
-  bankCode String? @map("bank_code")
 
   /// What lists show: the rail and the last digits, "Telebirr ····4821".
   /// Composed by the service from data that is not secret; never typed.
@@ -1408,6 +1410,13 @@ model Offer {
 
   status OfferStatus @default(ACTIVE)
 
+  /// Goes up whenever the advertiser changes something a taker reads before
+  /// committing: price, limits, rails, the payment window, the terms, who may
+  /// take it. An order names the version it was placed against and is refused
+  /// if it has moved (TradeService.create). Somebody else taking from the ad
+  /// does not move it, and neither does going offline and back.
+  revision Int @default(1)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1461,7 +1470,10 @@ model Trade {
   id String @id @default(uuid(7))
 
   offerId   String    @map("offer_id")
-  offer     Offer     @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  /// NoAction, never Cascade: deleting an ad row would otherwise take its
+  /// orders with it - and their chat, evidence and disputes - while the ledger
+  /// went on recording the money they moved. Ads are closed, never deleted.
+  offer     Offer     @relation(fields: [offerId], references: [id], onDelete: NoAction)
   offerSide OfferSide @map("offer_side")
 
   buyerId  String @map("buyer_id")
@@ -1491,6 +1503,11 @@ model Trade {
   paymentKind              PaymentMethodKind @map("payment_kind")
   paymentLabel             String            @map("payment_label")
   paymentSnapshotEncrypted String            @map("payment_snapshot_encrypted")
+
+  /// The advertiser's terms as they stood when this order opened. Kept here
+  /// rather than read from the ad, which its owner may edit afterwards: what
+  /// the taker agreed to is part of the order, and a dispute resolver reads it.
+  offerTerms String? @map("offer_terms")
 
   status TradeStatus @default(AWAITING_FIAT_PAYMENT)
 

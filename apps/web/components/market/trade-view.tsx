@@ -112,6 +112,16 @@ export function TradeView({ tradeId }: { tradeId: string }) {
       <div className="grid gap-4 lg:grid-cols-5 lg:gap-6">
         <div className="flex flex-col gap-4 lg:col-span-3">
           <PaymentPanel trade={trade} expired={countdown.expired} onUpdated={setTrade} />
+          {trade.terms ? (
+            <Panel
+              title="The advertiser's terms"
+              description="As they stood when this order opened. Editing the ad since has not changed them."
+            >
+              <p className="text-foreground text-sm leading-relaxed [overflow-wrap:anywhere] whitespace-pre-line">
+                {trade.terms}
+              </p>
+            </Panel>
+          ) : null}
           <DisputePanel trade={trade} onUpdated={refresh} />
           <Timeline trade={trade} />
         </div>

@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { Suspense } from "react";
 
+import { ScrollToTop } from "@/components/app/scroll-to-top";
 import { site } from "@/lib/site";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
@@ -59,6 +61,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="flex min-h-full flex-col font-sans">
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+        {/* Suspense because it reads the query string on the client. */}
+        <Suspense fallback={null}>
+          <ScrollToTop />
+        </Suspense>
         {children}
       </body>
     </html>

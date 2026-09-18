@@ -33,6 +33,14 @@ export const errorCode = z.enum([
    * the message never says how much is there, only that it is not enough.
    */
   "INSUFFICIENT_FUNDS",
+  /**
+   * The ad moved under the person taking it: its price, limits, rails,
+   * payment window, terms or who may take it changed between the screen they
+   * were reading and the order they sent. Its own code because the client's
+   * next move is specific - fetch the ad again, show what changed, ask for the
+   * order a second time - rather than the "try again" a CONFLICT gets.
+   */
+  "OFFER_CHANGED",
   "RATE_LIMITED",
   "PAYLOAD_TOO_LARGE",
   "NOT_READY",

@@ -582,3 +582,18 @@
     }
   }
 }
+
+/* The kit's select: its panel on a desktop, its sheet on a phone. */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}

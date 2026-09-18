@@ -159,9 +159,6 @@ export function DisputeReview({ disputeId }: { disputeId: string }) {
             <Panel title="Where the buyer was told to pay">
               <DetailList>
                 <DetailRow label="Rail">{PAYMENT_WORDS[dispute.payment.kind].label}</DetailRow>
-                {dispute.payment.instructions.bankName ? (
-                  <DetailRow label="Bank">{dispute.payment.instructions.bankName}</DetailRow>
-                ) : null}
                 <DetailRow label="Account holder">
                   {dispute.payment.instructions.accountHolder}
                 </DetailRow>
@@ -174,9 +171,6 @@ export function DisputeReview({ disputeId }: { disputeId: string }) {
                     label="Account number"
                   />
                 </DetailRow>
-                {dispute.payment.instructions.branch ? (
-                  <DetailRow label="Branch">{dispute.payment.instructions.branch}</DetailRow>
-                ) : null}
                 <DetailRow label="Buyer's reference">
                   {dispute.trade.paymentReference ?? (
                     <span className="text-muted-foreground">none given</span>
@@ -189,6 +183,17 @@ export function DisputeReview({ disputeId }: { disputeId: string }) {
                 Opening this page is recorded with your name against it.
               </p>
             </Panel>
+
+            {dispute.terms ? (
+              <Panel title="The advertiser's terms">
+                <p className="text-foreground px-4 py-3 text-[13px] leading-relaxed [overflow-wrap:anywhere] whitespace-pre-line">
+                  {dispute.terms}
+                </p>
+                <p className="text-muted-foreground border-border border-t px-4 py-3 text-[12px] leading-relaxed">
+                  As they stood when the order opened. The ad may say something else now.
+                </p>
+              </Panel>
+            ) : null}
 
             <Evidence dispute={dispute} />
             <Transcript dispute={dispute} />

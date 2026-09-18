@@ -40,13 +40,19 @@ type PanelProps = {
   children: ReactNode;
 };
 
-/** The kit's surface: white on canvas, 8px corners, the panel shadow. */
+/**
+ * The kit's surface: white on canvas, 8px corners, the panel shadow.
+ *
+ * min-w-0 because a panel is usually a grid or flex item, and those will not
+ * shrink below their content unless told they may: one row with a part that
+ * refuses to shrink would otherwise widen the whole page on a phone.
+ */
 export function Panel({ title, description, action, className, children }: PanelProps) {
   return (
     <section
       aria-label={title}
       className={cn(
-        "rounded-surface border-border bg-surface shadow-panel border px-5 py-5 sm:px-6",
+        "rounded-surface border-border bg-surface shadow-panel min-w-0 border px-5 py-5 sm:px-6",
         className,
       )}
     >

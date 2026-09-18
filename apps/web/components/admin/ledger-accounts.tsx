@@ -135,13 +135,14 @@ export function LedgerAccounts() {
             <Select
               {...control}
               value={form.scope}
-              onChange={(event) => setForm({ ...form, scope: event.target.value as Form["scope"] })}
-            >
-              <option value="">Any</option>
-              <option value="USER">Customer</option>
-              <option value="TRADE">Trade</option>
-              <option value="PLATFORM">Platform</option>
-            </Select>
+              onChange={(value) => setForm({ ...form, scope: value as Form["scope"] })}
+              options={[
+                { value: "", label: "Any" },
+                { value: "USER", label: "Customer" },
+                { value: "TRADE", label: "Trade" },
+                { value: "PLATFORM", label: "Platform" },
+              ]}
+            />
           )}
         </Field>
         <Field label="Type">
@@ -149,15 +150,16 @@ export function LedgerAccounts() {
             <Select
               {...control}
               value={form.type}
-              onChange={(event) => setForm({ ...form, type: event.target.value as Form["type"] })}
-            >
-              <option value="">Any</option>
-              <option value="ASSET">Asset</option>
-              <option value="LIABILITY">Liability</option>
-              <option value="EQUITY">Equity</option>
-              <option value="REVENUE">Revenue</option>
-              <option value="EXPENSE">Expense</option>
-            </Select>
+              onChange={(value) => setForm({ ...form, type: value as Form["type"] })}
+              options={[
+                { value: "", label: "Any" },
+                { value: "ASSET", label: "Asset" },
+                { value: "LIABILITY", label: "Liability" },
+                { value: "EQUITY", label: "Equity" },
+                { value: "REVENUE", label: "Revenue" },
+                { value: "EXPENSE", label: "Expense" },
+              ]}
+            />
           )}
         </Field>
         <Field label="Owner id">

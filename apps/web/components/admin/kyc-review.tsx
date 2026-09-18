@@ -239,17 +239,10 @@ export function KycReview({ submissionId }: { submissionId: string }) {
                       <Select
                         {...a11y}
                         value={reason}
-                        onChange={(event) => setReason(event.target.value as KycRejectionReason)}
-                      >
-                        <option value="" disabled>
-                          Choose a reason&hellip;
-                        </option>
-                        {REASON_OPTIONS.map(([code, label]) => (
-                          <option key={code} value={code}>
-                            {label}
-                          </option>
-                        ))}
-                      </Select>
+                        onChange={(value) => setReason(value as KycRejectionReason)}
+                        placeholder="Choose a reason…"
+                        options={REASON_OPTIONS.map(([code, label]) => ({ value: code, label }))}
+                      />
                     )}
                   </Field>
 

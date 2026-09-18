@@ -2,8 +2,9 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CreditCard } from "@phosphor-icons/react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
@@ -12,11 +13,16 @@ import { BackTo, ConfirmButton, ListNotice } from "@/components/market/bits";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
-import { StatusPill } from "@/components/ui/status-pill";
 import { Note } from "@/components/wallet/shared";
 import { cn } from "@/lib/cn";
-import { marketClient, type PaymentMethod, type PaymentMethodKind } from "@/lib/market/client";
-import { BANKS, PAYMENT_KINDS, PAYMENT_KIND_LIST } from "@/lib/market/labels";
+import {
+  marketClient,
+  paymentMethodKind,
+  type PaymentMethod,
+  type PaymentMethodKind,
+} from "@/lib/market/client";
+import { BANK_KINDS, PAYMENT_KINDS, WALLET_KINDS } from "@/lib/market/labels";
+import { safeNext } from "@/lib/next-path";
 
 /*
   Where a seller is paid. A payment method is the account a buyer will be
@@ -25,6 +31,16 @@ import { BANKS, PAYMENT_KINDS, PAYMENT_KIND_LIST } from "@/lib/market/labels";
   checked to the digit before it is stored, and a method that is wrong is
   archived and replaced rather than edited - the trades that showed the old
   details still say what they said.
+
+  A bank is a method of its own - "Awash Bank", not "bank transfer" with a
+  bank chosen underneath - because that is how a buyer thinks about where
+  to pay from, and how Binance lists them.
+
+  Reached from the middle of something as often as from the market: an offer
+  that needs a method of a kind the buyer pays through, an ad being posted.
+  Those links carry ?next= with their own address, and this page goes back
+  there - from its Back link, and on its own the moment the method is added,
+  since adding one was the whole errand.
 */
 
 const ethiopianPhone = z
@@ -32,24 +48,24 @@ const ethiopianPhone = z
   .trim()
   .regex(/^(\+?251|0)?[79]\d{8}$/, { error: "Enter an Ethiopian mobile number, like 0912345678." });
 
+type BankKind = (typeof BANK_KINDS)[number];
+type WalletKind = (typeof WALLET_KINDS)[number];
+const isBank = (kind: PaymentMethodKind): kind is BankKind =>
+  (BANK_KINDS as readonly string[]).includes(kind);
+
 const formSchema = z
   .object({
-    kind: z.enum(["TELEBIRR", "CBE_BIRR", "MPESA", "BANK_TRANSFER"]),
+    kind: paymentMethodKind,
     accountHolder: z
       .string()
       .trim()
       .min(2, { error: "Enter the name on the account." })
       .max(120, { error: "That name is too long." }),
     phone: z.string(),
-    bankCode: z.string(),
     accountNumber: z.string().trim(),
-    branch: z.string().trim().max(120, { error: "That is too long." }),
   })
   .superRefine((value, ctx) => {
-    if (value.kind === "BANK_TRANSFER") {
-      if (!value.bankCode) {
-        ctx.addIssue({ code: "custom", path: ["bankCode"], message: "Choose the bank." });
-      }
+    if (isBank(value.kind)) {
       if (!/^\d{6,24}$/.test(value.accountNumber)) {
         ctx.addIssue({
           code: "custom",
@@ -67,12 +83,32 @@ const formSchema = z
   });
 type Form = z.infer<typeof formSchema>;
 
+/** The wallets first, then the banks, each with its bar. Names only, the way Binance's picker reads. */
+const KIND_OPTIONS = [...WALLET_KINDS, ...BANK_KINDS].map((kind) => ({
+  value: kind,
+  label: PAYMENT_KINDS[kind].label,
+  bar: PAYMENT_KINDS[kind].bar,
+}));
+
 type State =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; methods: PaymentMethod[] };
 
+/** What the Back link calls the place it goes to. */
+function placeName(path: string): string {
+  if (path.startsWith("/trade/offers/")) return "The offer";
+  if (path.startsWith("/trade/ads/")) return "Your ad";
+  return "Marketplace";
+}
+
+/** An errand: sent here from a screen that is waiting for the method. */
+const isErrand = (path: string) =>
+  path.startsWith("/trade/offers/") || path.startsWith("/trade/ads/");
+
 export function PaymentMethods() {
+  const router = useRouter();
+  const next = safeNext(useSearchParams().get("next"), "/trade");
   const [state, setState] = useState<State>({ status: "loading" });
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -100,9 +136,7 @@ export function PaymentMethods() {
       kind: "TELEBIRR",
       accountHolder: "",
       phone: "",
-      bankCode: "",
       accountNumber: "",
-      branch: "",
     },
   });
   const kind = useWatch({ control, name: "kind" });
@@ -111,18 +145,24 @@ export function PaymentMethods() {
     setError(null);
     setSaved(null);
     const result = await marketClient.addPaymentMethod(
-      values.kind === "BANK_TRANSFER"
+      isBank(values.kind)
         ? {
-            kind: "BANK_TRANSFER",
+            kind: values.kind,
             accountHolder: values.accountHolder,
-            bankCode: values.bankCode,
             accountNumber: values.accountNumber,
-            ...(values.branch ? { branch: values.branch } : {}),
           }
-        : { kind: values.kind, accountHolder: values.accountHolder, phone: values.phone },
+        : {
+            kind: values.kind as WalletKind,
+            accountHolder: values.accountHolder,
+            phone: values.phone,
+          },
     );
     if (!result.ok) {
       setError(result.message);
+      return;
+    }
+    if (isErrand(next)) {
+      router.push(next);
       return;
     }
     setSaved(result.paymentMethod.label);
@@ -144,7 +184,7 @@ export function PaymentMethods() {
 
   return (
     <>
-      <BackTo href="/trade">Marketplace</BackTo>
+      <BackTo href={next}>{placeName(next)}</BackTo>
       <PageHeader
         title="Payment methods"
         description="The accounts a buyer is told to pay you at. Shown to a buyer only while a trade between you is open."
@@ -166,7 +206,10 @@ export function PaymentMethods() {
           ) : (
             <ul className="divide-border divide-y">
               {active.map((method) => (
-                <li key={method.id} className="flex items-center justify-between gap-4 py-3.5">
+                <li
+                  key={method.id}
+                  className="flex flex-col gap-2 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                >
                   <div className="flex min-w-0 items-center gap-3">
                     <span
                       aria-hidden="true"
@@ -180,12 +223,11 @@ export function PaymentMethods() {
                         {method.label}
                       </p>
                       <p className="text-muted-foreground text-[12px]">
-                        {PAYMENT_KINDS[method.kind].label}
+                        {PAYMENT_KINDS[method.kind].fullName}
                       </p>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <StatusPill status="complete">Active</StatusPill>
+                  <div className="flex flex-wrap items-center gap-2 pl-4 sm:shrink-0 sm:pl-0">
                     <ConfirmButton
                       question="Remove it?"
                       confirmLabel="Remove"
@@ -215,14 +257,21 @@ export function PaymentMethods() {
           ) : null}
           <form onSubmit={submit} noValidate className="flex flex-col gap-4">
             <Field label="Type" error={errors.kind?.message}>
-              {(control) => (
-                <Select {...control} {...register("kind")}>
-                  {PAYMENT_KIND_LIST.map((value) => (
-                    <option key={value} value={value}>
-                      {PAYMENT_KINDS[value].label}
-                    </option>
-                  ))}
-                </Select>
+              {(a11y) => (
+                <Controller
+                  control={control}
+                  name="kind"
+                  render={({ field }) => (
+                    <Select
+                      {...a11y}
+                      ref={field.ref}
+                      value={field.value}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      options={KIND_OPTIONS}
+                    />
+                  )}
+                />
               )}
             </Field>
 
@@ -231,9 +280,9 @@ export function PaymentMethods() {
               hint="Must be your own name. A payment from a different name is grounds for a dispute."
               error={errors.accountHolder?.message}
             >
-              {(control) => (
+              {(a11y) => (
                 <Input
-                  {...control}
+                  {...a11y}
                   {...register("accountHolder")}
                   autoComplete="name"
                   placeholder="Abebe Bikila"
@@ -241,42 +290,26 @@ export function PaymentMethods() {
               )}
             </Field>
 
-            {kind === "BANK_TRANSFER" ? (
-              <>
-                <Field label="Bank" error={errors.bankCode?.message}>
-                  {(control) => (
-                    <Select {...control} {...register("bankCode")}>
-                      <option value="">Choose a bank</option>
-                      {BANKS.map((bank) => (
-                        <option key={bank.code} value={bank.code}>
-                          {bank.name}
-                        </option>
-                      ))}
-                    </Select>
-                  )}
-                </Field>
-                <Field label="Account number" error={errors.accountNumber?.message}>
-                  {(control) => (
-                    <Input
-                      {...control}
-                      {...register("accountNumber")}
-                      inputMode="numeric"
-                      autoComplete="off"
-                    />
-                  )}
-                </Field>
-                <Field label="Branch" hint="Optional." error={errors.branch?.message}>
-                  {(control) => <Input {...control} {...register("branch")} autoComplete="off" />}
-                </Field>
-              </>
-            ) : (
+            {isBank(kind) ? (
               <Field
-                label={PAYMENT_KINDS[kind as PaymentMethodKind].numberLabel}
-                error={errors.phone?.message}
+                label={PAYMENT_KINDS[kind].numberLabel}
+                hint={`Your account at ${PAYMENT_KINDS[kind].fullName}.`}
+                error={errors.accountNumber?.message}
               >
-                {(control) => (
+                {(a11y) => (
                   <Input
-                    {...control}
+                    {...a11y}
+                    {...register("accountNumber")}
+                    inputMode="numeric"
+                    autoComplete="off"
+                  />
+                )}
+              </Field>
+            ) : (
+              <Field label={PAYMENT_KINDS[kind].numberLabel} error={errors.phone?.message}>
+                {(a11y) => (
+                  <Input
+                    {...a11y}
                     {...register("phone")}
                     inputMode="tel"
                     autoComplete="tel"

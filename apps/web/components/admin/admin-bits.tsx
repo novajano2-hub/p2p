@@ -61,7 +61,10 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={cn("rounded-surface border-border bg-surface border", className)}>
+    <section
+      aria-label={title}
+      className={cn("rounded-surface border-border bg-surface border", className)}
+    >
       {title ? (
         <h2 className="text-foreground border-border border-b px-4 py-3 text-[15px] font-semibold">
           {title}

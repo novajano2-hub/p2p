@@ -48,6 +48,8 @@ export type AuthErrorCode =
   | "INSUFFICIENT_FUNDS"
   | "NOT_FOUND"
   | "NOT_AVAILABLE"
+  /** The ad moved while somebody was taking it: look again, say what changed, ask again. */
+  | "OFFER_CHANGED"
   | "NETWORK"
   | "SERVER";
 
@@ -403,6 +405,8 @@ function failureFrom(status: number, text: string): Failure {
       return failure("INSUFFICIENT_FUNDS", message);
     case "NOT_FOUND":
       return failure("NOT_FOUND", message);
+    case "OFFER_CHANGED":
+      return failure("OFFER_CHANGED", message);
     case "PAYLOAD_TOO_LARGE":
       return PHOTO_TOO_LARGE;
     case "NOT_READY":

@@ -109,7 +109,7 @@ async function opened() {
   const trade = await buyer.api
     .post(
       "/v1/trades",
-      { offerId: (offer.body as OfferView).id, amount: (20n * USDT).toString() },
+      { offerId: (offer.body as OfferView).id, offerRevision: 1, amount: (20n * USDT).toString() },
       uniq("key"),
     )
     .expect(201);

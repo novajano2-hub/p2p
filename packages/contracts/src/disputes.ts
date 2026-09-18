@@ -170,6 +170,8 @@ export type AdminTradeEvent = z.infer<typeof adminTradeEvent>;
 
 /** Everything a resolver may look at, in one place. Reading it is audited. */
 export const adminDisputeDetail = adminDisputeItem.extend({
+  /** The advertiser's terms as they stood when the order opened, whatever the ad says now. */
+  terms: z.string().nullable(),
   /** Where the buyer was told to pay: RESTRICTED, decrypted for this view only. */
   payment: z.object({
     kind: paymentMethodKind,

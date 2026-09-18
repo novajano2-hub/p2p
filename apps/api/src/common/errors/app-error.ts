@@ -69,6 +69,17 @@ export class AppError extends Error {
     return new AppError("INSUFFICIENT_FUNDS", 409, message);
   }
 
+  /*
+    409: the request was well formed and the ad it named has moved since the
+    taker's screen was drawn. Nothing is written; the client fetches the ad
+    again, says what changed, and asks for the order a second time.
+  */
+  static offerChanged(
+    message = "This ad changed while you were ordering. Check what changed, then order again.",
+  ) {
+    return new AppError("OFFER_CHANGED", 409, message);
+  }
+
   static rateLimited(message = "Too many requests. Try again shortly.") {
     return new AppError("RATE_LIMITED", 429, message);
   }

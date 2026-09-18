@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Hourglass, Info, SealCheck } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { PageHeader, Panel } from "@/components/app/panel";
@@ -76,6 +76,25 @@ export function VerifyFlow() {
     },
     [],
   );
+
+  /*
+    A new step starts at the top of the panel, not wherever the previous
+    step's Continue button happened to be - on a phone, the bottom of the
+    screen. Focus moves to the step's name in the list, so the change is
+    announced as well as seen. Compared against the step last shown rather
+    than a first-render flag: arriving at the page must not scroll, and
+    development's double run of effects would otherwise make it.
+  */
+  const stepsRef = useRef<HTMLOListElement>(null);
+  const shownStep = useRef(step);
+  useEffect(() => {
+    if (shownStep.current === step) return;
+    shownStep.current = step;
+    const list = stepsRef.current;
+    if (!list) return;
+    list.scrollIntoView({ block: "start" });
+    list.querySelector<HTMLElement>('[aria-current="step"]')?.focus({ preventScroll: true });
+  }, [step]);
 
   /*
     Picking up where the last visit stopped. The typed details are
@@ -155,7 +174,7 @@ export function VerifyFlow() {
       <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
         <div className="lg:col-span-2">
           <Panel>
-            <Steps current={step} />
+            <Steps current={step} ref={stepsRef} />
 
             {user.kycStatus === "REJECTED" ? <PreviousAttempt reason={rejectionReason} /> : null}
 
@@ -233,10 +252,13 @@ export function VerifyFlow() {
   );
 }
 
-function Steps({ current }: { current: Step }) {
+function Steps({ current, ref }: { current: Step; ref: RefObject<HTMLOListElement | null> }) {
   const index = STEPS.findIndex((step) => step.id === current);
   return (
-    <ol className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
+    <ol
+      ref={ref}
+      className="mb-6 flex scroll-mt-24 flex-wrap items-center gap-x-2 gap-y-1 text-[13px]"
+    >
       {STEPS.map((step, position) => {
         const done = position < index;
         const active = position === index;
@@ -244,9 +266,10 @@ function Steps({ current }: { current: Step }) {
           <li key={step.id} className="flex items-center gap-2">
             <span
               aria-current={active ? "step" : undefined}
+              tabIndex={active ? -1 : undefined}
               className={
                 active
-                  ? "text-foreground font-medium"
+                  ? "text-foreground font-medium focus:outline-none"
                   : done
                     ? "text-muted-foreground"
                     : "text-muted-foreground/60"
