@@ -3,6 +3,7 @@ import {
   adminMfaConfirmRequest,
   kycRejectRequest,
   type AdminLoginRequest,
+  type AdminMeResponse,
   type AdminMfaConfirmRequest,
   type AdminMfaSetupResponse,
   type AdminSessionResponse,
@@ -10,11 +11,24 @@ import {
   type KycRejectRequest,
   type KycReviewItem,
 } from "@abay/contracts";
-import { Body, Controller, Get, HttpCode, Param, Post, Req, Res, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
 import { type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import { AppError } from "@/common/errors/app-error";
+import { ENV } from "@/config/config.module";
+import { type Env } from "@/config/env";
 import {
   RateLimit,
   minutes,
@@ -55,6 +69,7 @@ export class AdminAuthController {
   constructor(
     private readonly auth: AdminAuthService,
     private readonly mfa: AdminMfaService,
+    @Inject(ENV) private readonly env: Env,
   ) {}
 
   /*
@@ -105,8 +120,18 @@ export class AdminAuthController {
   @Get("auth/me")
   @UseGuards(AdminGuard)
   @AllowWithoutMfa()
-  me(@CurrentAdmin() session: AdminSessionContext): AdminSessionResponse {
-    return { admin: toIdentity(session.admin) };
+  /*
+    Also what the screen asks when an administrator says they are still there:
+    resolving the session is a request, and a request moves the idle window.
+  */
+  me(@CurrentAdmin() session: AdminSessionContext): AdminMeResponse {
+    return {
+      admin: toIdentity(session.admin),
+      session: {
+        expiresAt: session.expiresAt.toISOString(),
+        idleMinutes: this.env.ADMIN_SESSION_IDLE_MINUTES,
+      },
+    };
   }
 
   /* ------------------------------------------------------------------- mfa */

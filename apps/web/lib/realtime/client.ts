@@ -73,7 +73,18 @@ export type FrameOf<T extends ServerFrame["type"]> = Extract<ServerFrame, { type
 
 /** What a screen can listen for, beyond the server's own frames. */
 export type RealtimeEvent = ServerFrame["type"] | "connected" | "disconnected";
-export type ConnectionState = "connecting" | "open" | "closed" | "ended";
+
+/*
+  "closed" is the moment after a drop, and says nothing on screen: most drops
+  are a blip the first reconnect mends. Still down after RECONNECTING_AFTER_MS
+  is "reconnecting", which a screen shows, quietly. "ended" is the session
+  gone (4001); "paused" is this tab stood down because the account has too
+  many open (4002) - nothing wrong with the session, so nothing to sign in to.
+*/
+export type ConnectionState =
+  "connecting" | "open" | "closed" | "reconnecting" | "ended" | "paused";
+
+const RECONNECTING_AFTER_MS = 4_000;
 
 type Handler = (frame: ServerFrame | undefined) => void;
 
@@ -91,6 +102,8 @@ export class RealtimeClient {
   private readonly handlers = new Map<RealtimeEvent, Set<Handler>>();
   /** How many screens want each trade, so the last one leaving unsubscribes. */
   private readonly wanted = new Map<string, number>();
+  private readonly stateListeners = new Set<() => void>();
+  private downTimer: number | null = null;
   state: ConnectionState = "closed";
 
   constructor(private readonly url: string) {}
@@ -112,6 +125,7 @@ export class RealtimeClient {
       document.removeEventListener("visibilitychange", this.onVisibility);
     }
     this.clearTimer();
+    this.clearDownTimer();
     this.socket?.close(1000, "leaving");
     this.socket = null;
     this.setState("closed");
@@ -139,6 +153,14 @@ export class RealtimeClient {
       } else {
         this.wanted.set(tradeId, left);
       }
+    };
+  }
+
+  /** For useSyncExternalStore: called whenever `state` changes. */
+  subscribeState(listener: () => void): () => void {
+    this.stateListeners.add(listener);
+    return () => {
+      this.stateListeners.delete(listener);
     };
   }
 
@@ -183,13 +205,22 @@ export class RealtimeClient {
     socket.onclose = (event: CloseEvent) => {
       if (this.socket !== socket) return;
       this.socket = null;
-      this.emit("disconnected", undefined);
-      if (this.stopped) return;
-      if (event.code === SESSION_ENDED || event.code === TOO_MANY_CONNECTIONS) {
-        this.setState("ended");
-        return;
+      /*
+        Why it closed is settled before anyone hears that it did: a listener
+        asks the state to tell an ended session (4001) from a blip, and until
+        this order was right it always saw the old state and missed it.
+      */
+      if (!this.stopped) {
+        this.setState(
+          event.code === SESSION_ENDED
+            ? "ended"
+            : event.code === TOO_MANY_CONNECTIONS
+              ? "paused"
+              : "closed",
+        );
       }
-      this.setState("closed");
+      this.emit("disconnected", undefined);
+      if (this.stopped || this.state === "ended" || this.state === "paused") return;
       // 1001 is the server going away for a moment: come back soon rather
       // than on the first backoff step, which is already short.
       this.scheduleReconnect();
@@ -236,7 +267,30 @@ export class RealtimeClient {
   }
 
   private setState(state: ConnectionState): void {
-    this.state = state;
+    if (state === "open" || state === "ended" || state === "paused") this.clearDownTimer();
+    // Down, and not by choice: say so only if it lasts.
+    if (
+      (state === "closed" || state === "connecting") &&
+      !this.stopped &&
+      this.downTimer === null
+    ) {
+      this.downTimer = window.setTimeout(() => {
+        this.downTimer = null;
+        if (this.state === "closed" || this.state === "connecting") this.setState("reconnecting");
+      }, RECONNECTING_AFTER_MS);
+    }
+    // A reconnect attempt while already "reconnecting" stays "reconnecting" on screen.
+    const shown = this.state === "reconnecting" && state === "connecting" ? "reconnecting" : state;
+    if (shown === this.state) return;
+    this.state = shown;
+    for (const listener of this.stateListeners) listener();
+  }
+
+  private clearDownTimer(): void {
+    if (this.downTimer !== null) {
+      window.clearTimeout(this.downTimer);
+      this.downTimer = null;
+    }
   }
 
   private emit(event: RealtimeEvent, frame: ServerFrame | undefined): void {

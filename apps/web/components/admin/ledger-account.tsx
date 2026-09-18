@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft } from "@phosphor-icons/react";
+import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { NeedsRole, useAdmin } from "@/components/admin/admin-shell";
@@ -36,6 +37,7 @@ import { ledgerClient, type LedgerAccount, type LedgerStatementRow } from "@/lib
 
 type State =
   | { status: "loading" }
+  | { status: "missing" }
   | {
       status: "ready";
       account: LedgerAccount;
@@ -49,6 +51,11 @@ export function LedgerAccountView({ accountId }: { accountId: string }) {
   const admin = useAdmin();
   const may = admin.roles.includes("LEDGER_VIEWER");
   const [state, setState] = useState<State>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => {
+    setState({ status: "loading" });
+    setAttempt((value) => value + 1);
+  };
 
   useEffect(() => {
     if (!may) return;
@@ -64,13 +71,15 @@ export function LedgerAccountView({ accountId }: { accountId: string }) {
               nextCursor: result.nextCursor,
               more: false,
             }
-          : { status: "error", message: result.message },
+          : result.code === "NOT_FOUND"
+            ? { status: "missing" }
+            : { status: "error", message: result.message },
       );
     });
     return () => {
       live = false;
     };
-  }, [may, accountId]);
+  }, [may, accountId, attempt]);
 
   const loadMore = async () => {
     if (state.status !== "ready" || !state.nextCursor || state.more) return;
@@ -89,6 +98,8 @@ export function LedgerAccountView({ accountId }: { accountId: string }) {
         : { status: "error", message: result.message },
     );
   };
+
+  if (state.status === "missing") notFound();
 
   const back = (
     <AppLink
@@ -115,7 +126,9 @@ export function LedgerAccountView({ accountId }: { accountId: string }) {
         {state.status === "loading" ? (
           <Notice tone="loading">Loading the account&hellip;</Notice>
         ) : (
-          <Notice tone="error">{state.message}</Notice>
+          <Notice tone="error" onRetry={retry}>
+            {state.message}
+          </Notice>
         )}
       </>
     );

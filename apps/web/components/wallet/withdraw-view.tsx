@@ -5,6 +5,7 @@ import { ArrowsClockwise, Tray, Warning } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
+import { LoadFailed } from "@/components/app/load-failed";
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
 import { ActivityList, fromWithdrawal } from "@/components/wallet/activity";
@@ -43,6 +44,8 @@ import { toast, toastFailure } from "@/lib/toast";
 export function WithdrawView() {
   const [networkId, setNetworkId] = useState<NetworkId>(DEFAULT_NETWORK);
   const [limits, setLimits] = useState<WithdrawalLimits | null>(null);
+  // Without the limits the button cannot be pressed: say why, and offer to ask again.
+  const [limitsProblem, setLimitsProblem] = useState<string | null>(null);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
@@ -75,7 +78,12 @@ export function WithdrawView() {
 
   const refresh = useCallback(() => {
     void walletClient.limits().then((result) => {
-      if (result.ok) setLimits(result.limits);
+      if (result.ok) {
+        setLimits(result.limits);
+        setLimitsProblem(null);
+      } else {
+        setLimitsProblem(result.message);
+      }
     });
     void walletClient.withdrawals().then((result) => {
       if (result.ok) setWithdrawals(result.withdrawals);
@@ -233,6 +241,9 @@ export function WithdrawView() {
 
         <div className="flex flex-col gap-4 lg:gap-6">
           <Panel title="Summary">
+            {limitsProblem && !limits ? (
+              <LoadFailed message={limitsProblem} onRetry={refresh} className="py-4" />
+            ) : null}
             <FormError message={error} />
 
             <dl className="divide-border divide-y">
@@ -365,6 +376,8 @@ function CancelButton({ id, onCancelled }: { id: string; onCancelled: () => void
           } else {
             setFailed(result.message);
             toastFailure(result);
+            // Approved, or sent, while the list was open: show where it has got to.
+            if (result.code === "CONFLICT") onCancelled();
           }
         }}
       >

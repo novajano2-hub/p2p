@@ -4,6 +4,7 @@ import { Megaphone } from "@phosphor-icons/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { LoadFailed } from "@/components/app/load-failed";
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
 import {
@@ -89,6 +90,8 @@ export function MyAds() {
     if (!result.ok) {
       setError(result.message);
       toastFailure(result);
+      // Closed from another device, taken offline in another tab: show what is true now.
+      if (result.code === "CONFLICT") refresh();
       return;
     }
     const [title, description] = done(action, offer);
@@ -110,7 +113,13 @@ export function MyAds() {
         state.status === "loading" ? (
           <ListNotice>Loading…</ListNotice>
         ) : state.status === "error" ? (
-          <ListNotice>{state.message}</ListNotice>
+          <LoadFailed
+            message={state.message}
+            onRetry={() => {
+              setState({ status: "loading" });
+              refresh();
+            }}
+          />
         ) : list.length === 0 ? (
           <EmptyState
             icon={Megaphone}

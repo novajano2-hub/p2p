@@ -4,6 +4,7 @@ import { CheckCircle } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
 import { NeedsRole, useAdmin } from "@/components/admin/admin-shell";
+import { LoadFailed } from "@/components/app/load-failed";
 import { AppLink } from "@/components/ui/app-link";
 import { adminClient, type KycReviewItem } from "@/lib/admin/client";
 
@@ -22,6 +23,7 @@ export function KycQueue() {
     | { status: "ready"; items: KycReviewItem[] }
     | { status: "error"; message: string }
   >({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
 
   const mayReview = admin.roles.includes("KYC_REVIEWER");
 
@@ -39,7 +41,7 @@ export function KycQueue() {
     return () => {
       live = false;
     };
-  }, [mayReview]);
+  }, [mayReview, attempt]);
 
   if (!mayReview) {
     return (
@@ -61,9 +63,13 @@ export function KycQueue() {
       ) : null}
 
       {state.status === "error" ? (
-        <p role="alert" className="text-destructive text-sm">
-          {state.message}
-        </p>
+        <LoadFailed
+          message={state.message}
+          onRetry={() => {
+            setState({ status: "loading" });
+            setAttempt((value) => value + 1);
+          }}
+        />
       ) : null}
 
       {state.status === "ready" && state.items.length === 0 ? (

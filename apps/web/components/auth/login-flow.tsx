@@ -8,7 +8,7 @@ import { useForm } from "react-hook-form";
 import { AuthCard, AuthFootnote, AuthLink, OrDivider } from "@/components/auth/auth-card";
 import { CodeStep } from "@/components/auth/code-step";
 import { GoogleButton } from "@/components/auth/google-button";
-import { FormError } from "@/components/auth/notices";
+import { FormError, FormNote } from "@/components/auth/notices";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -19,18 +19,29 @@ import {
   type LoginEmailForm,
   type LoginPasswordForm,
 } from "@/lib/auth/schemas";
+import { safeNext } from "@/lib/next-path";
 import { afterAuth, cta, site } from "@/lib/site";
 
 /*
   Log in: email, then password, then the code that was just sent to that
   email. The password proves the secret is known; the code proves the inbox is
   still held. A stolen password alone gets nobody in.
+
+  A log-in that was asked for on the way somewhere - a link to an order while
+  signed out, a session that ended mid-task - carries ?next=, and lands there
+  instead of on Home. ?why= says what happened, above the form.
 */
+
+const WHY = {
+  ended: "Your session ended. Log in again and you will be taken back to where you were.",
+} as const;
 type Step = "email" | "password" | "code";
 
 export function LoginFlow() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const next = safeNext(searchParams.get("next"), afterAuth);
+  const why = searchParams.get("why") === "ended" ? WHY.ended : null;
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   // How a Google sign-in that did not finish reports back: ?error=google_<reason>.
@@ -46,7 +57,7 @@ export function LoginFlow() {
             email={email}
             verify={(code) => authClient.verifyLogin({ code })}
             resend={() => authClient.resendLoginCode()}
-            onVerified={() => router.replace(afterAuth)}
+            onVerified={() => router.replace(next)}
             onChangeEmail={() => setStep("email")}
           />
         </AuthCard>
@@ -74,9 +85,11 @@ export function LoginFlow() {
           ) : undefined
         }
       >
+        {step === "email" && why ? <FormNote>{why}</FormNote> : null}
         {step === "email" ? (
           <EmailStep
             initialEmail={email}
+            next={next === afterAuth ? undefined : next}
             notice={googleError}
             onContinue={(value) => {
               setGoogleError(null);
@@ -103,10 +116,12 @@ function Footnote() {
 
 function EmailStep({
   initialEmail,
+  next,
   notice,
   onContinue,
 }: {
   initialEmail: string;
+  next: string | undefined;
   notice: string | null;
   onContinue: (email: string) => void;
 }) {
@@ -150,7 +165,10 @@ function EmailStep({
       </form>
 
       <OrDivider />
-      <GoogleButton onResult={(result) => setError(result.ok ? null : result.message)} />
+      <GoogleButton
+        next={next}
+        onResult={(result) => setError(result.ok ? null : result.message)}
+      />
     </>
   );
 }

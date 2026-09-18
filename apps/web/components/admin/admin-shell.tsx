@@ -6,9 +6,18 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { useSyncExternalStore } from "react";
 
 import { MfaEnroll } from "@/components/admin/mfa-enroll";
+import { SessionClock } from "@/components/admin/session-clock";
+import { ConnectionBanner } from "@/components/app/connection-banner";
+import { LoadFailed } from "@/components/app/load-failed";
 import { AppLink } from "@/components/ui/app-link";
 import { Button, type ButtonProps } from "@/components/ui/button";
-import { adminClient, type AdminIdentity } from "@/lib/admin/client";
+import {
+  adminClient,
+  onAdminSessionEnded,
+  type AdminIdentity,
+  type AdminSessionTiming,
+} from "@/lib/admin/client";
+import { signInAgain } from "@/lib/next-path";
 import {
   applyThemeChoice,
   getServerThemeChoice,
@@ -28,7 +37,17 @@ import {
   from bg-foreground/text-background would turn near-white the moment an
   administrator's system sits in dark mode, which says the opposite of what
   this bar exists to say.
+
+  An administrator whose session ends - its idle window ran out, its time
+  was up, somebody revoked it - is sent to sign in with the page they were on,
+  and brought back to it (lib/next-path.ts). Before either end, the session
+  clock asks whether they are still there.
 */
+
+const LOG_IN = "/admin/login";
+
+/** The page this tab is on, to come back to after signing in. */
+const here = (): string => `${window.location.pathname}${window.location.search}`;
 
 const AdminContext = createContext<AdminIdentity | null>(null);
 
@@ -40,23 +59,34 @@ export function useAdmin(): AdminIdentity {
 
 type State =
   | { status: "loading" }
-  | { status: "in"; admin: AdminIdentity }
+  | { status: "in"; admin: AdminIdentity; session: AdminSessionTiming }
   | { status: "error"; message: string };
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [state, setState] = useState<State>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+
+  // Any request from any admin screen that finds the session gone.
+  useEffect(
+    () =>
+      onAdminSessionEnded(() => {
+        window.location.replace(signInAgain(LOG_IN, here(), "ended"));
+      }),
+    [],
+  );
 
   useEffect(() => {
     let live = true;
     void adminClient.me().then((result) => {
       if (!live) return;
       if (result.ok) {
-        setState({ status: "in", admin: result.admin });
+        setState({ status: "in", admin: result.admin, session: result.session });
         return;
       }
       if (result.code === "AUTH") {
-        router.replace("/admin/login");
+        // Not signed in: sign in, then straight back here.
+        router.replace(signInAgain(LOG_IN, here()));
         return;
       }
       setState({ status: "error", message: result.message });
@@ -64,7 +94,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
     return () => {
       live = false;
     };
-  }, [router]);
+  }, [router, attempt]);
 
   if (state.status === "loading") {
     return (
@@ -79,9 +109,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
   if (state.status === "error") {
     return (
       <Frame>
-        <p role="alert" className="text-destructive text-sm">
-          {state.message}
-        </p>
+        <LoadFailed
+          message={state.message}
+          onRetry={() => {
+            setState({ status: "loading" });
+            setAttempt((value) => value + 1);
+          }}
+        />
       </Frame>
     );
   }
@@ -96,7 +130,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
     return (
       <MfaEnroll
         email={state.admin.email}
-        onEnrolled={(admin) => setState({ status: "in", admin })}
+        onEnrolled={(admin) =>
+          setState((current) => (current.status === "in" ? { ...current, admin } : current))
+        }
       />
     );
   }
@@ -128,6 +164,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
               </span>
               <button
                 type="button"
+                aria-label="Sign out"
                 onClick={async () => {
                   await adminClient.logout();
                   router.replace("/admin/login");
@@ -140,7 +177,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </div>
           </div>
         </header>
+        <ConnectionBanner className="top-14" />
         <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-8 sm:py-10">{children}</main>
+        <SessionClock timing={state.session} />
       </div>
     </AdminContext.Provider>
   );

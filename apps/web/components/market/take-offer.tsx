@@ -1,10 +1,11 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
+import { notFound, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
+import { LoadFailed } from "@/components/app/load-failed";
 import { PageHeader, Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
 import {
@@ -129,6 +130,8 @@ function sayChanged(): void {
 
 type State =
   | { status: "loading" }
+  /** Gone before the page could show it: the not-found page, not a sentence in a panel. */
+  | { status: "missing" }
   | { status: "error"; message: string }
   | { status: "ready"; offer: MarketOffer; methods: PaymentMethod[] };
 
@@ -149,6 +152,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
     so while it trails the ad on screen there are changes to read first.
   */
   const [accepted, setAccepted] = useState<MarketOffer | null>(null);
+  const [attempt, setAttempt] = useState(0);
   // What a look is comparing against, without making every look a new effect.
   const view = useRef<{ offer: MarketOffer; methods: PaymentMethod[] } | null>(null);
   const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
@@ -210,7 +214,11 @@ export function TakeOffer({ offerId }: { offerId: string }) {
       const found = await marketClient.offer(offerId);
       if (!live) return;
       if (!found.ok) {
-        setState({ status: "error", message: found.message });
+        setState(
+          found.code === "NOT_FOUND"
+            ? { status: "missing" }
+            : { status: "error", message: found.message },
+        );
         return;
       }
       // Selling to a BUY offer needs the taker's own methods to choose from.
@@ -226,7 +234,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
     return () => {
       live = false;
     };
-  }, [offerId]);
+  }, [offerId, attempt]);
 
   useEffect(() => {
     view.current = state.status === "ready" ? { offer: state.offer, methods: state.methods } : null;
@@ -301,12 +309,19 @@ export function TakeOffer({ offerId }: { offerId: string }) {
       </>
     );
   }
+  if (state.status === "missing") notFound();
   if (state.status === "error" || !offer) {
     return (
       <>
         <BackTo href="/trade">Marketplace</BackTo>
         <Panel>
-          <ListNotice>{state.status === "error" ? state.message : null}</ListNotice>
+          <LoadFailed
+            message={state.status === "error" ? state.message : "The ad did not load."}
+            onRetry={() => {
+              setState({ status: "loading" });
+              setAttempt((value) => value + 1);
+            }}
+          />
         </Panel>
       </>
     );

@@ -57,6 +57,24 @@ export type AdminIdentity = z.infer<typeof adminIdentity>;
 export const adminSessionResponse = z.object({ admin: adminIdentity });
 export type AdminSessionResponse = z.infer<typeof adminSessionResponse>;
 
+/**
+ * How long the session behind a request has left. It ends at a fixed time
+ * after sign-in, and earlier after a stretch with no requests at all; the
+ * screen warns before either, so a decision is never lost to a sign-out it
+ * did not see coming.
+ */
+export const adminSessionTiming = z.object({
+  /** When it ends whatever happens: ADMIN_SESSION_TTL_HOURS after sign-in. */
+  expiresAt: z.string(),
+  /** How long without a request ends it early: ADMIN_SESSION_IDLE_MINUTES. */
+  idleMinutes: z.number().int().positive(),
+});
+export type AdminSessionTiming = z.infer<typeof adminSessionTiming>;
+
+/** GET /v1/admin/auth/me: who is signed in, and for how much longer. */
+export const adminMeResponse = adminSessionResponse.extend({ session: adminSessionTiming });
+export type AdminMeResponse = z.infer<typeof adminMeResponse>;
+
 /* --------------------------------------------------------------------- mfa */
 
 /**

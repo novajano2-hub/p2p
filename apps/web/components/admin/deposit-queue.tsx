@@ -33,6 +33,11 @@ export function DepositQueue() {
   const admin = useAdmin();
   const may = admin.roles.includes("DEPOSIT_REVIEWER");
   const [state, setState] = useState<State>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => {
+    setState({ status: "loading" });
+    setAttempt((value) => value + 1);
+  };
 
   useEffect(() => {
     if (!may) return;
@@ -48,7 +53,7 @@ export function DepositQueue() {
     return () => {
       live = false;
     };
-  }, [may]);
+  }, [may, attempt]);
 
   const heading = (
     <PageHeading
@@ -72,7 +77,9 @@ export function DepositQueue() {
         {state.status === "loading" ? (
           <Notice tone="loading">Loading the queue&hellip;</Notice>
         ) : (
-          <Notice tone="error">{state.message}</Notice>
+          <Notice tone="error" onRetry={retry}>
+            {state.message}
+          </Notice>
         )}
       </>
     );

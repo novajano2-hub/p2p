@@ -1,3 +1,4 @@
+import { type MarketplaceOffer } from "@abay/contracts";
 import { type PrismaClient, type VerificationPurpose } from "@abay/database";
 import request from "supertest";
 
@@ -143,6 +144,29 @@ export function uploadPhoto(
     .set("x-csrf-token", csrfFor(cookie))
     .set("content-type", contentType)
     .send(body);
+}
+
+/**
+ * Every page of the marketplace, not only the first. Every spec's ads stay
+ * listed until the teardown - a spec's own earlier tests' too - and at a
+ * better or the same price those sort ahead of the one a test is looking for.
+ */
+export async function listed(
+  who: { get: (path: string) => request.Test },
+  want: "BUY" | "SELL",
+  extra = "",
+): Promise<MarketplaceOffer[]> {
+  const offers: MarketplaceOffer[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 40; page++) {
+    const after = cursor ? `&cursor=${cursor}` : "";
+    const response = await who.get(`/v1/offers?want=${want}&limit=50${extra}${after}`).expect(200);
+    const body = response.body as { offers: MarketplaceOffer[]; nextCursor: string | null };
+    offers.push(...body.offers);
+    cursor = body.nextCursor;
+    if (!cursor) break;
+  }
+  return offers;
 }
 
 /** Every photograph a submission needs, uploaded and accepted, as the ids it refers to. */

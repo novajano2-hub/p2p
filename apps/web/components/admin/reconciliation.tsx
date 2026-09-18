@@ -134,7 +134,9 @@ export function Reconciliation() {
         {state.status === "loading" ? (
           <Notice tone="loading">Asking the chain&hellip;</Notice>
         ) : (
-          <Notice tone="error">{state.message}</Notice>
+          <Notice tone="error" onRetry={() => void run()}>
+            {state.message}
+          </Notice>
         )}
       </>
     );

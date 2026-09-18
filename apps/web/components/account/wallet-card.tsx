@@ -3,6 +3,7 @@
 import { Eye, EyeSlash } from "@phosphor-icons/react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
+import { LoadFailed } from "@/components/app/load-failed";
 import { Panel } from "@/components/app/panel";
 import { ButtonLink } from "@/components/ui/button";
 import {
@@ -39,16 +40,20 @@ export function WalletCard({ className }: { className?: string | undefined }) {
     getServerBalanceHidden,
   );
   const [balance, setBalance] = useState<WalletBalance | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
     void walletClient.balance().then((result) => {
-      if (live && result.ok) setBalance(result.balance);
+      if (!live) return;
+      if (result.ok) setBalance(result.balance);
+      else setProblem(result.message);
     });
     return () => {
       live = false;
     };
-  }, []);
+  }, [attempt]);
 
   const figure = (value: string | undefined): string =>
     hidden ? MASKED_AMOUNT : value === undefined ? "—" : formatMicro(value);
@@ -113,6 +118,16 @@ export function WalletCard({ className }: { className?: string | undefined }) {
           </div>
         ))}
       </dl>
+      {problem && !balance ? (
+        <LoadFailed
+          message={problem}
+          onRetry={() => {
+            setProblem(null);
+            setAttempt((value) => value + 1);
+          }}
+          className="py-5"
+        />
+      ) : null}
     </Panel>
   );
 }

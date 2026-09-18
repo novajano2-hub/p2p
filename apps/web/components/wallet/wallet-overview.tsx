@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
+import { LoadFailed } from "@/components/app/load-failed";
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
 import {
   ActivityList,
@@ -63,40 +64,60 @@ const ACTIONS = [
   },
 ] as const;
 
-const ZERO: WalletBalance = {
-  asset: ASSET.symbol,
-  available: "0",
-  escrowed: "0",
-  pendingWithdrawal: "0",
-  total: "0",
-};
+/*
+  A balance that did not load is shown as a dash and a way to ask again,
+  never as a zero: a figure beside somebody's money is a statement about it,
+  and a wrong one - "you have nothing" - is worse than none.
+*/
+type Loaded<T> =
+  { status: "loading" } | { status: "error"; message: string } | { status: "ready"; value: T };
 
 export function WalletOverview() {
   const hidden = useBalanceHidden();
-  const [balance, setBalance] = useState<WalletBalance>(ZERO);
-  const [activity, setActivity] = useState<Activity[]>([]);
+  const [held, setHeld] = useState<Loaded<WalletBalance>>({ status: "loading" });
+  const [activity, setActivity] = useState<Loaded<Activity[]>>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
     void (async () => {
-      const [held, deposits, withdrawals] = await Promise.all([
+      const [balance, deposits, withdrawals] = await Promise.all([
         walletClient.balance(),
         walletClient.deposits(),
         walletClient.withdrawals(),
       ]);
       if (!live) return;
-      if (held.ok) setBalance(held.balance);
+      setHeld(
+        balance.ok
+          ? { status: "ready", value: balance.balance }
+          : { status: "error", message: balance.message },
+      );
+      if (!deposits.ok || !withdrawals.ok) {
+        const failed = !deposits.ok ? deposits : withdrawals;
+        setActivity({ status: "error", message: failed.ok ? "" : failed.message });
+        return;
+      }
       const rows: Activity[] = [
-        ...(deposits.ok ? deposits.deposits.map((d) => fromDeposit(d)) : []),
-        ...(withdrawals.ok ? withdrawals.withdrawals.map((w) => fromWithdrawal(w)) : []),
+        ...deposits.deposits.map((d) => fromDeposit(d)),
+        ...withdrawals.withdrawals.map((w) => fromWithdrawal(w)),
       ];
       rows.sort((a, b) => b.at.localeCompare(a.at));
-      setActivity(rows.slice(0, 10));
+      setActivity({ status: "ready", value: rows.slice(0, 10) });
     })();
     return () => {
       live = false;
     };
-  }, []);
+  }, [attempt]);
+
+  const retry = () => {
+    setHeld({ status: "loading" });
+    setActivity({ status: "loading" });
+    setAttempt((value) => value + 1);
+  };
+  const balance = held.status === "ready" ? held.value : null;
+  /** A figure, masked when asked, a dash while there is none. */
+  const shown = (value: string | undefined) =>
+    value === undefined ? "—" : <Amount value={value} />;
 
   return (
     <>
@@ -128,7 +149,7 @@ export function WalletOverview() {
                     hidden && "tracking-widest",
                   )}
                 >
-                  {hidden ? MASKED_AMOUNT : formatMicro(balance.total)}
+                  {hidden ? MASKED_AMOUNT : balance ? formatMicro(balance.total) : "—"}
                 </span>
                 <span className="text-muted-foreground text-base font-medium">{ASSET.symbol}</span>
               </p>
@@ -154,19 +175,19 @@ export function WalletOverview() {
             <div>
               <dt className="text-muted-foreground text-[12px]">Available</dt>
               <dd className="text-foreground mt-1 font-sans text-lg font-bold">
-                <Amount value={balance.available} />
+                {shown(balance?.available)}
               </dd>
             </div>
             <div>
               <dt className="text-muted-foreground text-[12px]">In escrow</dt>
               <dd className="text-foreground mt-1 font-sans text-lg font-bold">
-                <Amount value={balance.escrowed} />
+                {shown(balance?.escrowed)}
               </dd>
             </div>
             <div className="col-span-2 sm:col-span-1">
               <dt className="text-muted-foreground text-[12px]">Withdrawing</dt>
               <dd className="text-foreground mt-1 font-sans text-lg font-bold">
-                <Amount value={balance.pendingWithdrawal} />
+                {shown(balance?.pendingWithdrawal)}
               </dd>
             </div>
           </dl>
@@ -176,6 +197,9 @@ export function WalletOverview() {
             way out. Both are yours, and both come back to available if the thing they are held for
             does not happen.
           </p>
+          {held.status === "error" ? (
+            <LoadFailed message={held.message} onRetry={retry} className="py-5" />
+          ) : null}
         </Panel>
 
         <div className="lg:col-span-3">
@@ -217,10 +241,14 @@ export function WalletOverview() {
               </div>
               <div className="text-right">
                 <p className="text-foreground font-sans text-[15px] font-bold">
-                  <Amount value={balance.total} unit={null} />
+                  {balance ? <Amount value={balance.total} unit={null} /> : "—"}
                 </p>
                 <p className="text-muted-foreground text-[12px]">
-                  {hidden ? MASKED_AMOUNT : `${formatMicro(balance.available)} available`}
+                  {hidden
+                    ? MASKED_AMOUNT
+                    : balance
+                      ? `${formatMicro(balance.available)} available`
+                      : "—"}
                 </p>
               </div>
             </li>
@@ -232,14 +260,18 @@ export function WalletOverview() {
         </Panel>
 
         <Panel title="Recent activity" className="lg:col-span-3">
-          {activity.length === 0 ? (
+          {activity.status === "loading" ? (
+            <p className="text-muted-foreground px-4 py-8 text-center text-[13px]">Loading…</p>
+          ) : activity.status === "error" ? (
+            <LoadFailed message={activity.message} onRetry={retry} />
+          ) : activity.value.length === 0 ? (
             <EmptyState
               icon={ClockCounterClockwise}
               title="Nothing yet"
               description="Deposits and withdrawals are listed here, newest first, with where each one has got to."
             />
           ) : (
-            <ActivityList items={activity} />
+            <ActivityList items={activity.value} />
           )}
         </Panel>
       </div>

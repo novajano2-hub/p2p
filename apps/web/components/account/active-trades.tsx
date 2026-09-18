@@ -3,6 +3,7 @@
 import { Handshake } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 
+import { LoadFailed } from "@/components/app/load-failed";
 import { EmptyState, Panel } from "@/components/app/panel";
 import { useRealtimeEvent } from "@/components/app/realtime-provider";
 import { TradePill, birr, useCountdown, usdt } from "@/components/market/bits";
@@ -18,10 +19,16 @@ import { marketClient, type Trade } from "@/lib/market/client";
 */
 export function ActiveTrades({ className }: { className?: string | undefined }) {
   const [trades, setTrades] = useState<Trade[] | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
 
   const load = useCallback(() => {
     void marketClient.trades("open").then((result) => {
-      if (result.ok) setTrades(result.trades.slice(0, 4));
+      if (result.ok) {
+        setTrades(result.trades.slice(0, 4));
+        setProblem(null);
+      } else {
+        setProblem(result.message);
+      }
     });
   }, []);
   useEffect(load, [load]);
@@ -42,7 +49,15 @@ export function ActiveTrades({ className }: { className?: string | undefined }) 
       }
       className={className}
     >
-      {trades === null ? (
+      {trades === null && problem ? (
+        <LoadFailed
+          message={problem}
+          onRetry={() => {
+            setProblem(null);
+            load();
+          }}
+        />
+      ) : trades === null ? (
         <p className="text-muted-foreground px-4 py-8 text-center text-[13px]">Loading…</p>
       ) : trades.length === 0 ? (
         <EmptyState

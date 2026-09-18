@@ -61,6 +61,11 @@ export function LedgerTransactions() {
   const [form, setForm] = useState<Form>(EMPTY);
   const [applied, setApplied] = useState<Form>(EMPTY);
   const [state, setState] = useState<State>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => {
+    setState({ status: "loading" });
+    setAttempt((value) => value + 1);
+  };
 
   useEffect(() => {
     if (!may) return;
@@ -81,7 +86,7 @@ export function LedgerTransactions() {
     return () => {
       live = false;
     };
-  }, [may, applied]);
+  }, [may, applied, attempt]);
 
   const loadMore = async () => {
     if (state.status !== "ready" || !state.nextCursor || state.more) return;
@@ -188,7 +193,11 @@ export function LedgerTransactions() {
       {state.status === "loading" ? (
         <Notice tone="loading">Loading transactions&hellip;</Notice>
       ) : null}
-      {state.status === "error" ? <Notice tone="error">{state.message}</Notice> : null}
+      {state.status === "error" ? (
+        <Notice tone="error" onRetry={retry}>
+          {state.message}
+        </Notice>
+      ) : null}
 
       {state.status === "ready" ? (
         <Panel>

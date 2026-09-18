@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft, Info } from "@phosphor-icons/react";
+import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
@@ -41,6 +42,8 @@ export function DepositReview({ depositId }: { depositId: string }) {
   const may = admin.roles.includes("DEPOSIT_REVIEWER");
   const [deposit, setDeposit] = useState<AdminDeposit | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!may) return;
@@ -48,12 +51,15 @@ export function DepositReview({ depositId }: { depositId: string }) {
     void depositsClient.one(depositId).then((result) => {
       if (!live) return;
       if (result.ok) setDeposit(result.deposit);
+      else if (result.code === "NOT_FOUND") setMissing(true);
       else setError(result.message);
     });
     return () => {
       live = false;
     };
-  }, [depositId, may]);
+  }, [depositId, may, attempt]);
+
+  if (missing) notFound();
 
   if (!may) return <NeedsRole role="DEPOSIT_REVIEWER" />;
 
@@ -67,7 +73,17 @@ export function DepositReview({ depositId }: { depositId: string }) {
         Deposits
       </AppLink>
 
-      {error ? <Notice tone="error">{error}</Notice> : null}
+      {error ? (
+        <Notice
+          tone="error"
+          onRetry={() => {
+            setError(null);
+            setAttempt((value) => value + 1);
+          }}
+        >
+          {error}
+        </Notice>
+      ) : null}
       {!deposit && !error ? <Notice tone="loading">Loading the deposit&hellip;</Notice> : null}
 
       {deposit ? (

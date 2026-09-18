@@ -39,13 +39,30 @@ import { toast, toastFailure, type Refusal } from "@/lib/toast";
 /** Mirrors TRADE_DISPUTE_COOLDOWN_MINUTES on the server, for the sentence only. The server is what refuses. */
 const COOLDOWN_MINUTES = 10;
 
-export function DisputePanel({ trade, onUpdated }: { trade: Trade; onUpdated: () => void }) {
+export function DisputePanel({
+  trade,
+  onUpdated,
+  onConflict,
+}: {
+  trade: Trade;
+  onUpdated: () => void;
+  /** An action refused as out of date: the page looks again and says what the order is now. */
+  onConflict?: ((refusal: Refusal) => Promise<void>) | undefined;
+}) {
   const [dispute, setDispute] = useState<Dispute | null>(null);
   const [error, setShownError] = useState<string | null>(null);
-  const setError = useCallback((refusal: Refusal | null) => {
-    setShownError(refusal?.message ?? null);
-    if (refusal) toastFailure(refusal);
-  }, []);
+  const setError = useCallback(
+    (refusal: Refusal | null) => {
+      if (refusal?.code === "CONFLICT" && onConflict) {
+        setShownError(null);
+        void onConflict(refusal);
+        return;
+      }
+      setShownError(refusal?.message ?? null);
+      if (refusal) toastFailure(refusal);
+    },
+    [onConflict],
+  );
   const [opening, setOpening] = useState(false);
   const summary = trade.dispute;
 

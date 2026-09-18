@@ -4,6 +4,7 @@ import { Storefront } from "@phosphor-icons/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { LoadFailed } from "@/components/app/load-failed";
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
 import {
   AdvertiserLine,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/market/client";
 import { FIAT, PAYMENT_KINDS, PAYMENT_KIND_LIST } from "@/lib/market/labels";
 import { formatSantim, toSantim } from "@/lib/market/money";
+import { toastFailure } from "@/lib/toast";
 import { withNext } from "@/lib/next-path";
 
 /*
@@ -106,9 +108,10 @@ export function Marketplace() {
     [want, amountSantim, kind],
   );
 
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
-    // The filters changed: start again from the first page.
+    // The filters changed, or the person asked again: start from the first page.
     void load().then((result) => {
       if (!live) return;
       setState(
@@ -120,20 +123,23 @@ export function Marketplace() {
     return () => {
       live = false;
     };
-  }, [load]);
+  }, [load, attempt]);
 
   const loadMore = async () => {
     if (state.status !== "ready" || !state.nextCursor) return;
     setMore(true);
     const result = await load(state.nextCursor);
     setMore(false);
-    if (result.ok) {
-      setState({
-        status: "ready",
-        offers: [...state.offers, ...result.offers],
-        nextCursor: result.nextCursor,
-      });
+    if (!result.ok) {
+      // The offers already shown stay; the button is still there to press again.
+      toastFailure(result);
+      return;
     }
+    setState({
+      status: "ready",
+      offers: [...state.offers, ...result.offers],
+      nextCursor: result.nextCursor,
+    });
   };
 
   return (
@@ -222,7 +228,13 @@ export function Marketplace() {
           {state.status === "loading" ? (
             <ListNotice>Finding offers…</ListNotice>
           ) : state.status === "error" ? (
-            <ListNotice>{state.message}</ListNotice>
+            <LoadFailed
+              message={state.message}
+              onRetry={() => {
+                setState({ status: "loading" });
+                setAttempt((value) => value + 1);
+              }}
+            />
           ) : state.offers.length === 0 ? (
             <EmptyState
               icon={Storefront}

@@ -1,12 +1,14 @@
 "use client";
 
-import { ShieldCheck } from "@phosphor-icons/react";
+import { Info, ShieldCheck } from "@phosphor-icons/react";
+import { useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
 import { adminClient } from "@/lib/admin/client";
+import { safeNext } from "@/lib/next-path";
 
 /*
   Signing in to the admin realm.
@@ -23,8 +25,25 @@ import { adminClient } from "@/lib/admin/client";
   failure message before that point never says which half was wrong, and an
   address that is not an administrator answers exactly like one whose
   password was mistyped.
+
+  Signed out in the middle of something - the session ran out, or was ended -
+  the page carries ?next= with where they were and ?why= with what happened,
+  and signing in goes straight back there. Only to an admin page: this form
+  never sends anybody into the customer app.
 */
+
+const WHY: Record<string, string> = {
+  ended: "Your session ended. Sign in again and you will be taken back to where you were.",
+  idle: "You were signed out after a long time without activity. Sign in again to carry on where you were.",
+  expired: "Your session reached its time limit. Sign in again to carry on where you were.",
+};
+
+const HOME = "/admin";
 export function AdminLogin() {
+  const searchParams = useSearchParams();
+  const asked = safeNext(searchParams.get("next"), HOME);
+  const next = asked === HOME || asked.startsWith(`${HOME}/`) ? asked : HOME;
+  const why = WHY[searchParams.get("why") ?? ""] ?? null;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -43,7 +62,7 @@ export function AdminLogin() {
     });
     if (result.ok) {
       // A full load, so nothing cached from a previous session survives.
-      window.location.replace("/admin");
+      window.location.replace(next);
       return;
     }
     setBusy(false);
@@ -78,6 +97,15 @@ export function AdminLogin() {
           noValidate
           className="rounded-surface border-border bg-surface shadow-panel flex flex-col gap-5 border px-5 py-6"
         >
+          {why && !error ? (
+            <p
+              role="status"
+              className="rounded-control bg-primary-soft text-primary-soft-foreground flex items-start gap-2.5 px-3.5 py-3 text-[13px] leading-relaxed"
+            >
+              <Info size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
+              {why}
+            </p>
+          ) : null}
           {error ? (
             <p
               role="alert"
