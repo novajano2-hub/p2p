@@ -14,6 +14,7 @@ import { WebSocket, type RawData } from "ws";
 
 import { createApp } from "@/app";
 import { loadEnv, type Env } from "@/config/env";
+import { RedisService } from "@/infra/redis/redis.service";
 import { accounts } from "@/modules/ledger/account-code";
 import { LedgerService } from "@/modules/ledger/ledger.service";
 import { RealtimeGateway } from "@/modules/realtime/realtime.gateway";
@@ -445,6 +446,98 @@ describe("watching a trade", () => {
     const tab = await open(who.cookie);
     for (let i = 0; i < 31; i++) tab.send({ type: "ping" });
     expect((await tab.closed).code).toBe(1008);
+  });
+});
+
+/*
+  Phase 5, stage 4: whether the person behind a name is around. The live
+  connection and the session are the two witnesses, and the later wins;
+  online means seen in the last five minutes, and the time is to the minute.
+  Each step below takes the other witness away first, so the one being
+  tested is the only one that could have answered.
+*/
+describe("presence", () => {
+  const TWO_HOURS = 2 * 3_600_000;
+  const toMinute = (ms: number) => new Date(Math.floor(ms / 60_000) * 60_000).toISOString();
+
+  /** The buyer's view of the seller, from the order and from the ad. */
+  async function seenBy(buyer: Api, tradeId: string, offerId: string) {
+    const trade = (await buyer.get(`/v1/trades/${tradeId}`).expect(200)).body as TradeView;
+    const offer = await buyer.get(`/v1/offers/${offerId}`).expect(200);
+    expect(offer.body.advertiser.online).toBe(trade.counterparty.online);
+    expect(offer.body.advertiser.lastSeenAt).toBe(trade.counterparty.lastSeenAt);
+    return trade.counterparty;
+  }
+
+  /** Takes the session's word away: it last saw them two hours ago. */
+  async function quietSession(userId: string): Promise<number> {
+    const at = Date.now() - TWO_HOURS;
+    await db.session.updateMany({ where: { userId }, data: { lastUsedAt: new Date(at) } });
+    return at;
+  }
+
+  it("puts someone online while a tab is open, and keeps the time they were last seen", async () => {
+    const { seller, buyer, trade, offer } = await opened();
+    const redis = app.get(RedisService).client;
+    const key = `presence:${seller.userId}`;
+
+    // No tab, and the session last saw them two hours ago.
+    await redis.del(key);
+    const away = await quietSession(seller.userId);
+    expect(await seenBy(buyer.api, trade.id, offer.id)).toMatchObject({
+      online: false,
+      lastSeenAt: toMinute(away),
+    });
+
+    // A tab opens.
+    const tab = await open(seller.cookie);
+    expect((await seenBy(buyer.api, trade.id, offer.id)).online).toBe(true);
+
+    // With nothing else to go on, the heartbeat alone keeps them online.
+    await redis.del(key);
+    await quietSession(seller.userId);
+    await gateway.beat();
+    expect((await seenBy(buyer.api, trade.id, offer.id)).online).toBe(true);
+
+    // The tab closes: the moment is kept, and they stay online for the window.
+    const beaten = await redis.get(key);
+    await tab.close();
+    for (let tries = 0; tries < 100 && (await redis.get(key)) === beaten; tries++) {
+      await sleep(20);
+    }
+    const left = Number(await redis.get(key));
+    expect(Date.now() - left).toBeLessThan(5_000);
+    expect(await seenBy(buyer.api, trade.id, offer.id)).toMatchObject({
+      online: true,
+      lastSeenAt: toMinute(left),
+    });
+
+    // Six minutes on, they are not.
+    const sixMinutesAgo = Date.now() - 6 * 60_000;
+    await redis.set(key, String(sixMinutesAgo));
+    expect(await seenBy(buyer.api, trade.id, offer.id)).toMatchObject({
+      online: false,
+      lastSeenAt: toMinute(sixMinutesAgo),
+    });
+  });
+
+  it("answers from the session alone when Redis cannot say", async () => {
+    const { seller, buyer, trade, offer } = await opened();
+    const redis = app.get(RedisService).client;
+    // The live connection saw them just now; the session two hours ago.
+    await redis.set(`presence:${seller.userId}`, String(Date.now()));
+    const away = await quietSession(seller.userId);
+    expect((await seenBy(buyer.api, trade.id, offer.id)).online).toBe(true);
+
+    const outage = jest.spyOn(redis, "mget").mockRejectedValue(new Error("Connection is closed"));
+    try {
+      expect(await seenBy(buyer.api, trade.id, offer.id)).toMatchObject({
+        online: false,
+        lastSeenAt: toMinute(away),
+      });
+    } finally {
+      outage.mockRestore();
+    }
   });
 });
 

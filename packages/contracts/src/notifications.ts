@@ -27,6 +27,10 @@ export const notificationType = z.enum([
   "DISPUTE_OPENED",
   "DISPUTE_RESOLVED",
   "DISPUTE_WITHDRAWN",
+  /* Phase 5: a sell ad its seller's balance cannot cover - hidden from the
+     market, then taken offline after a day of it. Each links to My ads. */
+  "OFFER_HIDDEN",
+  "OFFER_PAUSED",
 ]);
 export type NotificationType = z.infer<typeof notificationType>;
 

@@ -384,6 +384,29 @@ Not built here: nothing reports on resolution patterns per resolver (B7.1's dete
 half), and a resolver cannot write into the trade's chat - the note in the decision is
 the only thing either party is told.
 
+### Offers: the ad balance, and going offline by itself (Phase 5, stage 4)
+
+An offer has a small table of its own (`OFFER_TRANSITIONS` in `offer.service.ts`:
+`ACTIVE` and `PAUSED` either way, either to `CLOSED`). Since this stage the platform
+takes one of its edges itself.
+
+- **An ad locks nothing, so a seller may post more than they hold**, as on Binance. What a
+  sell ad offers at any moment is its _ad balance_: the lesser of what remains of it and the
+  seller's available USDT. The market shows the ad only while that covers its smallest
+  order. The owner's own view says what it offers (`adBalance`) and, when it is hidden, why
+  (`hiddenBecause`): `BALANCE` - adding USDT brings it back - or `REMAINDER` - what is
+  left of the ad is itself worth less than its smallest order, and only an edit helps.
+- **The worker watches for the first** (`OfferFundingWatcher`, every 30 seconds, under a
+  short Redis lock). A live sell ad the balance stops covering gets `unfunded_since`, and
+  its owner an `OFFER_HIDDEN` notification - at most once a day, however often a balance
+  at the edge dips. Covered again, switched off, or no longer anybody's live ad: the clock
+  stops.
+- **`ACTIVE` to `PAUSED`, by the platform,** after `OFFER_UNFUNDED_PAUSE_HOURS` (24) of
+  it, with an `OFFER_PAUSED` notification. The write is conditional on the ad still being
+  live with the same clock, so an owner switching it off in the same moment wins. Nothing
+  else moves: open trades keep their escrow and their terms, and switching the ad back on
+  gives it a whole day again.
+
 ---
 
 ## 4. How these are enforced in code
