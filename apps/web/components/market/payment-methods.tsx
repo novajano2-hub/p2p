@@ -13,7 +13,6 @@ import { BackTo, ConfirmButton, ListNotice } from "@/components/market/bits";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
-import { StatusPill } from "@/components/ui/status-pill";
 import { Note } from "@/components/wallet/shared";
 import { cn } from "@/lib/cn";
 import {
@@ -207,7 +206,10 @@ export function PaymentMethods() {
           ) : (
             <ul className="divide-border divide-y">
               {active.map((method) => (
-                <li key={method.id} className="flex items-center justify-between gap-4 py-3.5">
+                <li
+                  key={method.id}
+                  className="flex flex-col gap-2 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                >
                   <div className="flex min-w-0 items-center gap-3">
                     <span
                       aria-hidden="true"
@@ -225,8 +227,7 @@ export function PaymentMethods() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <StatusPill status="complete">Active</StatusPill>
+                  <div className="flex flex-wrap items-center gap-2 pl-4 sm:shrink-0 sm:pl-0">
                     <ConfirmButton
                       question="Remove it?"
                       confirmLabel="Remove"

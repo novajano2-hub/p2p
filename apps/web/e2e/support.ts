@@ -170,7 +170,13 @@ export function signedIn(user: typeof USER = USER): Handler[] {
 */
 export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   const overflow = await page.evaluate(() => {
-    const width = window.innerWidth;
+    /*
+      The layout viewport, which is the screen. Not innerWidth: on a phone,
+      Chrome zooms out to fit content that is too wide, and innerWidth grows
+      with it - so a check against innerWidth passes on exactly the pages it
+      exists to catch. clientWidth stays the width of the screen.
+    */
+    const width = document.documentElement.clientWidth;
     const across = Array.from(document.querySelectorAll<HTMLElement>("body *"))
       .filter((element) => {
         const box = element.getBoundingClientRect();
