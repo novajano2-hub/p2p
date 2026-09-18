@@ -9,6 +9,8 @@ import { PageHeader, Panel } from "@/components/app/panel";
 import { useSession } from "@/components/app/session-provider";
 import { PhotoCapture, type CapturedPhoto } from "@/components/account/photo-capture";
 import { FormError } from "@/components/auth/notices";
+import { revealProblems } from "@/lib/reveal-problems";
+import { toast, toastFailure } from "@/lib/toast";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DateField } from "@/components/ui/date-field";
 import { Field, Input } from "@/components/ui/field";
@@ -305,6 +307,7 @@ function DocumentStep({
   initial: KycDocumentType | null;
   onContinue: (value: KycDocumentType) => void;
 }) {
+  const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
   const {
     register,
     handleSubmit,
@@ -312,11 +315,16 @@ function DocumentStep({
   } = useForm<KycDocumentForm>({
     resolver: zodResolver(kycDocumentForm),
     defaultValues: initial ? { documentType: initial } : {},
+    shouldFocusError: false,
   });
 
   return (
     <form
-      onSubmit={handleSubmit((value) => onContinue(value.documentType))}
+      ref={setFormElement}
+      onSubmit={handleSubmit(
+        (value) => onContinue(value.documentType),
+        () => revealProblems(formElement),
+      )}
       noValidate
       className="flex flex-col gap-5"
     >
@@ -348,6 +356,7 @@ function DetailsStep({
   onBack: () => void;
   onContinue: (value: KycDetailsForm) => void;
 }) {
+  const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
   const {
     register,
     control,
@@ -356,6 +365,7 @@ function DetailsStep({
   } = useForm<KycDetailsForm>({
     resolver: zodResolver(kycDetailsForm),
     defaultValues: initial ?? { legalName: "", dateOfBirth: "", documentNumber: "" },
+    shouldFocusError: false,
   });
 
   // The youngest birthday allowed is today's date MINIMUM_AGE_YEARS ago; the
@@ -370,7 +380,12 @@ function DetailsStep({
   const initialMonth = new Date(today.getFullYear() - 25, today.getMonth(), 1);
 
   return (
-    <form onSubmit={handleSubmit(onContinue)} noValidate className="flex flex-col gap-5">
+    <form
+      ref={setFormElement}
+      onSubmit={handleSubmit(onContinue, () => revealProblems(formElement))}
+      noValidate
+      className="flex flex-col gap-5"
+    >
       <Field
         label="Full name"
         error={errors.legalName?.message}
@@ -632,8 +647,13 @@ function ReviewStep({
             if (!result.ok) {
               setSubmitting(false);
               setError(result.message);
+              toastFailure(result);
               return;
             }
+            toast.success("Sent for review", {
+              description:
+                "A person checks your details against your photos. We will let you know.",
+            });
             // The session carries the status, so every screen switches to
             // "under review" at once without another request.
             updateUser({ ...user, kycStatus: result.state.status });

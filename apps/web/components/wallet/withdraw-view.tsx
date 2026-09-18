@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowsClockwise, CheckCircle, Tray, Warning } from "@phosphor-icons/react";
+import { ArrowsClockwise, Tray, Warning } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
@@ -22,6 +22,8 @@ import {
   type WithdrawalLimits,
 } from "@/lib/wallet/client";
 import { useInFlight } from "@/lib/wallet/use-in-flight";
+import { placeOnField, revealProblems } from "@/lib/reveal-problems";
+import { toast, toastFailure } from "@/lib/toast";
 
 /*
   Sending USDT out to a chain address.
@@ -43,7 +45,7 @@ export function WithdrawView() {
   const [limits, setLimits] = useState<WithdrawalLimits | null>(null);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<Withdrawal | null>(null);
+  const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
   const network = networkById(networkId);
 
   /*
@@ -63,10 +65,12 @@ export function WithdrawView() {
     control,
     handleSubmit,
     reset,
+    setError: setFieldError,
     formState: { errors, isSubmitting },
   } = useForm<WithdrawForm>({
     resolver: zodResolver(withdrawForm),
     defaultValues: { address: "", amount: "", password: "" },
+    shouldFocusError: false,
   });
 
   const refresh = useCallback(() => {
@@ -113,34 +117,43 @@ export function WithdrawView() {
           ? `That is more than you have left today (${formatMicro(limits!.dailyRemaining)} ${ASSET.symbol}).`
           : null;
 
-  const submit = handleSubmit(async (values) => {
-    setError(null);
-    const amount = toMicro(values.amount);
-    if (!amount || blocked) {
-      setError(blocked ?? "Enter an amount.");
-      return;
-    }
-    const key = intentKey ?? newIdempotencyKey();
-    setIntentKey(key);
-    const result = await walletClient.withdraw({
-      network: networkId,
-      amount,
-      destination: values.address,
-      password: values.password,
-      idempotencyKey: key,
-    });
-    if (result.ok) {
-      setIntentKey(null);
-      setDone(result.withdrawal);
-      reset({ address: "", amount: "", password: "" });
-      refresh();
-      return;
-    }
-    // Only a failure we cannot interpret keeps the key: the server never
-    // answered, so the same key must go out again rather than a new one.
-    if (result.code !== "NETWORK") setIntentKey(null);
-    setError(result.message);
-  });
+  const submit = handleSubmit(
+    async (values) => {
+      setError(null);
+      const amount = toMicro(values.amount);
+      if (!amount || blocked) {
+        setError(blocked ?? "Enter an amount.");
+        revealProblems(formElement);
+        return;
+      }
+      const key = intentKey ?? newIdempotencyKey();
+      setIntentKey(key);
+      const result = await walletClient.withdraw({
+        network: networkId,
+        amount,
+        destination: values.address,
+        password: values.password,
+        idempotencyKey: key,
+      });
+      if (result.ok) {
+        setIntentKey(null);
+        toast.success("Withdrawal requested", {
+          description: `${formatMicro(result.withdrawal.amount)} ${ASSET.symbol} is on its way. Follow it under Your withdrawals.`,
+        });
+        reset({ address: "", amount: "", password: "" });
+        refresh();
+        return;
+      }
+      // Only a failure we cannot interpret keeps the key: the server never
+      // answered, so the same key must go out again rather than a new one.
+      if (result.code !== "NETWORK") setIntentKey(null);
+      const fields = { password: "password", destination: "address", amount: "amount" } as const;
+      if (placeOnField(result, fields, setFieldError, formElement)) return;
+      setError(result.message);
+      toastFailure(result);
+    },
+    () => revealProblems(formElement),
+  );
 
   return (
     <>
@@ -150,22 +163,12 @@ export function WithdrawView() {
         description="Send to a wallet or an exchange on a supported network."
       />
 
-      {done ? (
-        <div
-          role="status"
-          className="rounded-surface bg-status-complete text-status-complete-fg mb-5 flex items-start gap-2.5 px-4 py-3.5 text-[13px] leading-relaxed"
-        >
-          <CheckCircle size={17} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
-          <p>
-            <span className="font-semibold">
-              {formatMicro(done.amount)} {ASSET.symbol} is on its way.
-            </span>{" "}
-            It is listed below, and the status there is the one to watch.
-          </p>
-        </div>
-      ) : null}
-
-      <form onSubmit={submit} noValidate className="grid gap-4 lg:grid-cols-3 lg:gap-6">
+      <form
+        ref={setFormElement}
+        onSubmit={submit}
+        noValidate
+        className="grid gap-4 lg:grid-cols-3 lg:gap-6"
+      >
         <div className="flex flex-col gap-4 lg:col-span-2 lg:gap-6">
           <Panel title="Destination">
             <Field
@@ -354,8 +357,15 @@ function CancelButton({ id, onCancelled }: { id: string; onCancelled: () => void
           setFailed(null);
           const result = await walletClient.cancel(id);
           setBusy(false);
-          if (result.ok) onCancelled();
-          else setFailed(result.message);
+          if (result.ok) {
+            toast.success("Withdrawal cancelled", {
+              description: "The amount is back in your available balance.",
+            });
+            onCancelled();
+          } else {
+            setFailed(result.message);
+            toastFailure(result);
+          }
         }}
       >
         {busy ? "Cancelling…" : "Cancel"}

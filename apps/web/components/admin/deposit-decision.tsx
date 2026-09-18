@@ -7,6 +7,7 @@ import { ActionButton } from "@/components/admin/admin-shell";
 import { CustomerPicker } from "@/components/admin/customer-picker";
 import { Field, Textarea } from "@/components/ui/field";
 import { depositsClient, type AdminCustomer, type AdminDeposit } from "@/lib/admin/operations";
+import { toast, toastFailure } from "@/lib/toast";
 
 /*
   The decision, and only when there is one to make.
@@ -75,8 +76,15 @@ export function DepositDecision({
             onRun={async () => {
               setError(null);
               const result = await depositsClient.approve(deposit.id, reason.trim());
-              if (result.ok) onDecided(result.deposit);
-              else setError(result.message);
+              if (result.ok) {
+                toast.success("Deposit credited", {
+                  description: "The customer's balance went up by the full amount.",
+                });
+                onDecided(result.deposit);
+              } else {
+                setError(result.message);
+                toastFailure(result);
+              }
             }}
           />
         </Card>
@@ -95,8 +103,15 @@ export function DepositDecision({
             onRun={async () => {
               setError(null);
               const result = await depositsClient.reject(deposit.id, reason.trim());
-              if (result.ok) onDecided(result.deposit);
-              else setError(result.message);
+              if (result.ok) {
+                toast.success("Deposit rejected", {
+                  description: "No balance changed. The coins stay where they are.",
+                });
+                onDecided(result.deposit);
+              } else {
+                setError(result.message);
+                toastFailure(result);
+              }
             }}
           />
         </Card>
@@ -179,8 +194,15 @@ export function DepositDecision({
             if (!picked) return;
             setError(null);
             const result = await depositsClient.attribute(deposit.id, picked.userId, reason.trim());
-            if (result.ok) onDecided(result.deposit);
-            else setError(result.message);
+            if (result.ok) {
+              toast.success(`Credited to ${picked.platformId}`, {
+                description: "It left the unidentified deposits and is in their balance.",
+              });
+              onDecided(result.deposit);
+            } else {
+              setError(result.message);
+              toastFailure(result);
+            }
           }}
         />
       </Card>

@@ -16,6 +16,8 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { authClient } from "@/lib/auth/client";
 import { usernameForm, type UsernameForm } from "@/lib/auth/schemas";
 import { STATUS_LABELS } from "@/lib/kyc";
+import { placeOnField, revealProblems } from "@/lib/reveal-problems";
+import { toast, toastFailure } from "@/lib/toast";
 
 /*
   Settings: who the account is, how it looks, and how it is protected.
@@ -199,6 +201,7 @@ function SessionTab() {
           if (!result.ok) {
             setSigningOut(false);
             setSignOutError(result.message);
+            toastFailure(result);
           }
         }}
       >
@@ -215,32 +218,47 @@ function SessionTab() {
 function UsernameForm() {
   const { user, updateUser } = useSession();
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
   const {
     register,
     handleSubmit,
     reset,
+    setError: setFieldError,
     formState: { errors, isSubmitting, isDirty },
   } = useForm<UsernameForm>({
     resolver: zodResolver(usernameForm),
     defaultValues: { username: user.username },
+    shouldFocusError: false,
   });
 
-  const onSubmit = handleSubmit(async ({ username }) => {
-    setError(null);
-    setSaved(false);
-    const result = await authClient.updateUsername({ username });
-    if (!result.ok) {
-      setError(result.message);
-      return;
-    }
-    updateUser(result.user);
-    reset({ username: result.user.username });
-    setSaved(true);
-  });
+  const onSubmit = handleSubmit(
+    async ({ username }) => {
+      setError(null);
+      const result = await authClient.updateUsername({ username });
+      if (!result.ok) {
+        // "That username is taken" belongs on the username.
+        if (result.code === "CONFLICT") {
+          setFieldError("username", { type: "server", message: result.message });
+          revealProblems(formElement);
+          return;
+        }
+        if (placeOnField(result, { username: "username" }, setFieldError, formElement)) return;
+        setError(result.message);
+        toastFailure(result);
+        return;
+      }
+      updateUser(result.user);
+      reset({ username: result.user.username });
+      toast.success("Username saved", {
+        description: `People you trade with now see ${result.user.username}.`,
+      });
+    },
+    () => revealProblems(formElement),
+  );
 
   return (
     <form
+      ref={setFormElement}
       onSubmit={onSubmit}
       noValidate
       className="border-border mt-1 flex flex-col gap-4 border-t pt-4"
@@ -260,15 +278,10 @@ function UsernameForm() {
           />
         )}
       </Field>
-      <div className="flex items-center gap-3">
+      <div>
         <Button type="submit" size="sm" loading={isSubmitting} disabled={!isDirty}>
           Save username
         </Button>
-        {saved && !isDirty ? (
-          <span className="text-status-complete-fg text-[13px]" role="status">
-            Saved
-          </span>
-        ) : null}
       </div>
     </form>
   );

@@ -14,42 +14,34 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
-import { useRealtimeEvent } from "@/components/app/realtime-provider";
-import { authClient, type NotificationItem, type NotificationType } from "@/lib/auth/client";
+import { useNotifications } from "@/components/app/notifications-provider";
+import type { NotificationItem, NotificationType } from "@/lib/auth/client";
 import { cn } from "@/lib/cn";
+import { toneOf } from "@/lib/notifications";
 
 /*
   What the account was told without doing anything on this device. A bell
   with a count, the same hand-rolled disclosure pattern as AccountMenu beside
-  it: closes on Escape, on a click outside, and on choosing an item.
-
-  Fed two ways. The socket delivers each notification the moment it is
-  written, which is what makes "the buyer says they have paid" arrive while
-  the seller is looking at something else. The poll underneath it is the
-  fallback for a tab whose socket is between reconnects, and the first read
-  on load.
+  it: closes on Escape, on a click outside, and on choosing an item. The list
+  itself is NotificationsProvider's, shared with the toasts that announce each
+  one as it arrives.
 */
 
-const REFRESH_MS = 45_000;
-
-type Glyph = { Icon: typeof CheckCircle; tone: "good" | "warn" | "note" };
-
-const GLYPHS: Partial<Record<NotificationType, Glyph>> = {
-  KYC_APPROVED: { Icon: CheckCircle, tone: "good" },
-  KYC_REJECTED: { Icon: WarningCircle, tone: "warn" },
-  DEPOSIT_CREDITED: { Icon: ArrowCircleDown, tone: "good" },
-  WITHDRAWAL_SENT: { Icon: ArrowCircleUp, tone: "good" },
-  WITHDRAWAL_RETURNED: { Icon: WarningCircle, tone: "warn" },
-  TRADE_OPENED: { Icon: Handshake, tone: "note" },
-  TRADE_PAID: { Icon: ChatCircleDots, tone: "note" },
-  TRADE_RELEASED: { Icon: CheckCircle, tone: "good" },
-  TRADE_CANCELLED: { Icon: XCircle, tone: "warn" },
-  TRADE_EXPIRED: { Icon: XCircle, tone: "warn" },
-  DISPUTE_OPENED: { Icon: Scales, tone: "warn" },
-  DISPUTE_WITHDRAWN: { Icon: Scales, tone: "note" },
-  DISPUTE_RESOLVED: { Icon: Scales, tone: "good" },
+const ICONS: Partial<Record<NotificationType, typeof CheckCircle>> = {
+  KYC_APPROVED: CheckCircle,
+  KYC_REJECTED: WarningCircle,
+  DEPOSIT_CREDITED: ArrowCircleDown,
+  WITHDRAWAL_SENT: ArrowCircleUp,
+  WITHDRAWAL_RETURNED: WarningCircle,
+  TRADE_OPENED: Handshake,
+  TRADE_PAID: ChatCircleDots,
+  TRADE_RELEASED: CheckCircle,
+  TRADE_CANCELLED: XCircle,
+  TRADE_EXPIRED: XCircle,
+  DISPUTE_OPENED: Scales,
+  DISPUTE_WITHDRAWN: Scales,
+  DISPUTE_RESOLVED: Scales,
 };
-const FALLBACK: Glyph = { Icon: Bell, tone: "note" };
 
 const TONE_CLASS = {
   good: "text-status-complete-fg",
@@ -70,38 +62,10 @@ function timeAgo(iso: string): string {
 
 export function NotificationBell() {
   const router = useRouter();
+  const { items, unreadCount, loaded, markRead, markAllRead } = useNotifications();
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<NotificationItem[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loaded, setLoaded] = useState(false);
   const container = useRef<HTMLDivElement>(null);
   const panelId = useId();
-
-  // Defined inside the effect, not in render scope: the eslint rule that
-  // flags a synchronous setState in an effect cannot see through a function
-  // called by reference, only one it can trace into directly.
-  useEffect(() => {
-    const refresh = async () => {
-      const result = await authClient.notifications();
-      if (result.ok) {
-        setItems(result.notifications);
-        setUnreadCount(result.unreadCount);
-        setLoaded(true);
-      }
-    };
-    void refresh();
-    const id = window.setInterval(() => void refresh(), REFRESH_MS);
-    return () => window.clearInterval(id);
-  }, []);
-
-  // The moment it is written, not on the next poll.
-  useRealtimeEvent("notification", (frame) => {
-    const item = { ...frame.notification, type: frame.notification.type as NotificationType };
-    setItems((current) =>
-      current.some((entry) => entry.id === item.id) ? current : [item, ...current].slice(0, 50),
-    );
-    if (!item.readAt) setUnreadCount((count) => count + 1);
-  });
 
   useEffect(() => {
     if (!open) return;
@@ -119,19 +83,9 @@ export function NotificationBell() {
     };
   }, [open]);
 
-  const openItem = async (item: NotificationItem) => {
+  const openItem = (item: NotificationItem) => {
     setOpen(false);
-    if (!item.readAt) {
-      // Reflected immediately rather than waiting for the next poll: nothing
-      // about the unread count should ever look stale right after acting on it.
-      setItems((current) =>
-        current.map((entry) =>
-          entry.id === item.id ? { ...entry, readAt: new Date().toISOString() } : entry,
-        ),
-      );
-      setUnreadCount((count) => Math.max(0, count - 1));
-      void authClient.markNotificationRead(item.id);
-    }
+    markRead(item);
     if (item.link) router.push(item.link);
   };
 
@@ -166,16 +120,7 @@ export function NotificationBell() {
           {unreadCount > 0 ? (
             <button
               type="button"
-              onClick={async () => {
-                setItems((current) =>
-                  current.map((entry) => ({
-                    ...entry,
-                    readAt: entry.readAt ?? new Date().toISOString(),
-                  })),
-                );
-                setUnreadCount(0);
-                await authClient.markAllNotificationsRead();
-              }}
+              onClick={markAllRead}
               className="text-primary hover:text-primary-hover text-[12px] font-medium underline-offset-4 hover:underline"
             >
               Mark all read
@@ -195,12 +140,12 @@ export function NotificationBell() {
           ) : (
             <ul className="flex flex-col gap-0.5">
               {items.map((item) => {
-                const { Icon, tone } = GLYPHS[item.type] ?? FALLBACK;
+                const Icon = ICONS[item.type] ?? Bell;
                 return (
                   <li key={item.id}>
                     <button
                       type="button"
-                      onClick={() => void openItem(item)}
+                      onClick={() => openItem(item)}
                       className={cn(
                         "rounded-control hover:bg-muted flex w-full items-start gap-2.5 px-2 py-2.5 text-left transition-colors duration-150",
                         !item.readAt && "bg-primary-soft/40",
@@ -210,7 +155,7 @@ export function NotificationBell() {
                         size={17}
                         weight="fill"
                         aria-hidden="true"
-                        className={cn("mt-0.5 shrink-0", TONE_CLASS[tone])}
+                        className={cn("mt-0.5 shrink-0", TONE_CLASS[toneOf(item.type)])}
                       />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline justify-between gap-2">

@@ -16,6 +16,7 @@ import {
 } from "@/lib/admin/disputes";
 import { DISPUTE_OUTCOMES } from "@/lib/admin/disputes";
 import { OUTCOME_WORDS } from "@/lib/admin/disputes-view";
+import { toast, toastFailure } from "@/lib/toast";
 
 /*
   Deciding. Two outcomes, opposite consequences, no undo.
@@ -125,10 +126,15 @@ export function DisputeDecision({
                   outcome,
                   note: trimmed,
                 });
-                if (result.ok) onDecided(result.dispute);
-                else {
+                if (result.ok) {
+                  toast.success("Dispute decided", {
+                    description: `The escrow went to ${paidName}. Both sides are told, with your note.`,
+                  });
+                  onDecided(result.dispute);
+                } else {
                   setConfirming(false);
                   setError(result.message);
+                  toastFailure(result);
                 }
               }}
             />

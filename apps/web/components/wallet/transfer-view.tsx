@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { PageHeader, Panel } from "@/components/app/panel";
-import { FormError } from "@/components/auth/notices";
 import { useSession } from "@/components/app/session-provider";
 import {
   AmountField,
@@ -21,6 +20,8 @@ import { Field, Input } from "@/components/ui/field";
 import { formatMicro, toMicro } from "@/lib/money";
 import { ASSET, transferForm, type TransferForm } from "@/lib/wallet";
 import { walletClient } from "@/lib/wallet/client";
+import { revealProblems } from "@/lib/reveal-problems";
+import { toast } from "@/lib/toast";
 
 /*
   Moving USDT to another BIRQ account by its ID.
@@ -37,7 +38,7 @@ import { walletClient } from "@/lib/wallet/client";
 
 export function TransferView() {
   const { user } = useSession();
-  const [notice, setNotice] = useState<string | null>(null);
+  const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
   /*
     The balance is real even though the button is not. The figure beside an
     amount field is a statement about somebody's money, and there is no
@@ -64,6 +65,7 @@ export function TransferView() {
   } = useForm<TransferForm>({
     resolver: zodResolver(transferForm),
     defaultValues: { recipient: "", amount: "", note: "" },
+    shouldFocusError: false,
   });
 
   // useWatch rather than watch(): the function watch() returns cannot be
@@ -81,17 +83,22 @@ export function TransferView() {
       <NotOpenNotice what="Transfers" />
 
       <form
-        onSubmit={handleSubmit((values) => {
-          // The one rule this screen can enforce on its own, and the mistake
-          // worth catching before a server round trip.
-          if (values.recipient === user.platformId) {
-            setError("recipient", { message: "That is your own BIRQ ID." });
-            return;
-          }
-          setNotice(
-            "Transfers open once the ledger is in place. Everything you entered is valid; there is simply nothing behind the button yet.",
-          );
-        })}
+        ref={setFormElement}
+        onSubmit={handleSubmit(
+          (values) => {
+            // The one rule this screen can enforce on its own, and the mistake
+            // worth catching before a server round trip.
+            if (values.recipient === user.platformId) {
+              setError("recipient", { message: "That is your own BIRQ ID." });
+              revealProblems(formElement);
+              return;
+            }
+            toast.info("Transfers are not open yet", {
+              description: "Everything you entered is valid. Nothing was sent.",
+            });
+          },
+          () => revealProblems(formElement),
+        )}
         noValidate
         className="grid gap-4 lg:grid-cols-3 lg:gap-6"
       >
@@ -165,8 +172,6 @@ export function TransferView() {
 
         <div className="flex flex-col gap-4 lg:gap-6">
           <Panel title="Summary">
-            <FormError message={notice} />
-
             <div className="rounded-control bg-primary-soft text-primary-soft-foreground mb-4 flex items-start gap-2.5 px-3.5 py-3 text-[13px] leading-relaxed">
               <Lightning size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
               <p>

@@ -19,6 +19,17 @@ const eslintConfig = defineConfig([
     "playwright-report/**",
     "test-results/**",
   ]),
+  // Every toast goes through lib/toast.ts, so they all share one set of timings
+  // and one shape; only that module and the toaster itself touch sonner.
+  {
+    ignores: ["lib/toast.ts", "lib/toast.spec.ts", "components/app/toaster.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { paths: [{ name: "sonner", message: "Import toast from @/lib/toast instead." }] },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

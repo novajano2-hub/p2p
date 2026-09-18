@@ -597,3 +597,73 @@
     transform: translateY(24px);
   }
 }
+
+/*
+  Toasts (components/app/toaster.tsx). sonner injects its own stylesheet at
+  runtime, outside any cascade layer, so these rules sit outside one too - a
+  layered rule loses to an unlayered one whatever its specificity - and each
+  carries one selector more than the rule it replaces (the leading `html`),
+  which wins without !important. Every colour is a token: the dark theme
+  needs nothing here, and sonner's own palettes never show.
+*/
+html [data-sonner-toaster][data-sonner-theme] {
+  --normal-bg: var(--color-surface);
+  --normal-bg-hover: var(--color-muted);
+  --normal-border: var(--color-border);
+  --normal-border-hover: var(--color-border);
+  --normal-text: var(--color-foreground);
+  --border-radius: var(--radius-surface);
+  font-family: var(--font-sans);
+}
+
+html [data-sonner-toast][data-styled="true"] {
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  font-size: 14px;
+  box-shadow: var(--shadow-panel);
+}
+
+/* On the title's first line, not centred against a two-line toast. */
+html [data-sonner-toast][data-styled="true"] [data-icon] {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+
+html [data-sonner-toast][data-styled="true"] [data-title] {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+html [data-sonner-toast][data-styled="true"] [data-description] {
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* "View", "Open chat": the kit's primary button, small. */
+html [data-sonner-toast][data-styled="true"] [data-button] {
+  align-self: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+html [data-sonner-toast]:focus-visible,
+html [data-sonner-toast][data-styled="true"] [data-button]:focus-visible,
+html [data-sonner-toast][data-styled="true"] [data-close-button]:focus-visible {
+  box-shadow:
+    var(--shadow-panel),
+    0 0 0 2px var(--color-ring);
+}
+
+html [data-sonner-toast][data-styled="true"]:hover [data-close-button]:hover,
+html [data-sonner-toaster][data-sonner-theme] [data-sonner-toast] [data-close-button]:hover {
+  background: var(--color-muted);
+  border-color: var(--color-border);
+}

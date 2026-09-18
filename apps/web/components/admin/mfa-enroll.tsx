@@ -8,6 +8,7 @@ import { CopyButton } from "@/components/app/copy-button";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { adminClient, type AdminIdentity } from "@/lib/admin/client";
+import { toast } from "@/lib/toast";
 
 /*
   Enrolling the second factor, shown by the shell instead of the admin area
@@ -94,6 +95,9 @@ export function MfaEnroll({
     setError(null);
     const result = await adminClient.mfaConfirm(code.trim());
     if (result.ok) {
+      toast.success("Authenticator set up", {
+        description: "You will be asked for a code from it every time you sign in.",
+      });
       onEnrolled(result.admin);
       return;
     }

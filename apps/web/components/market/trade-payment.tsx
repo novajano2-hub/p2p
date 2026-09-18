@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useCallback, useState } from "react";
+import { useForm } from "react-hook-form";
 
 import { CopyButton } from "@/components/app/copy-button";
 import { Panel } from "@/components/app/panel";
@@ -11,8 +13,11 @@ import { Field, Input } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Note, SummaryRow } from "@/components/wallet/shared";
 import { marketClient, type PaymentInstructions, type Trade } from "@/lib/market/client";
+import { releaseForm, type ReleaseForm } from "@/lib/market/forms";
 import { ASSET, FIAT, PAYMENT_KINDS } from "@/lib/market/labels";
 import { formatSantim } from "@/lib/market/money";
+import { placeOnField, revealProblems } from "@/lib/reveal-problems";
+import { notificationKey, toast, toastFailure, type Refusal } from "@/lib/toast";
 
 /*
   The one panel that changes with who is looking and where the trade is.
@@ -21,6 +26,9 @@ import { formatSantim } from "@/lib/market/money";
   USDT go, behind their password. Everything else is a sentence about what
   is being waited for. The buttons come from the server's `actions`, never
   from a status the browser worked out.
+
+  Each button says what it did, as a toast. A refusal is said as a toast and
+  kept at the top of the panel; a wrong password is said on the password.
 */
 
 export function PaymentPanel({
@@ -32,7 +40,11 @@ export function PaymentPanel({
   expired: boolean;
   onUpdated: (trade: Trade) => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setShownError] = useState<string | null>(null);
+  const setError = useCallback((refusal: Refusal | null) => {
+    setShownError(refusal?.message ?? null);
+    if (refusal) toastFailure(refusal);
+  }, []);
   const buying = trade.role === "BUYER";
   const other = trade.counterparty.username;
 
@@ -110,7 +122,7 @@ function PayNow({
   trade: Trade;
   expired: boolean;
   onUpdated: (trade: Trade) => void;
-  onError: (message: string | null) => void;
+  onError: (refusal: Refusal | null) => void;
 }) {
   const [reference, setReference] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -125,10 +137,13 @@ function PayNow({
     const result = await marketClient.markPaid(trade.id, reference.trim());
     setBusy(false);
     if (!result.ok) {
-      onError(result.message);
+      onError(result);
       setConfirming(false);
       return;
     }
+    toast.success("Marked as paid", {
+      description: `${trade.counterparty.username} has been told. They release once the money shows in their account.`,
+    });
     onUpdated(result.trade);
   };
 
@@ -247,7 +262,7 @@ function CancelTrade({
 }: {
   trade: Trade;
   onUpdated: (trade: Trade) => void;
-  onError: (message: string | null) => void;
+  onError: (refusal: Refusal | null) => void;
 }) {
   return (
     <ConfirmButton
@@ -258,9 +273,12 @@ function CancelTrade({
         onError(null);
         const result = await marketClient.cancelTrade(trade.id, "");
         if (!result.ok) {
-          onError(result.message);
+          onError(result);
           return;
         }
+        toast.success("Order cancelled", {
+          description: "The seller's USDT went back to them. Do not send any money now.",
+        });
         onUpdated(result.trade);
       }}
     >
@@ -278,32 +296,44 @@ function ReleaseNow({
 }: {
   trade: Trade;
   onUpdated: (trade: Trade) => void;
-  onError: (message: string | null) => void;
+  onError: (refusal: Refusal | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm<ReleaseForm>({
+    resolver: zodResolver(releaseForm),
+    defaultValues: { password: "" },
+    shouldFocusError: false,
+  });
 
-  const release = async () => {
-    if (!password) {
-      setProblem("Enter your password to confirm.");
-      return;
-    }
-    onError(null);
-    setProblem(null);
-    setBusy(true);
-    const result = await marketClient.releaseTrade(trade.id, password);
-    setBusy(false);
-    if (!result.ok) {
-      if (result.code === "VALIDATION") setProblem(result.message);
-      else onError(result.message);
-      return;
-    }
-    setPassword("");
-    setOpen(false);
-    onUpdated(result.trade);
-  };
+  const release = handleSubmit(
+    async ({ password }) => {
+      onError(null);
+      const result = await marketClient.releaseTrade(trade.id, password);
+      if (!result.ok) {
+        if (!placeOnField(result, { password: "password" }, setError, formElement)) {
+          onError(result);
+        }
+        return;
+      }
+      toast.success(`${ASSET} released`, {
+        description: `${usdt(trade.buyerReceives)} went to ${trade.counterparty.username}. The order is complete.`,
+        // The server tells this account "USDT sent" too, for its other devices:
+        // this tab has said it already.
+        covers: notificationKey("TRADE_RELEASED", `/orders/${trade.id}`),
+      });
+      reset();
+      setOpen(false);
+      onUpdated(result.trade);
+    },
+    () => revealProblems(formElement),
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -314,36 +344,25 @@ function ReleaseNow({
         Releasing cannot be undone.
       </div>
       {open ? (
-        <div className="flex flex-col gap-3">
+        <form ref={setFormElement} noValidate onSubmit={release} className="flex flex-col gap-3">
           <Field
             label="Your password"
             hint="Asked every time you release: this is the moment the USDT leaves you."
-            error={problem ?? undefined}
+            error={errors.password?.message}
           >
-            {(control) => (
-              <PasswordInput
-                {...control}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void release();
-                  }
-                }}
-              />
+            {(a11y) => (
+              <PasswordInput {...a11y} {...register("password")} autoComplete="current-password" />
             )}
           </Field>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" size="md" loading={busy} onClick={release}>
+            <Button type="submit" size="md" loading={isSubmitting}>
               Release {usdt(trade.buyerReceives)}
             </Button>
             <Button type="button" variant="ghost" size="md" onClick={() => setOpen(false)}>
               Not yet
             </Button>
           </div>
-        </div>
+        </form>
       ) : (
         <Button type="button" size="lg" className="w-full" onClick={() => setOpen(true)}>
           Release {ASSET} to {trade.counterparty.username}

@@ -203,3 +203,34 @@ export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 export async function withSession(context: BrowserContext): Promise<void> {
   await context.addCookies([{ name: SESSION_COOKIE, value: SESSION_VALUE, url: SITE }]);
 }
+
+/*
+  A toast, by what it says. They live in one list in sonner's "Updates"
+  region, one item each, whatever page is open.
+*/
+export const toastSaying = (page: Page, text: string | RegExp) =>
+  page
+    .getByRole("region", { name: /^Updates/ })
+    .getByRole("listitem")
+    .filter({ hasText: text });
+
+export type LiveSocket = { send: (frame: object) => void };
+
+/*
+  The API's socket, played by the test. Register it before the page opens;
+  `connected` resolves once the app has connected, with a way to push frames
+  at it the way the server would. What the app sends back - subscriptions,
+  typing - is heard and dropped: nothing in these tests depends on it.
+*/
+export async function stubSocket(page: Page): Promise<{ connected: Promise<LiveSocket> }> {
+  let resolve: (socket: LiveSocket) => void = () => {};
+  const connected = new Promise<LiveSocket>((done) => {
+    resolve = done;
+  });
+  await page.routeWebSocket(/\/v1\/ws$/, (ws) => {
+    ws.onMessage(() => {});
+    ws.send(JSON.stringify({ type: "hello", userId: USER.id, heartbeatSeconds: 30 }));
+    resolve({ send: (frame) => ws.send(JSON.stringify(frame)) });
+  });
+  return { connected };
+}

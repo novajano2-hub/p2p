@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { FormError } from "@/components/auth/notices";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { CodeInput } from "@/components/ui/code-input";
 import { Field } from "@/components/ui/field";
@@ -61,8 +62,14 @@ export function CodeStep({ email, verify, resend, onVerified, onChangeEmail }: C
     setError(null);
     try {
       const result = await resend();
-      if (result.ok) setRest(RESEND_REST_SECONDS);
-      else setError(result.message);
+      if (result.ok) {
+        setRest(RESEND_REST_SECONDS);
+        toast.success("New code sent", {
+          description: `To ${maskEmail(email)}. The one before it no longer works.`,
+        });
+      } else {
+        setError(result.message);
+      }
     } finally {
       setResending(false);
     }

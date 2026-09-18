@@ -1,7 +1,9 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { PageHeader, Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
@@ -26,6 +28,13 @@ import {
   type PaymentMethod,
   type PaymentMethodKind,
 } from "@/lib/market/client";
+import {
+  orderForm,
+  orderPair,
+  type AmountMode,
+  type OrderBounds,
+  type OrderForm,
+} from "@/lib/market/forms";
 import { ASSET, FIAT, PAYMENT_KINDS } from "@/lib/market/labels";
 import {
   amountForFiat,
@@ -33,10 +42,11 @@ import {
   fiatForAmount,
   formatSantim,
   plainSantim,
-  toSantim,
 } from "@/lib/market/money";
-import { compareMicro, plainMicro, toMicro } from "@/lib/money";
+import { compareMicro, plainMicro } from "@/lib/money";
 import { withNext } from "@/lib/next-path";
+import { revealProblems } from "@/lib/reveal-problems";
+import { toast, toastFailure } from "@/lib/toast";
 
 /*
   Taking an offer: the Binance "I will pay / I will receive" screen. The
@@ -58,16 +68,19 @@ import { withNext } from "@/lib/next-path";
   refused by the server rather than opened on terms nobody read. This screen
   looks again every ten seconds and whenever the tab comes back, lists what
   changed, and asks for one deliberate click before ordering at the new terms.
+
+  The amount is checked as it is typed, against the ad as it is on screen
+  (lib/market/forms.ts), and again when the ad moves under it.
 */
 
 const MODES = [
   { value: "fiat", label: `By ${FIAT}` },
   { value: "usdt", label: `By ${ASSET}` },
 ] as const;
-type Mode = (typeof MODES)[number]["value"];
 
 const RECHECK_MS = 10_000;
 const GONE = "This ad is no longer available - its owner took it offline or closed it.";
+const NO_METHODS: PaymentMethod[] = [];
 
 /** What moved between the ad as accepted and the ad as it is now. */
 function changesBetween(before: MarketOffer, after: MarketOffer): string[] {
@@ -106,6 +119,14 @@ function changesBetween(before: MarketOffer, after: MarketOffer): string[] {
   return lines.length > 0 ? lines : ["The advertiser updated this ad."];
 }
 
+/** Said when the ad moves while the form is open, and when an order is refused because it did. */
+function sayChanged(): void {
+  toast.warning("The advertiser changed this ad", {
+    id: "offer-changed",
+    description: "Read what changed, beside the button, before you order.",
+  });
+}
+
 type State =
   | { status: "loading" }
   | { status: "error"; message: string }
@@ -114,11 +135,8 @@ type State =
 export function TakeOffer({ offerId }: { offerId: string }) {
   const router = useRouter();
   const [state, setState] = useState<State>({ status: "loading" });
-  const [mode, setMode] = useState<Mode>("fiat");
-  const [typed, setTyped] = useState("");
-  const [rail, setRail] = useState("");
+  const [mode, setMode] = useState<AmountMode>("fiat");
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   // One key per intent (ADR-0007): kept across a retry the network failed,
   // replaced once the server has answered either way.
   const [intentKey, setIntentKey] = useState<string | null>(null);
@@ -133,6 +151,58 @@ export function TakeOffer({ offerId }: { offerId: string }) {
   const [accepted, setAccepted] = useState<MarketOffer | null>(null);
   // What a look is comparing against, without making every look a new effect.
   const view = useRef<{ offer: MarketOffer; methods: PaymentMethod[] } | null>(null);
+  const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
+
+  const offer = state.status === "ready" ? state.offer : null;
+  const methods = state.status === "ready" ? state.methods : NO_METHODS;
+  // The viewer buys from a SELL offer and sells to a BUY offer.
+  const buying = offer?.side === "SELL";
+  // The rails on offer, and whether the person has a choice to make. A single
+  // choice is chosen already, as Binance has it: a question with one answer
+  // is not a question.
+  const usableMethods = offer
+    ? methods.filter((method) => offer.paymentKinds.includes(method.kind))
+    : NO_METHODS;
+  const soleMethod = usableMethods.length === 1 ? (usableMethods[0] ?? null) : null;
+
+  const bounds: OrderBounds = {
+    mode,
+    priceSantim: offer?.priceSantim ?? "0",
+    minSantim: offer?.minSantim ?? "0",
+    maxSantim: offer?.maxSantim ?? "0",
+    available: offer?.available ?? "0",
+    railMissing: !offer
+      ? null
+      : buying
+        ? offer.paymentKinds.length > 1
+          ? "Choose how you will pay."
+          : null
+        : usableMethods.length === 0
+          ? "Add a payment method of a kind this buyer pays through."
+          : usableMethods.length > 1
+            ? "Choose where you will be paid."
+            : null,
+  };
+
+  const {
+    register,
+    control,
+    handleSubmit,
+    setValue,
+    getValues,
+    trigger,
+    formState: { errors, isSubmitting },
+  } = useForm<OrderForm>({
+    resolver: zodResolver(orderForm(bounds)),
+    // Checked as it is typed: a limit is worth knowing before the button.
+    mode: "onChange",
+    // revealProblems() does it, in the page's order rather than the fields'.
+    shouldFocusError: false,
+    defaultValues: { amount: "", rail: "" },
+  });
+  // useWatch rather than watch(): the function watch() returns cannot be
+  // memoized, so the React Compiler gives up on the whole component.
+  const typed = useWatch({ control, name: "amount" }) ?? "";
 
   useEffect(() => {
     let live = true;
@@ -144,13 +214,13 @@ export function TakeOffer({ offerId }: { offerId: string }) {
         return;
       }
       // Selling to a BUY offer needs the taker's own methods to choose from.
-      let methods: PaymentMethod[] = [];
+      let mine: PaymentMethod[] = [];
       if (found.offer.side === "BUY") {
-        const mine = await marketClient.paymentMethods();
+        const listed = await marketClient.paymentMethods();
         if (!live) return;
-        if (mine.ok) methods = mine.paymentMethods.filter((method) => method.status === "ACTIVE");
+        if (listed.ok) mine = listed.paymentMethods.filter((method) => method.status === "ACTIVE");
       }
-      setState({ status: "ready", offer: found.offer, methods });
+      setState({ status: "ready", offer: found.offer, methods: mine });
       setAccepted(found.offer);
     })();
     return () => {
@@ -172,21 +242,23 @@ export function TakeOffer({ offerId }: { offerId: string }) {
       if (found.code === "NOT_FOUND") setGone(true);
       return;
     }
-    const offer = found.offer;
-    if (compareMicro(offer.available, before.offer.available) < 0) {
-      setNotice(`Only ${usdt(offer.available)} is left on this ad now.`);
+    const next = found.offer;
+    if (compareMicro(next.available, before.offer.available) < 0) {
+      setNotice(`Only ${usdt(next.available)} is left on this ad now.`);
     }
-    setState((current) => (current.status === "ready" ? { ...current, offer } : current));
+    setState((current) => (current.status === "ready" ? { ...current, offer: next } : current));
     // A payment choice the ad no longer offers is not a choice.
-    setRail((current) => {
-      if (current === "") return current;
-      if (offer.side === "SELL") {
-        return offer.paymentKinds.includes(current as PaymentMethodKind) ? current : "";
-      }
-      const method = before.methods.find((candidate) => candidate.id === current);
-      return method && offer.paymentKinds.includes(method.kind) ? current : "";
-    });
-  }, []);
+    const chosen = getValues("rail");
+    if (chosen !== "") {
+      const offered =
+        next.side === "SELL"
+          ? next.paymentKinds.includes(chosen as PaymentMethodKind)
+          : before.methods.some(
+              (method) => method.id === chosen && next.paymentKinds.includes(method.kind),
+            );
+      if (!offered) setValue("rail", "");
+    }
+  }, [getValues, setValue]);
 
   const ready = state.status === "ready";
   useEffect(() => {
@@ -202,6 +274,23 @@ export function TakeOffer({ offerId }: { offerId: string }) {
     };
   }, [ready, gone, recheck]);
 
+  // The limits an amount is held to moved - the ad changed, or the unit did:
+  // what was typed is checked again against the new ones.
+  const limits = `${mode} ${bounds.priceSantim} ${bounds.minSantim} ${bounds.maxSantim} ${bounds.available}`;
+  useEffect(() => {
+    if (getValues("amount") !== "") void trigger("amount");
+  }, [limits, getValues, trigger]);
+
+  // Said once when it happens, wherever on the page the person is.
+  useEffect(() => {
+    if (gone)
+      toast.error("This ad is no longer available", { id: "offer-gone", description: GONE });
+  }, [gone]);
+  const movedTo = accepted && offer && accepted.revision !== offer.revision ? offer.revision : null;
+  useEffect(() => {
+    if (movedTo !== null) sayChanged();
+  }, [movedTo]);
+
   if (state.status === "loading") {
     return (
       <>
@@ -212,20 +301,17 @@ export function TakeOffer({ offerId }: { offerId: string }) {
       </>
     );
   }
-  if (state.status === "error") {
+  if (state.status === "error" || !offer) {
     return (
       <>
         <BackTo href="/trade">Marketplace</BackTo>
         <Panel>
-          <ListNotice>{state.message}</ListNotice>
+          <ListNotice>{state.status === "error" ? state.message : null}</ListNotice>
         </Panel>
       </>
     );
   }
 
-  const { offer, methods } = state;
-  // The viewer buys from a SELL offer and sells to a BUY offer.
-  const buying = offer.side === "SELL";
   const price = offer.priceSantim;
   // The side of the market this offer was found on, which is where Back goes.
   const market = `/trade?want=${buying ? "BUY" : "SELL"}`;
@@ -233,72 +319,41 @@ export function TakeOffer({ offerId }: { offerId: string }) {
     accepted && accepted.revision !== offer.revision ? changesBetween(accepted, offer) : [];
 
   // Both sides of the pair, from whichever the person typed.
-  const typedSantim = mode === "fiat" ? toSantim(typed) : null;
-  const typedMicro = mode === "usdt" ? toMicro(typed) : null;
-  const micro =
-    mode === "fiat" ? (typedSantim ? amountForFiat(typedSantim, price) : null) : typedMicro;
-  const santim = mode === "fiat" ? typedSantim : micro ? fiatForAmount(micro, price) : null;
-  const empty = typed.trim() === "";
-
-  const problem = empty
-    ? null
-    : !micro || !santim
-      ? "Enter an amount."
-      : compareSantim(santim, offer.minSantim) < 0
-        ? `The smallest trade on this offer is ${birr(offer.minSantim)}.`
-        : compareSantim(santim, offer.maxSantim) > 0
-          ? `The largest trade on this offer is ${birr(offer.maxSantim)}.`
-          : compareMicro(micro, offer.available) > 0
-            ? `Only ${usdt(offer.available)} is available right now.`
-            : null;
-
-  // The rails on offer, and whether the person has chosen one. A single
-  // choice is chosen already, as Binance has it: a question with one answer
-  // is not a question.
-  const usableMethods = methods.filter((method) => offer.paymentKinds.includes(method.kind));
-  const soleMethod = usableMethods.length === 1 ? (usableMethods[0] ?? null) : null;
-  const railChosen = buying
-    ? rail !== "" || offer.paymentKinds.length === 1
-    : rail !== "" || soleMethod !== null;
-  const railValue = buying ? rail || offer.paymentKinds[0] || "" : rail || soleMethod?.id || "";
-
-  /** An amount, typed or from Max. */
-  const enter = (value: string) => {
-    setTyped(value);
-    setNotice(null);
-  };
+  const pair = orderPair(typed, mode, price);
+  const micro = pair?.micro ?? null;
+  const santim = pair?.santim ?? null;
 
   /** "I have read what changed": the ad on screen becomes the ad being ordered. */
   const acceptChanges = () => {
     setAccepted(offer);
     setError(null);
+    toast.dismiss("offer-changed");
   };
 
-  const place = async () => {
-    if (!accepted) return;
-    if (!micro || !santim || problem || !railChosen) {
-      setError(
-        problem ?? (railChosen ? "Enter an amount." : "Choose how the payment will be made."),
-      );
-      return;
-    }
+  const place = async (values: OrderForm) => {
+    const order = orderPair(values.amount, mode, price);
+    if (!accepted || !order) return;
     setError(null);
-    setSubmitting(true);
     const key = intentKey ?? newClientId();
     setIntentKey(key);
+    const rail = buying
+      ? values.rail || offer.paymentKinds[0] || ""
+      : values.rail || soleMethod?.id || "";
     const result = await marketClient.createTrade(
       {
         offerId: offer.id,
         offerRevision: accepted.revision,
-        ...(mode === "fiat" ? { fiatSantim: santim } : { amount: micro }),
-        ...(buying
-          ? { paymentKind: railValue as PaymentMethodKind }
-          : { paymentMethodId: railValue }),
+        ...(mode === "fiat" ? { fiatSantim: order.santim } : { amount: order.micro }),
+        ...(buying ? { paymentKind: rail as PaymentMethodKind } : { paymentMethodId: rail }),
       },
       key,
     );
-    setSubmitting(false);
     if (result.ok) {
+      toast.success("Order placed", {
+        description: buying
+          ? `Pay ${birr(result.trade.fiatSantim)} within ${offer.paymentWindowMinutes} minutes, then mark it paid.`
+          : `The buyer has ${offer.paymentWindowMinutes} minutes to pay you ${birr(result.trade.fiatSantim)}.`,
+      });
       router.push(`/orders/${result.trade.id}`);
       return;
     }
@@ -312,13 +367,24 @@ export function TakeOffer({ offerId }: { offerId: string }) {
     if (result.code === "OFFER_CHANGED") {
       // The ad moved between the last look and this click. Fetch it again: the
       // list of what changed is the answer, and it needs one more click.
+      sayChanged();
       await recheck();
       return;
     }
     setError(result.message);
+    toastFailure(result);
     // "No longer has enough", "the seller cannot fund this": the numbers on
     // screen are stale, so look again now rather than in ten seconds.
     if (result.code === "CONFLICT" || result.code === "INSUFFICIENT_FUNDS") void recheck();
+  };
+
+  /** Enter in the amount field, while there are changes to read, is not an order. */
+  const order = async (values: OrderForm) => {
+    if (changes.length > 0) {
+      sayChanged();
+      return;
+    }
+    await place(values);
   };
 
   const title = buying
@@ -341,186 +407,241 @@ export function TakeOffer({ offerId }: { offerId: string }) {
             </FormError>
           ) : null}
 
-          <div className="mb-5 flex items-baseline justify-between gap-4">
-            <span className="text-muted-foreground text-[13px]">Price</span>
-            <span className="text-foreground font-mono text-lg font-medium tabular-nums">
-              {formatSantim(price)}{" "}
-              <span className="text-muted-foreground text-[12px]">
-                {FIAT} per {ASSET}
-              </span>
-            </span>
-          </div>
-
-          <Segmented value={mode} onChange={setMode} options={MODES} label="Enter the amount in" />
-
-          <Field
-            label={
-              mode === "fiat"
-                ? buying
-                  ? "I will pay"
-                  : "I will receive"
-                : buying
-                  ? "I want to buy"
-                  : "I want to sell"
-            }
-            hint={`Between ${formatSantim(offer.minSantim)} and ${birr(offer.maxSantim)} a trade.`}
-            error={problem ?? undefined}
-            className="mt-4"
+          <form
+            ref={setFormElement}
+            noValidate
+            // Built in the event, not during render: placing an order looks at the ad again.
+            onSubmit={(event) => void handleSubmit(order, () => revealProblems(formElement))(event)}
           >
-            {(control) => (
-              <div className="relative">
-                <Input
-                  {...control}
-                  value={typed}
-                  onChange={(event) => enter(event.target.value)}
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  autoComplete="off"
-                  className="pr-24 font-medium tabular-nums"
-                />
-                <div className="absolute inset-y-0 right-3.5 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // The most this offer allows: its own maximum, or what is left, whichever is less.
-                      const maxByAvailable = fiatForAmount(offer.available, price);
-                      const max =
-                        compareSantim(maxByAvailable, offer.maxSantim) < 0
-                          ? maxByAvailable
-                          : offer.maxSantim;
-                      enter(
-                        mode === "fiat" ? plainSantim(max) : plainMicro(amountForFiat(max, price)),
-                      );
-                    }}
-                    className="text-primary hover:text-primary-hover text-[13px] font-semibold"
-                  >
-                    Max
-                  </button>
-                  <span aria-hidden="true" className="bg-border h-4 w-px" />
-                  <span className="text-muted-foreground text-[13px] font-medium">
-                    {mode === "fiat" ? FIAT : ASSET}
-                  </span>
-                </div>
-              </div>
-            )}
-          </Field>
+            <div className="mb-5 flex items-baseline justify-between gap-4">
+              <span className="text-muted-foreground text-[13px]">Price</span>
+              <span className="text-foreground font-mono text-lg font-medium tabular-nums">
+                {formatSantim(price)}{" "}
+                <span className="text-muted-foreground text-[12px]">
+                  {FIAT} per {ASSET}
+                </span>
+              </span>
+            </div>
 
-          <dl className="divide-border mt-4 divide-y">
-            <SummaryRow label={buying ? "You receive" : "You give"} strong>
-              {micro ? usdt(micro) : `— ${ASSET}`}
-            </SummaryRow>
-            <SummaryRow label={buying ? "You pay" : "You receive"} strong>
-              {santim ? birr(santim) : `— ${FIAT}`}
-            </SummaryRow>
-            <SummaryRow label="Time to pay">{offer.paymentWindowMinutes} minutes</SummaryRow>
-          </dl>
+            <Segmented
+              value={mode}
+              onChange={setMode}
+              options={MODES}
+              label="Enter the amount in"
+            />
 
-          <div className="mt-5">
-            {buying ? (
-              <Field label="Pay with" hint="One of the ways this seller accepts payment.">
-                {(control) =>
-                  offer.paymentKinds.length === 1 ? (
-                    <PaymentKindChips kinds={offer.paymentKinds} className="py-2" />
-                  ) : (
-                    <Select
-                      {...control}
-                      value={rail}
-                      onChange={setRail}
-                      placeholder="Choose a payment method"
-                      options={offer.paymentKinds.map((kind) => ({
-                        value: kind,
-                        label: PAYMENT_KINDS[kind].label,
-                        bar: PAYMENT_KINDS[kind].bar,
-                      }))}
-                    />
-                  )
-                }
-              </Field>
-            ) : (
-              <Field
-                label="Receive the payment to"
-                hint={
-                  usableMethods.length === 0
-                    ? "You have no payment method of a kind this buyer pays through."
-                    : "The buyer is shown these details once the trade opens."
-                }
-              >
-                {(control) =>
-                  usableMethods.length === 0 ? (
-                    <AppLink
-                      href={withNext("/trade/payment-methods", `/trade/offers/${offer.id}`)}
-                      className="text-primary hover:text-primary-hover text-sm font-medium underline-offset-4 hover:underline"
-                    >
-                      Add a payment method
-                    </AppLink>
-                  ) : (
-                    <Select
-                      {...control}
-                      value={railValue}
-                      onChange={setRail}
-                      placeholder="Choose a payment method"
-                      options={usableMethods.map((method) => ({
-                        value: method.id,
-                        label: method.label,
-                        bar: PAYMENT_KINDS[method.kind].bar,
-                      }))}
-                    />
-                  )
-                }
-              </Field>
-            )}
-          </div>
-
-          <div className="mt-6">
-            <Note>
-              {buying
-                ? `The seller's ${usdt(micro ?? "0")} is locked in escrow the moment you place the order. Pay the exact amount from an account in your own name, then mark the trade as paid.`
-                : `Your ${ASSET} is locked in escrow the moment you place the order and released to the buyer only when you confirm the ${FIAT} arrived. Never release before it has.`}
-            </Note>
-          </div>
-
-          {/* What changed, and any refusal, are answered where the button is. */}
-          <div className="mt-6">
-            {changes.length > 0 ? (
-              <div
-                role="status"
-                className="rounded-control bg-status-pending text-status-pending-fg mb-4 px-3.5 py-3 text-[13px] leading-relaxed"
-              >
-                <p className="font-medium">The advertiser changed this ad</p>
-                <ul className="mt-1 list-disc pl-4">
-                  {changes.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : notice ? (
-              <p
-                role="status"
-                className="rounded-control bg-status-pending text-status-pending-fg mb-4 px-3.5 py-3 text-[13px] leading-relaxed"
-              >
-                {notice}
-              </p>
-            ) : null}
-            <FormError message={error} />
-            <Button
-              type="button"
-              size="lg"
-              className="w-full"
-              loading={submitting}
-              onClick={changes.length > 0 ? acceptChanges : place}
-              disabled={offer.isMine || gone}
+            <Field
+              label={
+                mode === "fiat"
+                  ? buying
+                    ? "I will pay"
+                    : "I will receive"
+                  : buying
+                    ? "I want to buy"
+                    : "I want to sell"
+              }
+              hint={`Between ${formatSantim(offer.minSantim)} and ${birr(offer.maxSantim)} a trade.`}
+              error={errors.amount?.message}
+              className="mt-4"
             >
-              {gone
-                ? "No longer available"
-                : offer.isMine
-                  ? "This is your own ad"
-                  : changes.length > 0
-                    ? "Accept the changes"
-                    : buying
-                      ? `Buy ${ASSET}`
-                      : `Sell ${ASSET}`}
-            </Button>
-          </div>
+              {(a11y) => (
+                <div className="relative">
+                  <Input
+                    {...a11y}
+                    {...register("amount", { onChange: () => setNotice(null) })}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    autoComplete="off"
+                    className="pr-24 font-medium tabular-nums"
+                  />
+                  <div className="absolute inset-y-0 right-3.5 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // The most this offer allows: its own maximum, or what is left, whichever is less.
+                        const maxByAvailable = fiatForAmount(offer.available, price);
+                        const max =
+                          compareSantim(maxByAvailable, offer.maxSantim) < 0
+                            ? maxByAvailable
+                            : offer.maxSantim;
+                        setValue(
+                          "amount",
+                          mode === "fiat"
+                            ? plainSantim(max)
+                            : plainMicro(amountForFiat(max, price)),
+                          { shouldValidate: true, shouldDirty: true },
+                        );
+                        setNotice(null);
+                      }}
+                      className="text-primary hover:text-primary-hover text-[13px] font-semibold"
+                    >
+                      Max
+                    </button>
+                    <span aria-hidden="true" className="bg-border h-4 w-px" />
+                    <span className="text-muted-foreground text-[13px] font-medium">
+                      {mode === "fiat" ? FIAT : ASSET}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </Field>
+
+            <dl className="divide-border mt-4 divide-y">
+              <SummaryRow label={buying ? "You receive" : "You give"} strong>
+                {micro ? usdt(micro) : `— ${ASSET}`}
+              </SummaryRow>
+              <SummaryRow label={buying ? "You pay" : "You receive"} strong>
+                {santim ? birr(santim) : `— ${FIAT}`}
+              </SummaryRow>
+              <SummaryRow label="Time to pay">{offer.paymentWindowMinutes} minutes</SummaryRow>
+            </dl>
+
+            <div className="mt-5">
+              {buying ? (
+                <Field
+                  label="Pay with"
+                  hint="One of the ways this seller accepts payment."
+                  error={errors.rail?.message}
+                >
+                  {(a11y) =>
+                    offer.paymentKinds.length === 1 ? (
+                      <PaymentKindChips kinds={offer.paymentKinds} className="py-2" />
+                    ) : (
+                      <Controller
+                        control={control}
+                        name="rail"
+                        render={({ field }) => (
+                          <Select
+                            {...a11y}
+                            ref={field.ref}
+                            value={field.value}
+                            onChange={field.onChange}
+                            onBlur={field.onBlur}
+                            placeholder="Choose a payment method"
+                            options={offer.paymentKinds.map((kind) => ({
+                              value: kind,
+                              label: PAYMENT_KINDS[kind].label,
+                              bar: PAYMENT_KINDS[kind].bar,
+                            }))}
+                          />
+                        )}
+                      />
+                    )
+                  }
+                </Field>
+              ) : (
+                <Field
+                  label="Receive the payment to"
+                  hint={
+                    usableMethods.length === 0
+                      ? "You have no payment method of a kind this buyer pays through."
+                      : "The buyer is shown these details once the trade opens."
+                  }
+                  error={errors.rail?.message}
+                >
+                  {(a11y) =>
+                    usableMethods.length === 0 ? (
+                      <AppLink
+                        href={withNext("/trade/payment-methods", `/trade/offers/${offer.id}`)}
+                        aria-describedby={a11y["aria-describedby"]}
+                        data-invalid={a11y["aria-invalid"]}
+                        className="text-primary hover:text-primary-hover text-sm font-medium underline-offset-4 hover:underline"
+                      >
+                        Add a payment method
+                      </AppLink>
+                    ) : (
+                      <Controller
+                        control={control}
+                        name="rail"
+                        render={({ field }) => (
+                          <Select
+                            {...a11y}
+                            ref={field.ref}
+                            value={field.value || soleMethod?.id || ""}
+                            onChange={field.onChange}
+                            onBlur={field.onBlur}
+                            placeholder="Choose a payment method"
+                            options={usableMethods.map((method) => ({
+                              value: method.id,
+                              label: method.label,
+                              bar: PAYMENT_KINDS[method.kind].bar,
+                            }))}
+                          />
+                        )}
+                      />
+                    )
+                  }
+                </Field>
+              )}
+            </div>
+
+            <div className="mt-6">
+              <Note>
+                {buying
+                  ? `The seller's ${usdt(micro ?? "0")} is locked in escrow the moment you place the order. Pay the exact amount from an account in your own name, then mark the trade as paid.`
+                  : `Your ${ASSET} is locked in escrow the moment you place the order and released to the buyer only when you confirm the ${FIAT} arrived. Never release before it has.`}
+              </Note>
+            </div>
+
+            {/* What changed, and any refusal, are answered where the button is. */}
+            <div className="mt-6">
+              {changes.length > 0 ? (
+                <div
+                  role="status"
+                  className="rounded-control bg-status-pending text-status-pending-fg mb-4 px-3.5 py-3 text-[13px] leading-relaxed"
+                >
+                  <p className="font-medium">The advertiser changed this ad</p>
+                  <ul className="mt-1 list-disc pl-4">
+                    {changes.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : notice ? (
+                <p
+                  role="status"
+                  className="rounded-control bg-status-pending text-status-pending-fg mb-4 px-3.5 py-3 text-[13px] leading-relaxed"
+                >
+                  {notice}
+                </p>
+              ) : null}
+              <FormError message={error} />
+              {/*
+                Two buttons, not one that changes its type: the same element
+                turned into a submit button during its own click would submit
+                the form, placing the order the person was only accepting.
+              */}
+              {changes.length > 0 ? (
+                <Button
+                  key="accept"
+                  type="button"
+                  size="lg"
+                  className="w-full"
+                  onClick={acceptChanges}
+                  disabled={offer.isMine || gone}
+                >
+                  Accept the changes
+                </Button>
+              ) : (
+                <Button
+                  key="order"
+                  type="submit"
+                  size="lg"
+                  className="w-full"
+                  loading={isSubmitting}
+                  disabled={offer.isMine || gone}
+                >
+                  {gone
+                    ? "No longer available"
+                    : offer.isMine
+                      ? "This is your own ad"
+                      : buying
+                        ? `Buy ${ASSET}`
+                        : `Sell ${ASSET}`}
+                </Button>
+              )}
+            </div>
+          </form>
         </Panel>
 
         <div className="flex flex-col gap-4 lg:col-span-2">

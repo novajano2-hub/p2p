@@ -186,7 +186,7 @@ export async function adminRequest<T>(
 
   const text = await response.text();
   if (!response.ok) {
-    const parsed = errorSchema.safeParse(text ? (JSON.parse(text) as unknown) : undefined);
+    const parsed = errorSchema.safeParse(parseJson(text));
     if (!parsed.success) return UNEXPECTED;
     const { code, message, details } = parsed.data.error;
     if (code === "UNAUTHENTICATED") return fail("AUTH", message);
@@ -197,9 +197,23 @@ export async function adminRequest<T>(
     return fail("OTHER", message);
   }
 
-  const parsed = schema.safeParse(text ? (JSON.parse(text) as unknown) : undefined);
+  const parsed = schema.safeParse(parseJson(text));
   if (!parsed.success) return UNEXPECTED;
   return { ok: true, data: parsed.data };
+}
+
+/*
+  A proxy between here and the API answers a 502 with an HTML page, and a
+  cut connection leaves half a body: neither may throw out of a request that
+  promises to answer with a Result.
+*/
+function parseJson(text: string): unknown {
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

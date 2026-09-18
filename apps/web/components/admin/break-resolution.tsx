@@ -8,6 +8,7 @@ import { ActionButton, NeedsRole, useAdmin } from "@/components/admin/admin-shel
 import { Field, Textarea } from "@/components/ui/field";
 import { Radio } from "@/components/ui/radio";
 import { reconciliationClient, type ReconciliationBreak } from "@/lib/admin/operations";
+import { toast, toastFailure } from "@/lib/toast";
 
 /*
   The only path from a break to a ledger entry, and the reason it is a screen
@@ -132,8 +133,18 @@ export function BreakResolution({
             action,
             reason: reason.trim(),
           });
-          if (result.ok) onResolved(result.break);
-          else setError(result.message);
+          if (result.ok) {
+            toast.success("Break resolved", {
+              description:
+                action === "DISMISS"
+                  ? "Dismissed, with your reason. Nothing was posted."
+                  : "The adjustment is posted to the ledger, with your reason.",
+            });
+            onResolved(result.break);
+          } else {
+            setError(result.message);
+            toastFailure(result);
+          }
         }}
       />
 
