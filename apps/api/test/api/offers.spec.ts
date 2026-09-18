@@ -5,12 +5,16 @@ import {
 } from "@abay/contracts";
 import { createPrismaClient, type PrismaClient } from "@abay/database";
 import { type NestFastifyApplication } from "@nestjs/platform-fastify";
+import { PinoLogger } from "nestjs-pino";
 import request from "supertest";
 
 import { createApp } from "@/app";
 import { loadEnv, type Env } from "@/config/env";
+import { RedisService } from "@/infra/redis/redis.service";
 import { accounts } from "@/modules/ledger/account-code";
 import { LedgerService } from "@/modules/ledger/ledger.service";
+import { FUNDING_LOCK_KEY, OfferFundingWatcher } from "@/modules/offers/offer-funding.watcher";
+import { OfferService } from "@/modules/offers/offer.service";
 import {
   PAYMENT_METHOD_PURPOSE,
   PaymentDetailsCipher,
@@ -574,5 +578,242 @@ describe("offers", () => {
       })
       .expect(409);
     expect(oneMore.body.error.message).toMatch(/close one/i);
+  });
+});
+
+/* --------------------------------------------------- the ad balance */
+
+/*
+  Phase 5, stage 4. An ad locks nothing, so a seller may post more than they
+  hold, as on Binance; the market shows a sell ad only while their balance
+  covers its smallest order. The owner is shown why when it does not, told
+  once, and the ad goes offline after a day of it. The worker's pass
+  (OfferService.checkFunding) is run here by hand, over this file's own ads
+  only, and with the clock moved rather than waited for.
+*/
+describe("an ad its seller's balance cannot cover", () => {
+  const HOUR = 3_600_000;
+  /** 1,000.00 birr: at 158.50 that takes 6.309117 USDT. */
+  const THOUSAND_BIRR = "100000";
+
+  const mine = async (who: Api, id: string) =>
+    (await who.get(`/v1/offers/${id}/mine`).expect(200)).body as OfferView;
+
+  const told = async (who: Api) =>
+    (
+      (await who.get("/v1/notifications").expect(200)).body as {
+        notifications: { type: string; title: string; body: string; link: string | null }[];
+      }
+    ).notifications.filter((item) => item.type.startsWith("OFFER_"));
+
+  const pass = (offerIds: string[], now?: Date) =>
+    app.get(OfferService).checkFunding({ offerIds, ...(now ? { now } : {}) });
+
+  /*
+    Held through each test: a worker running against this database - a
+    developer's own, say - takes its turn only when the lock is free, so none
+    runs a pass between the steps below and answers for them.
+  */
+  const HOLDER = "offers.spec";
+  beforeEach(async () => {
+    await app.get(RedisService).client.set(FUNDING_LOCK_KEY, HOLDER, "PX", 60_000);
+  });
+  afterEach(async () => {
+    const redis = app.get(RedisService).client;
+    if ((await redis.get(FUNDING_LOCK_KEY)) === HOLDER) await redis.del(FUNDING_LOCK_KEY);
+  });
+
+  it("can be posted above the balance, and shows its owner what it can offer and why it is hidden", async () => {
+    const { api: seller } = await customer({ usdt: 10n });
+    const { api: buyer } = await customer();
+    const method = await addMethod(seller);
+
+    // 100 USDT advertised on 10 held: allowed, and it offers the 10.
+    const ad = await sellOffer(seller, method.id, { minSantim: THOUSAND_BIRR });
+    expect(ad.adBalance).toBe((10n * USDT).toString());
+    expect(ad.hiddenBecause).toBeNull();
+    expect(ad.unfundedSince).toBeNull();
+    expect(ad.pausesAt).toBeNull();
+    expect((await listed(buyer, "BUY")).find((o) => o.id === ad.id)?.available).toBe(
+      (10n * USDT).toString(),
+    );
+
+    // A smallest order of 2,000.00 birr is more than 10 USDT is worth (1,585.00).
+    const raised = await seller.patch(`/v1/offers/${ad.id}`, { minSantim: "200000" }).expect(200);
+    expect(raised.body.hiddenBecause).toBe("BALANCE");
+    expect(raised.body.adBalance).toBe((10n * USDT).toString());
+    expect((await listed(buyer, "BUY")).find((o) => o.id === ad.id)).toBeUndefined();
+    await buyer.get(`/v1/offers/${ad.id}`).expect(404);
+
+    // Sold down, as trades would have: 3.5 USDT left is worth 554.75 birr,
+    // less than the 1,000.00 minimum however much the seller holds.
+    await seller.patch(`/v1/offers/${ad.id}`, { minSantim: THOUSAND_BIRR }).expect(200);
+    await db.offer.update({ where: { id: ad.id }, data: { remainingAmount: 3_500_000n } });
+    const soldDown = await mine(seller, ad.id);
+    expect(soldDown.hiddenBecause).toBe("REMAINDER");
+    expect(soldDown.adBalance).toBe("3500000");
+    expect(
+      ((await seller.get("/v1/offers/mine").expect(200)).body.offers as OfferView[]).find(
+        (o) => o.id === ad.id,
+      )?.hiddenBecause,
+    ).toBe("REMAINDER");
+
+    // A buy ad never depends on its owner's balance.
+    const { api: broke } = await customer({ usdt: 0n });
+    const bid = await broke
+      .post("/v1/offers", {
+        side: "BUY",
+        priceSantim: "15800",
+        totalAmount: (30n * USDT).toString(),
+        minSantim: THOUSAND_BIRR,
+        maxSantim: "400000",
+        paymentWindowMinutes: 30,
+        paymentKinds: ["TELEBIRR"],
+      })
+      .expect(201);
+    expect(bid.body.adBalance).toBe((30n * USDT).toString());
+    expect(bid.body.hiddenBecause).toBeNull();
+
+    // A closed ad offers nothing and is hidden for no reason but being closed.
+    const closed = await seller.post(`/v1/offers/${ad.id}/close`).expect(200);
+    expect(closed.body.adBalance).toBe("0");
+    expect(closed.body.hiddenBecause).toBeNull();
+  });
+
+  it("tells its seller once, and goes offline after a day of it", async () => {
+    const { api: seller } = await customer({ usdt: 0n });
+    const method = await addMethod(seller);
+    const ad = await sellOffer(seller, method.id, { minSantim: THOUSAND_BIRR });
+    expect(ad.hiddenBecause).toBe("BALANCE");
+    // Hidden from the start, but nobody has looked at the clock yet.
+    expect(ad.unfundedSince).toBeNull();
+
+    expect(await pass([ad.id])).toEqual({ hidden: 1, paused: 0, cleared: 0 });
+    const hidden = await told(seller);
+    expect(hidden).toHaveLength(1);
+    expect(hidden[0]).toMatchObject({
+      type: "OFFER_HIDDEN",
+      title: "Your ad is hidden from the market",
+      link: "/trade/ads",
+    });
+    expect(hidden[0]?.body).toBe(
+      "Your sell ad at 158.50 birr is hidden: your available balance of 0.000000 USDT is worth less than its smallest order of 1,000.00 birr. Add USDT within 24 hours or the ad goes offline.",
+    );
+
+    const waiting = await mine(seller, ad.id);
+    expect(waiting.status).toBe("ACTIVE");
+    const since = Date.parse(waiting.unfundedSince ?? "");
+    expect(Date.now() - since).toBeLessThan(60_000);
+    expect(waiting.pausesAt).toBe(new Date(since + 24 * HOUR).toISOString());
+
+    // Looking again says nothing again.
+    expect(await pass([ad.id])).toEqual({ hidden: 0, paused: 0, cleared: 0 });
+    expect(await told(seller)).toHaveLength(1);
+
+    // A minute short of the day: still on. The day: offline.
+    expect(await pass([ad.id], new Date(since + 24 * HOUR - 60_000))).toEqual({
+      hidden: 0,
+      paused: 0,
+      cleared: 0,
+    });
+    expect(await pass([ad.id], new Date(since + 24 * HOUR))).toEqual({
+      hidden: 0,
+      paused: 1,
+      cleared: 0,
+    });
+    const off = await mine(seller, ad.id);
+    expect(off.status).toBe("PAUSED");
+    expect(off.unfundedSince).toBeNull();
+    expect(off.pausesAt).toBeNull();
+    // Switched back on as it is, the balance would still keep it out.
+    expect(off.hiddenBecause).toBe("BALANCE");
+
+    const offline = await told(seller);
+    expect(offline.map((item) => item.type)).toEqual(["OFFER_PAUSED", "OFFER_HIDDEN"]);
+    expect(offline[0]).toMatchObject({
+      title: "Your ad went offline",
+      link: "/trade/ads?tab=offline",
+    });
+    expect(offline[0]?.body).toBe(
+      "Your sell ad at 158.50 birr was taken offline: for 24 hours your available balance could not cover its smallest order of 1,000.00 birr. Add USDT, then switch it back on in My ads.",
+    );
+
+    // An ad that is off is nobody's concern: nothing more happens to it.
+    expect(await pass([ad.id], new Date(since + 48 * HOUR))).toEqual({
+      hidden: 0,
+      paused: 0,
+      cleared: 0,
+    });
+  });
+
+  it("stops the clock when the balance covers the ad again or its owner switches it off, and does not repeat itself within a day", async () => {
+    const { api: seller, userId } = await customer({ usdt: 0n });
+    const method = await addMethod(seller);
+    const ad = await sellOffer(seller, method.id, { minSantim: THOUSAND_BIRR });
+    expect(await pass([ad.id])).toEqual({ hidden: 1, paused: 0, cleared: 0 });
+
+    // Fifty USDT arrive: the ad is back, and its clock stops.
+    await ledger.post({
+      reason: "OPENING_BALANCE",
+      asset: "USDT",
+      reference: { type: "fixture", id: uniq("fund") },
+      actor: { type: "SYSTEM" },
+      correlationId: uniq("corr"),
+      idempotencyKey: uniq("fund"),
+      lines: [
+        { account: accounts.platform("OPENING_BALANCE"), direction: "DEBIT", amount: 50n * USDT },
+        { account: accounts.userAvailable(userId), direction: "CREDIT", amount: 50n * USDT },
+      ],
+    });
+    expect(await pass([ad.id])).toEqual({ hidden: 0, paused: 0, cleared: 1 });
+    const covered = await mine(seller, ad.id);
+    expect(covered.hiddenBecause).toBeNull();
+    expect(covered.unfundedSince).toBeNull();
+
+    // 50 USDT is worth 7,925.00 birr; a smallest order of 8,000.00 is out of
+    // reach again. The clock restarts, but its owner heard an hour ago.
+    await seller.patch(`/v1/offers/${ad.id}`, { minSantim: "800000" }).expect(200);
+    expect(await pass([ad.id])).toEqual({ hidden: 0, paused: 0, cleared: 0 });
+    expect((await mine(seller, ad.id)).unfundedSince).not.toBeNull();
+    expect(await told(seller)).toHaveLength(1);
+
+    // Switched off by hand: no clock. Switched back on: a whole day again.
+    const paused = await seller.post(`/v1/offers/${ad.id}/pause`).expect(200);
+    expect(paused.body.unfundedSince).toBeNull();
+    expect((await db.offer.findUniqueOrThrow({ where: { id: ad.id } })).unfundedSince).toBeNull();
+    await seller.post(`/v1/offers/${ad.id}/resume`).expect(200);
+    expect(await pass([ad.id])).toEqual({ hidden: 0, paused: 0, cleared: 0 });
+    const since = Date.parse((await mine(seller, ad.id)).unfundedSince ?? "");
+    expect(Date.now() - since).toBeLessThan(60_000);
+
+    // A day after the first time, the owner would hear of it again.
+    await db.offer.update({
+      where: { id: ad.id },
+      data: { unfundedSince: null, unfundedNotifiedAt: new Date(Date.now() - 25 * HOUR) },
+    });
+    expect(await pass([ad.id])).toEqual({ hidden: 1, paused: 0, cleared: 0 });
+    expect(await told(seller)).toHaveLength(2);
+  });
+
+  it("runs one pass at a time across workers, and gives the lock back as it ends", async () => {
+    const redis = app.get(RedisService);
+    const watcher = new OfferFundingWatcher(
+      redis,
+      app.get(OfferService),
+      await app.resolve(PinoLogger),
+    );
+
+    // Another worker's pass is under way: this one waits its turn and leaves that lock alone.
+    expect(await watcher.tick()).toBeNull();
+    expect(await redis.client.get(FUNDING_LOCK_KEY)).toBe(HOLDER);
+
+    // Its turn: a pass over every live sell ad, and the lock given back as it ends.
+    await redis.client.del(FUNDING_LOCK_KEY);
+    expect(await watcher.tick()).toEqual({
+      hidden: expect.any(Number) as number,
+      paused: expect.any(Number) as number,
+      cleared: expect.any(Number) as number,
+    });
+    expect(await redis.client.exists(FUNDING_LOCK_KEY)).toBe(0);
   });
 });

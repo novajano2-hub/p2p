@@ -98,7 +98,9 @@ export type NotificationType =
   | "TRADE_EXPIRED"
   | "DISPUTE_OPENED"
   | "DISPUTE_RESOLVED"
-  | "DISPUTE_WITHDRAWN";
+  | "DISPUTE_WITHDRAWN"
+  | "OFFER_HIDDEN"
+  | "OFFER_PAUSED";
 
 /** What the account was told without doing anything on this device. */
 export type NotificationItem = {
@@ -208,6 +210,8 @@ const notificationTypeSchema = z.enum([
   "DISPUTE_OPENED",
   "DISPUTE_RESOLVED",
   "DISPUTE_WITHDRAWN",
+  "OFFER_HIDDEN",
+  "OFFER_PAUSED",
 ]);
 const notificationItemSchema = z.object({
   id: z.string(),

@@ -3,6 +3,7 @@ import { NestFactory } from "@nestjs/core";
 import { loadEnv } from "@/config/env";
 import { KycRetentionService } from "@/modules/kyc/kyc-retention.service";
 import { KycSweepScheduler } from "@/modules/kyc/kyc-sweep.scheduler";
+import { OfferFundingWatcher } from "@/modules/offers/offer-funding.watcher";
 import { WorkerModule } from "@/worker.module";
 
 /*
@@ -23,6 +24,8 @@ describe("the worker", () => {
       // store, Redis for the lock, and the timer that ties them together.
       expect(context.get(KycSweepScheduler)).toBeInstanceOf(KycSweepScheduler);
       expect(context.get(KycRetentionService)).toBeInstanceOf(KycRetentionService);
+      // The ad-funding watcher reaches the offers, the ledger and the notifications.
+      expect(context.get(OfferFundingWatcher)).toBeInstanceOf(OfferFundingWatcher);
     } finally {
       // Also the assertion that matters most for a long-running process: the
       // interval is cleared on shutdown, so this test does not leave a handle

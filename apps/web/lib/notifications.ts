@@ -25,6 +25,8 @@ export const NOTIFICATION_TONES: Record<NotificationType, Tone> = {
   DISPUTE_OPENED: "warn",
   DISPUTE_WITHDRAWN: "note",
   DISPUTE_RESOLVED: "note",
+  OFFER_HIDDEN: "warn",
+  OFFER_PAUSED: "warn",
 };
 
 /** The tone of a type this build may not know yet: a newer server can add one. */

@@ -19,6 +19,7 @@ import { type Env } from "@/config/env";
 import { PrismaService } from "@/infra/prisma/prisma.service";
 import { RedisService } from "@/infra/redis/redis.service";
 import { SESSION_COOKIE, SessionService } from "@/modules/auth/session.service";
+import { PresenceService } from "@/modules/presence/presence.service";
 import { REALTIME_CHANNEL, type RealtimeEnvelope } from "@/modules/realtime/realtime.service";
 
 /*
@@ -41,6 +42,10 @@ import { REALTIME_CHANNEL, type RealtimeEnvelope } from "@/modules/realtime/real
   is closed within a minute; and a client that stops answering pings is
   gone within two heartbeats. The socket never carries money and never
   decides anything - it only says "something changed, go and look".
+
+  It is also how the platform knows who is around (PresenceService): an
+  account with a tab open is seen when the tab connects, on every heartbeat
+  it answers, and when its last tab here closes.
 */
 
 /** Tabs per account. A person has a few; a script has hundreds. */
@@ -92,6 +97,7 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     private readonly sessions: SessionService,
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly presence: PresenceService,
     @Inject(ENV) private readonly env: Env,
     private readonly logger: PinoLogger,
   ) {
@@ -105,9 +111,7 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
     this.server.on("upgrade", this.onUpgrade);
 
-    this.heartbeat = setInterval(() => {
-      this.pingAll();
-    }, HEARTBEAT_MS);
+    this.heartbeat = setInterval(() => void this.beat(), HEARTBEAT_MS);
     this.heartbeat.unref();
     this.revalidation = setInterval(() => void this.revalidate(), REVALIDATE_MS);
     this.revalidation.unref();
@@ -252,6 +256,7 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     };
     this.clients.add(client);
     index(this.byUser, client.userId, client);
+    void this.presence.seen([client.userId]);
 
     socket.on("pong", () => {
       client.alive = true;
@@ -279,6 +284,8 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     unindex(this.byUser, client.userId, client);
     for (const tradeId of client.subscriptions) unindex(this.byTrade, tradeId, client);
     client.subscriptions.clear();
+    // Their last tab here has gone: the moment they were last seen, to the second.
+    if (!this.byUser.has(client.userId)) void this.presence.seen([client.userId]);
   }
 
   /* --------------------------------------------------------------- frames */
@@ -434,15 +441,24 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
 
   /* --------------------------------------------------------- housekeeping */
 
-  private pingAll(): void {
+  /**
+   * One heartbeat. A client that did not answer the last ping is cut off;
+   * everyone else is pinged, and the accounts they belong to are seen now -
+   * which is how a tab on this replica puts its owner online for a reader on
+   * another. Public so a test can run one on demand.
+   */
+  beat(): Promise<void> {
+    const here = new Set<string>();
     for (const client of this.clients) {
       if (!client.alive) {
         client.socket.terminate();
         continue;
       }
+      here.add(client.userId);
       client.alive = false;
       client.socket.ping();
     }
+    return this.presence.seen(here);
   }
 
   /**

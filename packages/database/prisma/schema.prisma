@@ -133,6 +133,10 @@ enum NotificationType {
   DISPUTE_OPENED
   DISPUTE_RESOLVED
   DISPUTE_WITHDRAWN
+  /// Phase 5 - a sell ad the seller's balance cannot cover. Each links to My ads.
+  /// Hidden from the market, and later taken offline by the worker.
+  OFFER_HIDDEN
+  OFFER_PAUSED
 
   @@map("notification_type")
 }
@@ -1416,6 +1420,15 @@ model Offer {
   /// if it has moved (TradeService.create). Somebody else taking from the ad
   /// does not move it, and neither does going offline and back.
   revision Int @default(1)
+
+  /// When the seller's available balance stopped covering this live sell ad's
+  /// smallest order, as the worker last saw it (OfferService.checkFunding).
+  /// Null while it covers it, and whenever the ad is not live. An ad left
+  /// uncovered for OFFER_UNFUNDED_PAUSE_HOURS goes offline by itself.
+  unfundedSince      DateTime? @map("unfunded_since")
+  /// When its owner was last told it is hidden, so a balance hovering at the
+  /// edge does not tell them again every time it dips.
+  unfundedNotifiedAt DateTime? @map("unfunded_notified_at")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

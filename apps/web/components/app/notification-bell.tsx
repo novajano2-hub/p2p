@@ -6,7 +6,9 @@ import {
   Bell,
   ChatCircleDots,
   CheckCircle,
+  EyeSlash,
   Handshake,
+  PauseCircle,
   Scales,
   WarningCircle,
   XCircle,
@@ -41,6 +43,8 @@ const ICONS: Partial<Record<NotificationType, typeof CheckCircle>> = {
   DISPUTE_OPENED: Scales,
   DISPUTE_WITHDRAWN: Scales,
   DISPUTE_RESOLVED: Scales,
+  OFFER_HIDDEN: EyeSlash,
+  OFFER_PAUSED: PauseCircle,
 };
 
 const TONE_CLASS = {
@@ -110,10 +114,17 @@ export function NotificationBell() {
         ) : null}
       </button>
 
+      {/*
+        On a phone the list spans the screen under the header, 16px in from
+        each edge: hung from the bell, which is not the rightmost thing in the
+        header, 320px ran off the left of a 360px screen. `fixed` places it by
+        the header's box - its backdrop blur makes that the containing block -
+        which is the screen's width at the top.
+      */}
       <div
         id={panelId}
         hidden={!open}
-        className="border-border bg-surface shadow-panel rounded-surface absolute top-full right-0 z-50 mt-2 w-80 border p-2"
+        className="border-border bg-surface shadow-panel rounded-surface fixed inset-x-4 top-[4.5rem] z-50 border p-2 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-80"
       >
         <div className="flex items-center justify-between px-2 pt-1.5 pb-2">
           <p className="text-foreground text-[13px] font-semibold">Notifications</p>

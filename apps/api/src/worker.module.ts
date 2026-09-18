@@ -12,6 +12,8 @@ import { DepositsModule } from "@/modules/deposits/deposits.module";
 import { KycRetentionModule } from "@/modules/kyc/kyc-retention.module";
 import { LedgerModule } from "@/modules/ledger/ledger.module";
 import { KycSweepScheduler } from "@/modules/kyc/kyc-sweep.scheduler";
+import { OfferFundingWatcher } from "@/modules/offers/offer-funding.watcher";
+import { OffersModule } from "@/modules/offers/offers.module";
 import { OutboxModule } from "@/modules/outbox/outbox.module";
 import { OutboxPublisher } from "@/modules/outbox/outbox.publisher";
 import { ReconciliationModule } from "@/modules/reconciliation/reconciliation.module";
@@ -52,6 +54,7 @@ export class WorkerModule {
         SweepsModule,
         ReconciliationModule,
         TradesModule,
+        OffersModule,
       ],
       providers: [
         KycSweepScheduler,
@@ -61,6 +64,7 @@ export class WorkerModule {
         WithdrawalProcessor,
         TreasuryWorker,
         TradeExpirer,
+        OfferFundingWatcher,
       ],
     };
   }

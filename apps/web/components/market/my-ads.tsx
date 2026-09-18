@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { LoadFailed } from "@/components/app/load-failed";
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
+import { useRealtimeEvent } from "@/components/app/realtime-provider";
 import { FormError } from "@/components/auth/notices";
 import {
   BackTo,
@@ -81,6 +82,17 @@ export function MyAds() {
     });
   }, []);
   useEffect(refresh, [refresh]);
+
+  /*
+    The platform changes ads too: it hides one the seller's balance stops
+    covering, and takes it offline after a day of that. Each time it tells the
+    seller over the socket, and the list looks again - so the toast saying an
+    ad went offline and the tab it sits under never disagree.
+  */
+  useRealtimeEvent("notification", (frame) => {
+    const { type } = frame.notification;
+    if (type === "OFFER_HIDDEN" || type === "OFFER_PAUSED") refresh();
+  });
 
   const act = async (offer: MyOffer, action: "pause" | "resume" | "close") => {
     setError(null);

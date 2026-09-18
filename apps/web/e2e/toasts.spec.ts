@@ -307,6 +307,35 @@ test.describe("news from the socket", () => {
     expect(read).toBe(1);
   });
 
+  test("fills the bell, whose list fits the screen", async ({ page, context }) => {
+    await withSession(context);
+    const socket = await stubSocket(page);
+    await stubApi(page, signedIn());
+
+    await page.goto("/settings");
+    await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+    (await socket.connected).send(
+      notification({
+        type: "OFFER_HIDDEN",
+        title: "Your ad is hidden from the market",
+        body: "Your sell ad at 158.50 birr is hidden: your available balance of 0.000000 USDT is worth less than its smallest order of 1,000.00 birr. Add USDT within 24 hours or the ad goes offline.",
+        link: "/trade/ads",
+      }),
+    );
+
+    const bell = page.getByRole("button", { name: "Notifications, 1 unread" });
+    await bell.click();
+    const list = page.locator(`#${(await bell.getAttribute("aria-controls")) ?? ""}`);
+    await expect(list.getByText("Your ad is hidden from the market")).toBeVisible();
+
+    // Inside the screen at every width, phone included: nothing past either edge.
+    const box = await list.boundingBox();
+    const width = page.viewportSize()?.width ?? 0;
+    expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
+    await expectNoHorizontalOverflow(page);
+  });
+
   test("a chat message is said off its trade, and not on it", async ({ page, context }) => {
     await withSession(context);
     const socket = await stubSocket(page);

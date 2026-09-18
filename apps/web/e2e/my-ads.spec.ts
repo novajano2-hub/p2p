@@ -1,6 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectNoHorizontalOverflow, ok, signedIn, stubApi, USER, withSession } from "./support";
+import {
+  expectNoHorizontalOverflow,
+  ok,
+  signedIn,
+  stubApi,
+  stubSocket,
+  USER,
+  withSession,
+} from "./support";
 
 /*
   My ads, in the three states an ad is in: online, offline, closed. A closed
@@ -82,6 +90,41 @@ test("keeps online, offline and closed ads apart", async ({ page }) => {
   await expect(closed).toContainText("160.00");
   await expect(closed.getByRole("button")).toHaveCount(0);
   await expect(closed.getByRole("link", { name: "Edit" })).toHaveCount(0);
+  await expectNoHorizontalOverflow(page);
+});
+
+test("moves an ad the platform took offline as it happens, not at the next visit", async ({
+  page,
+}) => {
+  const socket = await stubSocket(page);
+  let offline = false;
+  await stubApi(page, [
+    ...signedIn({ ...USER, kycStatus: "APPROVED" }),
+    {
+      method: "GET",
+      path: /^\/v1\/offers\/mine$/,
+      reply: () => ok({ offers: [ad({ status: offline ? "PAUSED" : "ACTIVE" })] }),
+    },
+  ]);
+
+  await page.goto("/trade/ads");
+  await expect(page.getByRole("tab")).toHaveText(["Online (1)", "Offline (0)", "Closed (0)"]);
+
+  // A day without the balance to cover it: the worker took it offline, and says so.
+  offline = true;
+  (await socket.connected).send({
+    type: "notification",
+    notification: {
+      id: "n1",
+      type: "OFFER_PAUSED",
+      title: "Your ad went offline",
+      body: "Your sell ad at 158.50 birr was taken offline: for 24 hours your available balance could not cover its smallest order of 10.00 birr. Add USDT, then switch it back on in My ads.",
+      link: "/trade/ads?tab=offline",
+      readAt: null,
+      createdAt: new Date().toISOString(),
+    },
+  });
+  await expect(page.getByRole("tab")).toHaveText(["Online (0)", "Offline (1)", "Closed (0)"]);
   await expectNoHorizontalOverflow(page);
 });
 

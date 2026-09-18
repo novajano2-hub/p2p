@@ -81,6 +81,7 @@ cannot drift between them:
 | `withdrawal-builder`     | Build unsigned transactions                                    | Unique `(withdrawal_id, attempt)`                      |
 | `withdrawal-broadcaster` | Sign via custody, broadcast, track                             | Provider-side client reference = `withdrawal_id`       |
 | `trade-expirer`          | Expire unpaid trades, refund escrow                            | Unique `(trade_id, 'EXPIRE')`                          |
+| `offer-funding-watcher`  | Tell sellers of hidden ads; pause after a day uncovered        | Conditional on the ad's clock; one notice a day        |
 | `outbox-publisher`       | Emit notifications and events                                  | Row-level claim + delivery marker                      |
 | `reconciler`             | Compare on-chain totals to ledger totals, raise breaks         | Read-only; never posts                                 |
 
@@ -109,6 +110,14 @@ Frames: `message`, `typing`, `read`, `trade` (a status changed - refetch), `noti
 30 frames per 10 seconds, 16 KB per frame, 1 MB of unsent bytes before a slow reader is
 dropped, a ping every 30 seconds, and the session re-checked every minute so a sign-out
 elsewhere closes the socket (4001). On shutdown every socket is told 1001.
+
+**Presence (Phase 5, stage 4).** An open tab is also how the platform knows someone is
+around: the replica holding it writes the time into Redis when the tab connects, on every
+heartbeat it answers and when the account's last tab there closes, so a tab on one replica
+puts its owner online for a reader on another. `PresenceService` answers from that and
+from the session's `last_used_at`, the later winning: online means seen in the last five
+minutes, and "last seen" is to the minute. Redis being away costs staleness, never a
+refusal - the session then answers alone.
 
 ## 3. Trust boundaries
 

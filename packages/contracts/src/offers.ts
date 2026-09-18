@@ -23,6 +23,26 @@ export type OfferSide = z.infer<typeof offerSide>;
 export const offerStatus = z.enum(["ACTIVE", "PAUSED", "CLOSED"]);
 export type OfferStatus = z.infer<typeof offerStatus>;
 
+/**
+ * What keeps an ad that is switched on out of the market.
+ *
+ * BALANCE: a sell ad whose seller's available USDT is worth less than its
+ * smallest order. Nothing is held for an ad (ADR-0004), so this moves with
+ * the balance: adding USDT brings the ad back, and an ad left like this goes
+ * offline by itself after a day.
+ *
+ * REMAINDER: what is left of the ad is itself worth less than its smallest
+ * order - sold down, or sold out. Only editing the ad (or closing it) helps.
+ */
+export const offerHiddenReason = z.enum(["BALANCE", "REMAINDER"]);
+export type OfferHiddenReason = z.infer<typeof offerHiddenReason>;
+
+/**
+ * How recently someone must have been seen - on the live connection, or
+ * making a request - to show as online.
+ */
+export const PRESENCE_ONLINE_MINUTES = 5;
+
 /** The one fiat currency at launch. */
 export const FIAT_CURRENCY = "ETB";
 
@@ -167,6 +187,23 @@ export const offerView = z.object({
   revision: z.number().int().positive(),
   /** Orders from this ad that are still running. Closing the ad leaves them alone. */
   openOrders: z.number().int().nonnegative(),
+  /**
+   * What a taker could take from the ad right now: on a sell ad the lesser of
+   * what remains and the seller's available balance, on a buy ad what
+   * remains. For an ad that is off, what it would offer if it were switched
+   * back on; zero once it is closed.
+   */
+  adBalance: microAmount,
+  /**
+   * Why the ad is not in the market although it is on - or, for an ad that is
+   * off, what would keep it out if it were switched back on. Null when
+   * nothing does, and for a closed ad.
+   */
+  hiddenBecause: offerHiddenReason.nullable(),
+  /** When the seller's balance stopped covering this live sell ad, as the platform last checked; null while it covers it. */
+  unfundedSince: z.string().nullable(),
+  /** When the ad goes offline by itself unless the balance covers it again; null unless `unfundedSince` is set. */
+  pausesAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -176,13 +213,17 @@ export const myOffersResponse = z.object({ offers: z.array(offerView) });
 export type MyOffersResponse = z.infer<typeof myOffersResponse>;
 
 /**
- * The advertiser as a taker sees them: a username and a track record. Never
- * an email, never an account number, never a balance.
+ * The advertiser as a taker sees them: a username, a track record and whether
+ * they are around. Never an email, never an account number, never a balance.
  */
 export const advertiserView = z.object({
   userId: z.string(),
   username: z.string(),
   verified: z.boolean(),
+  /** Seen within the last PRESENCE_ONLINE_MINUTES. */
+  online: z.boolean(),
+  /** When they were last seen, to the minute. Null when there is no record of it. */
+  lastSeenAt: z.string().nullable(),
   tradesTotal: z.number().int().nonnegative(),
   tradesCompleted: z.number().int().nonnegative(),
   /** Whole percent, or null until there is something to count. */

@@ -237,6 +237,11 @@ export const envSchema = z
     TRADE_CHAT_AFTER_CLOSE_HOURS: z.coerce.number().int().min(0).max(720).default(24),
     /** Live or paused offers one account may have. */
     OFFER_MAX_PER_USER: z.coerce.number().int().min(1).max(100).default(5),
+    /* How long a sell ad its seller's balance cannot cover stays switched on
+       before it goes offline by itself. It is hidden from the market the
+       whole time; this is only how long the seller has to top up before
+       having to switch it back on. A day, as the owner decided. */
+    OFFER_UNFUNDED_PAUSE_HOURS: z.coerce.number().int().min(1).max(720).default(24),
 
     /* The adapters at the edge (ADR-0006). Only the deterministic mocks exist
        until Phase 6; a real one is a new value here and a new file there. */

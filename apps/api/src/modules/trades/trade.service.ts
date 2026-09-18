@@ -49,6 +49,7 @@ import {
   TRADE_SNAPSHOT_PURPOSE,
 } from "@/modules/payment-methods/payment-details.cipher";
 import { PaymentMethodService } from "@/modules/payment-methods/payment-method.service";
+import { PresenceService, UNSEEN } from "@/modules/presence/presence.service";
 import { RealtimeService } from "@/modules/realtime/realtime.service";
 import { tradeMail, type TradeMailKind } from "@/modules/trades/trade-mail";
 import {
@@ -127,6 +128,7 @@ export class TradeService {
     private readonly notifications: NotificationsService,
     private readonly outbox: OutboxService,
     private readonly realtime: RealtimeService,
+    private readonly presence: PresenceService,
     @Inject(ENV) private readonly env: Env,
     private readonly logger: PinoLogger,
   ) {
@@ -1113,12 +1115,13 @@ export class TradeService {
     const others = [
       ...new Set(rows.map((row) => (row.buyerId === viewerId ? row.sellerId : row.buyerId))),
     ];
-    const [users, stats] = await Promise.all([
+    const [users, stats, presence] = await Promise.all([
       this.prisma.client.user.findMany({
         where: { id: { in: others } },
         select: { id: true, username: true, kycStatus: true },
       }),
       this.prisma.client.traderStats.findMany({ where: { userId: { in: others } } }),
+      this.presence.of(others),
     ]);
     const statsOf = new Map(stats.map((row) => [row.userId, row]));
     return rows.map((row) => {
@@ -1128,6 +1131,7 @@ export class TradeService {
         userId: otherId,
         username: user?.username ?? "a former customer",
         verified: user?.kycStatus === "APPROVED",
+        ...(presence.get(otherId) ?? UNSEEN),
         ...statsView(statsOf.get(otherId) ?? null),
       });
     });
