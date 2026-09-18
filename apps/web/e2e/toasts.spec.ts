@@ -52,6 +52,7 @@ const OFFER = {
   advertiser: ADVERTISER,
   revision: 1,
   isMine: false,
+  blockedBecause: null,
 };
 
 /** The order page's own reads, for a trade as the stub has it. */
@@ -109,15 +110,24 @@ test.describe("a form that cannot be sent", () => {
     ]);
 
     await page.goto("/trade/ads/new");
-    // The button is at the bottom of a long form, far from the first field.
-    await page.getByRole("button", { name: "Post ad" }).click();
+    // Each step checks its own fields before moving on, and goes to the first problem.
+    await page.getByRole("button", { name: "Next" }).click();
 
     const said = toastSaying(page, "Enter the price in birr per USDT.");
     await expect(said).toBeVisible();
-    await expect(said).toContainText("4 more fields need a look too.");
     const price = page.getByLabel("Price, birr per USDT");
     await expect(price).toBeFocused();
     await expect(price).toBeInViewport();
+
+    await price.fill("158.50");
+    await page.getByRole("button", { name: "Next" }).click();
+    // On to the second step, and on again with nothing in it.
+    await expect(page.getByLabel("Total amount, USDT")).toBeVisible();
+    await page.getByRole("button", { name: "Next" }).click();
+    const next = toastSaying(page, "Enter how much USDT the ad is for.");
+    await expect(next).toBeVisible();
+    await expect(next).toContainText("3 more fields need a look too.");
+    await expect(page.getByLabel("Total amount, USDT")).toBeFocused();
     // Every problem is also on its own field, where it stays.
     await expect(page.getByText("Choose at least one way to be paid.")).toBeVisible();
     await expectNoHorizontalOverflow(page);
@@ -164,10 +174,12 @@ test.describe("a refusal", () => {
 
     await page.goto("/trade/ads/new");
     await page.getByLabel("Price, birr per USDT").fill("158.50");
+    await page.getByRole("button", { name: "Next" }).click();
     await page.getByLabel("Total amount, USDT").fill("100");
     await page.getByLabel("Smallest trade, birr").fill("500");
     await page.getByLabel("Largest trade, birr").fill("20000");
-    await page.getByText("Telebirr ····5678 · Telebirr").click();
+    await page.getByText("Telebirr ····5678").click();
+    await page.getByRole("button", { name: "Next" }).click();
     await page.getByRole("button", { name: "Post ad" }).click();
 
     const sentence = "You can have at most 5 live ads. Take one offline first.";

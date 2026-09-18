@@ -581,6 +581,69 @@ describe("offers", () => {
   });
 });
 
+/* ------------------------------------------- the market's filters */
+
+/*
+  Phase 5, stage 5. Two filters from Binance's popover - the time a buyer has
+  to pay, and "only ads I can take" - and, on every ad, why this viewer could
+  not take it, which is what its Limited button says. The rules are the trade
+  engine's own, so nothing the filter lets through is refused at order time.
+*/
+describe("the market's filters, and what its viewer can take", () => {
+  const find = (list: MarketplaceOffer[], id: string) => list.find((o) => o.id === id);
+
+  it("filters by time to pay, and says why an ad cannot be taken - or leaves it out", async () => {
+    const { api: seller } = await customer({ usdt: 500n });
+    const method = await addMethod(seller);
+    const quick = await sellOffer(seller, method.id, { paymentWindowMinutes: 15 });
+    const verifiedOnly = await sellOffer(seller, method.id, {
+      paymentWindowMinutes: 45,
+      requireVerified: true,
+    });
+    const experienced = await sellOffer(seller, method.id, {
+      paymentWindowMinutes: 60,
+      minCompletedTrades: 5,
+    });
+
+    // A newcomer: not verified, no trades yet.
+    const { api: newcomer } = await customer({ verified: false });
+    const all = await listed(newcomer, "BUY");
+    expect(find(all, quick.id)?.blockedBecause).toBeNull();
+    expect(find(all, verifiedOnly.id)?.blockedBecause).toBe("VERIFICATION");
+    expect(find(all, experienced.id)?.blockedBecause).toBe("COMPLETED_TRADES");
+    // One ad on its own says the same.
+    const one = await newcomer.get(`/v1/offers/${verifiedOnly.id}`).expect(200);
+    expect(one.body.blockedBecause).toBe("VERIFICATION");
+
+    // Only the ads that give the buyer at least 45 minutes: those with 45, and with 60.
+    const slow = await listed(newcomer, "BUY", "&minPaymentWindowMinutes=45");
+    expect(find(slow, quick.id)).toBeUndefined();
+    expect(find(slow, verifiedOnly.id)).toBeDefined();
+    expect(find(slow, experienced.id)).toBeDefined();
+    expect(slow.every((o) => o.paymentWindowMinutes >= 45)).toBe(true);
+
+    // Only the ads the newcomer could take.
+    const takeable = await listed(newcomer, "BUY", "&takeable=true");
+    expect(find(takeable, quick.id)).toBeDefined();
+    expect(find(takeable, verifiedOnly.id)).toBeUndefined();
+    expect(find(takeable, experienced.id)).toBeUndefined();
+    expect(takeable.every((o) => o.blockedBecause === null && !o.isMine)).toBe(true);
+
+    // Verified, the second opens up; the third still wants five trades.
+    const { api: verified } = await customer();
+    const forVerified = await listed(verified, "BUY", "&takeable=true");
+    expect(find(forVerified, verifiedOnly.id)).toBeDefined();
+    expect(find(forVerified, experienced.id)).toBeUndefined();
+    // Nobody can take their own ad, so it is left out for its owner.
+    expect(find(await listed(seller, "BUY", "&takeable=true"), quick.id)).toBeUndefined();
+    expect(find(await listed(seller, "BUY"), quick.id)?.isMine).toBe(true);
+
+    // A value the market does not offer is refused, not ignored.
+    await newcomer.get("/v1/offers?want=BUY&minPaymentWindowMinutes=20").expect(400);
+    await newcomer.get("/v1/offers?want=BUY&takeable=perhaps").expect(400);
+  });
+});
+
 /* --------------------------------------------------- the ad balance */
 
 /*

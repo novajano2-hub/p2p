@@ -43,6 +43,15 @@ export type OfferHiddenReason = z.infer<typeof offerHiddenReason>;
  */
 export const PRESENCE_ONLINE_MINUTES = 5;
 
+/**
+ * Why the viewer could not take an ad, which the trade engine would refuse:
+ * the advertiser trades with verified accounts only, or with accounts that
+ * have completed more trades than the viewer has. The viewer's own ad is
+ * `isMine`, not one of these.
+ */
+export const offerBlockedReason = z.enum(["VERIFICATION", "COMPLETED_TRADES"]);
+export type OfferBlockedReason = z.infer<typeof offerBlockedReason>;
+
 /** The one fiat currency at launch. */
 export const FIAT_CURRENCY = "ETB";
 
@@ -258,6 +267,8 @@ export const marketplaceOffer = z.object({
   revision: z.number().int().positive(),
   /** The viewer's own, shown so they can see their place in the list, and not takeable. */
   isMine: z.boolean(),
+  /** Why the viewer could not take it; null when they could. */
+  blockedBecause: offerBlockedReason.nullable(),
 });
 export type MarketplaceOffer = z.infer<typeof marketplaceOffer>;
 
@@ -267,6 +278,13 @@ export const marketplaceQuery = z.object({
   /** A birr amount the viewer means to trade: offers whose limits exclude it are left out. */
   amountSantim: santimAmount.optional(),
   paymentKind: paymentMethodKind.optional(),
+  /** Only ads that give the buyer at least this long to pay. */
+  minPaymentWindowMinutes: z.coerce.number().pipe(paymentWindowMinutes).optional(),
+  /**
+   * Leave out what the viewer could not take: their own ads, and those for
+   * verified or more experienced traders than they are yet.
+   */
+  takeable: z.stringbool().optional(),
   cursor: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });

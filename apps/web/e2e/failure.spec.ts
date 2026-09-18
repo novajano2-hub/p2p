@@ -53,6 +53,7 @@ const OFFER = {
   advertiser: ADVERTISER,
   revision: 1,
   isMine: false,
+  blockedBecause: null,
 };
 
 test.describe("a session that ends", () => {
@@ -241,6 +242,7 @@ test.describe("the connection", () => {
     await expect(offline).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
+    await page.getByRole("button", { name: "Add a payment method" }).click();
     await page.getByLabel("Name on the account").fill("Abebe Bikila");
     await page.getByLabel("Telebirr phone number").fill("0912345678");
     await page.getByRole("button", { name: "Add payment method" }).click();

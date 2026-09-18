@@ -4,6 +4,7 @@ import {
   type MarketplaceOffer,
   type MarketplaceQuery,
   type MarketplaceResponse,
+  type OfferBlockedReason,
   type OfferSide,
   type OfferView,
   type PaymentMethodKind,
@@ -113,6 +114,13 @@ interface MarketRow {
   release_count: number | null;
   pay_total_ms: bigint | null;
   pay_count: number | null;
+}
+
+/** Who is looking at the market, as far as the rules an ad sets are concerned. */
+interface Viewer {
+  id: string;
+  verified: boolean;
+  completedTrades: number;
 }
 
 /** What the funding pass reads per live sell ad. */
@@ -377,15 +385,18 @@ export class OfferService {
   async marketplace(viewerId: string, query: MarketplaceQuery): Promise<MarketplaceResponse> {
     const side: OfferSide = query.want === "BUY" ? "SELL" : "BUY";
     const cursor = query.cursor ? decodeCursor(query.cursor) : null;
+    const viewer = await this.taker(viewerId);
     const rows = await this.search(side, {
       limit: query.limit + 1,
       amountSantim: query.amountSantim ? BigInt(query.amountSantim) : null,
       paymentKind: query.paymentKind ?? null,
+      minPaymentWindow: query.minPaymentWindowMinutes ?? null,
+      takeableBy: query.takeable ? viewer : null,
       cursor,
       id: null,
     });
     const page = rows.slice(0, query.limit);
-    const offers = await this.toMarketplace(page, viewerId);
+    const offers = await this.toMarketplace(page, viewer);
     const last = page[page.length - 1];
     return {
       offers,
@@ -399,12 +410,27 @@ export class OfferService {
       limit: 1,
       amountSantim: null,
       paymentKind: null,
+      minPaymentWindow: null,
+      takeableBy: null,
       cursor: null,
       id,
     });
-    const [offer] = await this.toMarketplace(rows, viewerId);
+    const [offer] = await this.toMarketplace(rows, await this.taker(viewerId));
     if (!offer) throw AppError.notFound("That offer is not available right now.");
     return offer;
+  }
+
+  /** The two things an ad may ask of whoever takes it, read for the viewer once per request. */
+  private async taker(id: string): Promise<Viewer> {
+    const user = await this.prisma.client.user.findUniqueOrThrow({
+      where: { id },
+      select: { kycStatus: true, traderStats: { select: { tradesCompleted: true } } },
+    });
+    return {
+      id,
+      verified: user.kycStatus === "APPROVED",
+      completedTrades: user.traderStats?.tradesCompleted ?? 0,
+    };
   }
 
   private async search(
@@ -413,6 +439,8 @@ export class OfferService {
       limit: number;
       amountSantim: bigint | null;
       paymentKind: PaymentMethodKind | null;
+      minPaymentWindow: number | null;
+      takeableBy: Viewer | null;
       cursor: { price: bigint; id: string } | null;
       id: string | null;
     },
@@ -427,6 +455,14 @@ export class OfferService {
         : Prisma.empty;
     const kindFilter = options.paymentKind
       ? Prisma.sql`AND EXISTS (SELECT 1 FROM offer_payment_methods pm WHERE pm.offer_id = p.id AND pm.kind = ${options.paymentKind}::payment_method_kind)`
+      : Prisma.empty;
+    const windowFilter =
+      options.minPaymentWindow !== null
+        ? Prisma.sql`AND p.payment_window_minutes >= ${options.minPaymentWindow}::int`
+        : Prisma.empty;
+    // The trade engine's own rules (TradeService.create), so nothing listed here is refused there.
+    const takeableFilter = options.takeableBy
+      ? Prisma.sql`AND p.user_id <> ${options.takeableBy.id} AND (NOT p.require_verified OR ${options.takeableBy.verified}) AND p.min_completed_trades <= ${options.takeableBy.completedTrades}::int`
       : Prisma.empty;
     const cursorFilter = options.cursor
       ? ascending
@@ -464,12 +500,12 @@ export class OfferService {
           FROM candidates c
       )
       SELECT * FROM priced p
-       WHERE p.available_santim >= p.min_santim ${amountFilter} ${kindFilter} ${cursorFilter}
+       WHERE p.available_santim >= p.min_santim ${amountFilter} ${kindFilter} ${windowFilter} ${takeableFilter} ${cursorFilter}
        ORDER BY p.price_santim ${direction}, p.id ${direction}
        LIMIT ${options.limit}`;
   }
 
-  private async toMarketplace(rows: MarketRow[], viewerId: string): Promise<MarketplaceOffer[]> {
+  private async toMarketplace(rows: MarketRow[], viewer: Viewer): Promise<MarketplaceOffer[]> {
     if (rows.length === 0) return [];
     const [rails, presence] = await Promise.all([
       this.prisma.client.offerPaymentMethod.findMany({
@@ -518,7 +554,8 @@ export class OfferService {
           avgReleaseSeconds: average(row.release_total_ms, row.release_count),
           avgPaySeconds: average(row.pay_total_ms, row.pay_count),
         },
-        isMine: row.user_id === viewerId,
+        isMine: row.user_id === viewer.id,
+        blockedBecause: blockedFor(row, viewer),
       };
     });
   }
@@ -763,6 +800,16 @@ export class OfferService {
 
 const blankAsNull = (value: string | undefined): string | null =>
   value !== undefined && value.length > 0 ? value : null;
+
+/** Why this viewer could not take this ad: the same two rules TradeService.create enforces. */
+function blockedFor(
+  row: Pick<MarketRow, "require_verified" | "min_completed_trades">,
+  viewer: Viewer,
+): OfferBlockedReason | null {
+  if (row.require_verified && !viewer.verified) return "VERIFICATION";
+  if (row.min_completed_trades > viewer.completedTrades) return "COMPLETED_TRADES";
+  return null;
+}
 
 const plural = (count: number, unit: string): string =>
   `${count.toString()} ${unit}${count === 1 ? "" : "s"}`;

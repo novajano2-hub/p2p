@@ -72,6 +72,8 @@
   --status-attention-fg: #9a2f25;
   --status-neutral: #ebeeeb;
   --status-neutral-fg: #4b544e;
+  /* The dot beside someone who is around: brighter than the success green, so it reads at 8px. */
+  --online: #1f9d63;
 
   /* Hero ground and closing band. Literal colours, because each theme wants a
      different relationship between the glow and the page, not the same one
@@ -144,6 +146,7 @@
     --status-attention-fg: #f09b8e;
     --status-neutral: #242b27;
     --status-neutral-fg: #b0bab3;
+    --online: #5fd39b;
 
     --hero-glow-a: rgb(108 195 156 / 0.1);
     --hero-glow-b: rgb(30 46 39 / 0.85);
@@ -195,6 +198,7 @@
   --status-attention-fg: #f09b8e;
   --status-neutral: #242b27;
   --status-neutral-fg: #b0bab3;
+  --online: #5fd39b;
   --hero-glow-a: rgb(108 195 156 / 0.1);
   --hero-glow-b: rgb(30 46 39 / 0.85);
   --hero-wash: #161d19;
@@ -234,6 +238,7 @@
   --color-status-attention-fg: var(--status-attention-fg);
   --color-status-neutral: var(--status-neutral);
   --color-status-neutral-fg: var(--status-neutral-fg);
+  --color-online: var(--online);
 
   --shadow-panel: var(--panel-shadow);
   --shadow-raised: var(--raised-shadow);

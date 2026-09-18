@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { Marketplace } from "@/components/market/marketplace";
 import { appRobots } from "@/lib/app-nav";
 
-export const metadata: Metadata = { title: "Trade", robots: appRobots };
+export const metadata: Metadata = { title: "P2P market", robots: appRobots };
 
 /* Suspense because the marketplace reads ?want= from the URL on the client. */
 export default function TradePage() {

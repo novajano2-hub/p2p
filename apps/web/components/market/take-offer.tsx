@@ -1,8 +1,9 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { ArrowsClockwise, CheckCircle, XCircle } from "@phosphor-icons/react";
 import { notFound, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { LoadFailed } from "@/components/app/load-failed";
@@ -17,6 +18,7 @@ import {
   birr,
   usdt,
 } from "@/components/market/bits";
+import { useSession } from "@/components/app/session-provider";
 import { AppLink } from "@/components/ui/app-link";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
@@ -36,7 +38,7 @@ import {
   type OrderBounds,
   type OrderForm,
 } from "@/lib/market/forms";
-import { ASSET, FIAT, PAYMENT_KINDS } from "@/lib/market/labels";
+import { ASSET, FIAT, PAYMENT_KINDS, averageMinutes } from "@/lib/market/labels";
 import {
   amountForFiat,
   compareSantim,
@@ -137,6 +139,7 @@ type State =
 
 export function TakeOffer({ offerId }: { offerId: string }) {
   const router = useRouter();
+  const verified = useSession().user.kycStatus === "APPROVED";
   const [state, setState] = useState<State>({ status: "loading" });
   const [mode, setMode] = useState<AmountMode>("fiat");
   const [error, setError] = useState<string | null>(null);
@@ -153,6 +156,8 @@ export function TakeOffer({ offerId }: { offerId: string }) {
   */
   const [accepted, setAccepted] = useState<MarketOffer | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // Pressed "check again", and not answered yet.
+  const [checking, setChecking] = useState(false);
   // What a look is comparing against, without making every look a new effect.
   const view = useRef<{ offer: MarketOffer; methods: PaymentMethod[] } | null>(null);
   const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
@@ -302,7 +307,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
   if (state.status === "loading") {
     return (
       <>
-        <BackTo href="/trade">Marketplace</BackTo>
+        <BackTo href="/trade">P2P market</BackTo>
         <Panel>
           <ListNotice>Loading the offer…</ListNotice>
         </Panel>
@@ -313,7 +318,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
   if (state.status === "error" || !offer) {
     return (
       <>
-        <BackTo href="/trade">Marketplace</BackTo>
+        <BackTo href="/trade">P2P market</BackTo>
         <Panel>
           <LoadFailed
             message={state.status === "error" ? state.message : "The ad did not load."}
@@ -406,13 +411,45 @@ export function TakeOffer({ offerId }: { offerId: string }) {
     ? `Buy ${ASSET} from ${offer.advertiser.username}`
     : `Sell ${ASSET} to ${offer.advertiser.username}`;
 
+  /*
+    What the server would refuse, said before the button rather than after it:
+    the advertiser trades with verified accounts only, or with traders who
+    have completed more orders than this one has.
+  */
+  const limited =
+    offer.blockedBecause === "VERIFICATION"
+      ? "This advertiser trades with verified accounts only. Verify your identity to take this ad."
+      : offer.blockedBecause === "COMPLETED_TRADES"
+        ? `This advertiser trades with accounts that have completed at least ${offer.minCompletedTrades} orders.`
+        : null;
+
+  const checkAgain = async () => {
+    setChecking(true);
+    await recheck();
+    setChecking(false);
+  };
+
   return (
     <>
-      <BackTo href={market}>Marketplace</BackTo>
-      <PageHeader title={title} />
+      <BackTo href={market}>P2P market</BackTo>
+      <PageHeader title={title}>
+        <button
+          type="button"
+          onClick={() => void checkAgain()}
+          disabled={checking || gone}
+          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-[13px] font-medium transition-colors duration-150 disabled:opacity-60"
+        >
+          <ArrowsClockwise
+            size={14}
+            aria-hidden="true"
+            className={checking ? "animate-spin motion-reduce:animate-none" : undefined}
+          />
+          {checking ? "Checking the ad…" : "Checked every 10 seconds · check now"}
+        </button>
+      </PageHeader>
 
-      <div className="grid gap-4 lg:grid-cols-5 lg:gap-6">
-        <Panel className="lg:col-span-3">
+      <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+        <Panel className="lg:col-span-7">
           {gone ? (
             <FormError>
               {GONE}{" "}
@@ -428,13 +465,12 @@ export function TakeOffer({ offerId }: { offerId: string }) {
             // Built in the event, not during render: placing an order looks at the ad again.
             onSubmit={(event) => void handleSubmit(order, () => revealProblems(formElement))(event)}
           >
-            <div className="mb-5 flex items-baseline justify-between gap-4">
-              <span className="text-muted-foreground text-[13px]">Price</span>
-              <span className="text-foreground font-mono text-lg font-medium tabular-nums">
-                {formatSantim(price)}{" "}
-                <span className="text-muted-foreground text-[12px]">
-                  {FIAT} per {ASSET}
-                </span>
+            <div className="mb-5 flex items-baseline gap-2.5">
+              <span className="text-foreground font-mono text-3xl font-medium tabular-nums">
+                {formatSantim(price)}
+              </span>
+              <span className="text-muted-foreground text-sm">
+                {FIAT} per {ASSET}
               </span>
             </div>
 
@@ -455,7 +491,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
                     ? "I want to buy"
                     : "I want to sell"
               }
-              hint={`Between ${formatSantim(offer.minSantim)} and ${birr(offer.maxSantim)} a trade.`}
+              hint={`Between ${formatSantim(offer.minSantim)} and ${birr(offer.maxSantim)} a trade · ${usdt(offer.available)} available.`}
               error={errors.amount?.message}
               className="mt-4"
             >
@@ -598,8 +634,12 @@ export function TakeOffer({ offerId }: { offerId: string }) {
               </Note>
             </div>
 
-            {/* What changed, and any refusal, are answered where the button is. */}
-            <div className="mt-6">
+            {/*
+              What changed, and any refusal, are answered where the button is -
+              and on a phone that place stays on screen, above the tab bar, the
+              way Binance keeps its order button in reach.
+            */}
+            <div className="max-lg:border-border max-lg:bg-surface mt-6 max-lg:fixed max-lg:inset-x-0 max-lg:bottom-[calc(4rem+env(safe-area-inset-bottom))] max-lg:z-30 max-lg:mt-0 max-lg:border-t max-lg:px-4 max-lg:py-3">
               {changes.length > 0 ? (
                 <div
                   role="status"
@@ -620,6 +660,22 @@ export function TakeOffer({ offerId }: { offerId: string }) {
                   {notice}
                 </p>
               ) : null}
+              {limited && !gone ? (
+                <p
+                  role="status"
+                  className="rounded-control bg-status-pending text-status-pending-fg mb-4 px-3.5 py-3 text-[13px] leading-relaxed"
+                >
+                  {limited}
+                  {offer.blockedBecause === "VERIFICATION" ? (
+                    <>
+                      {" "}
+                      <AppLink href="/verify" className="font-medium underline underline-offset-4">
+                        Verify now
+                      </AppLink>
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
               <FormError message={error} />
               {/*
                 Two buttons, not one that changes its type: the same element
@@ -633,7 +689,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
                   size="lg"
                   className="w-full"
                   onClick={acceptChanges}
-                  disabled={offer.isMine || gone}
+                  disabled={offer.isMine || gone || limited !== null}
                 >
                   Accept the changes
                 </Button>
@@ -642,34 +698,42 @@ export function TakeOffer({ offerId }: { offerId: string }) {
                   key="order"
                   type="submit"
                   size="lg"
+                  variant={buying ? "primary" : "sell"}
                   className="w-full"
                   loading={isSubmitting}
-                  disabled={offer.isMine || gone}
+                  disabled={offer.isMine || gone || limited !== null}
                 >
                   {gone
                     ? "No longer available"
                     : offer.isMine
                       ? "This is your own ad"
-                      : buying
-                        ? `Buy ${ASSET}`
-                        : `Sell ${ASSET}`}
+                      : limited
+                        ? "Limited"
+                        : buying
+                          ? `Buy ${ASSET}`
+                          : `Sell ${ASSET}`}
                 </Button>
               )}
             </div>
           </form>
         </Panel>
 
-        <div className="flex flex-col gap-4 lg:col-span-2">
+        <div className="flex flex-col gap-4 lg:col-span-5">
           <Panel title="Advertiser">
-            <AdvertiserLine advertiser={offer.advertiser} />
-            <dl className="divide-border mt-3 divide-y">
-              <SummaryRow label="Completed trades">{offer.advertiser.tradesCompleted}</SummaryRow>
-              <SummaryRow label="Completion rate">
+            <AdvertiserLine advertiser={offer.advertiser} size="lg" />
+            <dl className="mt-4 grid grid-cols-2 gap-2.5">
+              <Stat label="Orders">{offer.advertiser.tradesTotal}</Stat>
+              <Stat label="Completion">
                 {offer.advertiser.completionRate === null
                   ? "—"
                   : `${offer.advertiser.completionRate}%`}
-              </SummaryRow>
-              <SummaryRow label="Available">{usdt(offer.available)}</SummaryRow>
+              </Stat>
+              <Stat label="Average release">
+                {averageMinutes(offer.advertiser.avgReleaseSeconds)}
+              </Stat>
+              <Stat label="Average pay">{averageMinutes(offer.advertiser.avgPaySeconds)}</Stat>
+            </dl>
+            <dl className="divide-border mt-3 divide-y">
               <SummaryRow label="Pays through">
                 <PaymentKindChips kinds={offer.paymentKinds} className="justify-end" />
               </SummaryRow>
@@ -683,17 +747,79 @@ export function TakeOffer({ offerId }: { offerId: string }) {
             </Panel>
           ) : null}
           {offer.requireVerified || offer.minCompletedTrades > 0 ? (
-            <Panel title="Who may take this offer">
-              <ul className="text-muted-foreground list-disc pl-5 text-[13px] leading-relaxed">
-                {offer.requireVerified ? <li>Verified accounts only.</li> : null}
+            <Panel title="Who may take this ad">
+              <ul className="flex flex-col gap-2 text-sm">
+                {offer.requireVerified ? (
+                  <Requirement met={offer.blockedBecause !== "VERIFICATION"}>
+                    Verified accounts
+                    <span className="text-muted-foreground">
+                      {offer.blockedBecause === "VERIFICATION"
+                        ? " · you are not verified yet"
+                        : verified
+                          ? " · you are verified"
+                          : ""}
+                    </span>
+                  </Requirement>
+                ) : null}
                 {offer.minCompletedTrades > 0 ? (
-                  <li>Accounts with at least {offer.minCompletedTrades} completed trades.</li>
+                  <Requirement
+                    met={
+                      offer.blockedBecause === "COMPLETED_TRADES"
+                        ? false
+                        : offer.blockedBecause === null
+                          ? true
+                          : null
+                    }
+                  >
+                    {offer.minCompletedTrades} or more completed orders
+                    {offer.blockedBecause === "COMPLETED_TRADES" ? (
+                      <span className="text-muted-foreground"> · you have fewer so far</span>
+                    ) : null}
+                  </Requirement>
                 ) : null}
               </ul>
             </Panel>
           ) : null}
         </div>
       </div>
+      {/* Room at the end of the page for the action pinned above the tab bar on a phone. */}
+      <div aria-hidden="true" className="h-40 lg:hidden" />
     </>
+  );
+}
+
+/** One figure from the advertiser's record, in a quiet tile. */
+function Stat({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="bg-muted rounded-control px-3 py-2.5">
+      <dt className="text-muted-foreground text-[12px] font-medium">{label}</dt>
+      <dd className="text-foreground text-base font-semibold tabular-nums">{children}</dd>
+    </div>
+  );
+}
+
+/** A condition the ad sets, with whether this viewer meets it: yes, no, or not known yet. */
+function Requirement({ met, children }: { met: boolean | null; children: ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      {met === false ? (
+        <XCircle
+          size={17}
+          weight="fill"
+          aria-label="Not met"
+          className="text-destructive mt-0.5 shrink-0"
+        />
+      ) : met ? (
+        <CheckCircle
+          size={17}
+          weight="fill"
+          aria-label="Met"
+          className="text-online mt-0.5 shrink-0"
+        />
+      ) : (
+        <span aria-hidden="true" className="bg-sage mt-2 size-1.5 shrink-0 rounded-full" />
+      )}
+      <span>{children}</span>
+    </li>
   );
 }

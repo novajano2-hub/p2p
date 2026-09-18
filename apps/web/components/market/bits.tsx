@@ -7,9 +7,17 @@ import { AppLink } from "@/components/ui/app-link";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { cn } from "@/lib/cn";
-import { ASSET, FIAT, PAYMENT_KINDS, tradeStatusPill, traderRecord } from "@/lib/market/labels";
+import {
+  ASSET,
+  FIAT,
+  PAYMENT_KINDS,
+  releaseHint,
+  tradeStatusPill,
+  traderRecord,
+} from "@/lib/market/labels";
 import type { Advertiser, PaymentMethodKind, Trade } from "@/lib/market/client";
 import { formatSantim } from "@/lib/market/money";
+import { presenceLabel } from "@/lib/market/presence";
 import { formatMicro } from "@/lib/money";
 
 /* The pieces the marketplace and the orders share. */
@@ -20,13 +28,18 @@ export const birr = (santim: string): string => `${formatSantim(santim)} ${FIAT}
 /** Rails as Binance draws them: a coloured bar and the name. */
 export function PaymentKindChips({
   kinds,
+  stacked = false,
   className,
 }: {
   kinds: readonly PaymentMethodKind[];
+  /** One under another, as the market's Payment column has them. */
+  stacked?: boolean;
   className?: string | undefined;
 }) {
   return (
-    <ul className={cn("flex flex-wrap gap-x-3 gap-y-1", className)}>
+    <ul
+      className={cn(stacked ? "flex flex-col gap-1" : "flex flex-wrap gap-x-3 gap-y-1", className)}
+    >
       {kinds.map((kind) => (
         <li key={kind} className="flex items-center gap-1.5 text-[13px]">
           <span
@@ -40,22 +53,76 @@ export function PaymentKindChips({
   );
 }
 
-/** A counterparty: initial, name, the verified mark, and their record. */
+/**
+ * A name's initial in a circle, with the dot that says whether they are
+ * around. Decoration only: the words beside it say the same for a reader.
+ */
+export function Avatar({
+  name,
+  online,
+  size = "md",
+}: {
+  name: string;
+  online: boolean;
+  size?: "md" | "lg";
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "bg-primary-soft text-primary-soft-foreground relative flex shrink-0 items-center justify-center rounded-full font-semibold uppercase",
+        size === "lg" ? "size-11 text-base" : "size-9 text-sm",
+      )}
+    >
+      {name.slice(0, 1)}
+      <span
+        className={cn(
+          "border-surface absolute -right-px -bottom-px rounded-full border-2",
+          size === "lg" ? "size-3.5" : "size-3",
+          online ? "bg-online" : "bg-sage",
+        )}
+      />
+    </span>
+  );
+}
+
+/** Whether they are around, and how fast they release, in one quiet line. */
+export function PresenceLine({
+  advertiser,
+  className,
+}: {
+  advertiser: Advertiser;
+  className?: string | undefined;
+}) {
+  const presence = presenceLabel(advertiser);
+  const release = releaseHint(advertiser);
+  if (!presence && !release) return null;
+  return (
+    <span className={cn("block text-[12px]", className)}>
+      {presence ? (
+        <span className={advertiser.online ? "text-online font-medium" : "text-muted-foreground"}>
+          {presence}
+        </span>
+      ) : null}
+      {presence && release ? <span className="text-muted-foreground"> · </span> : null}
+      {release ? <span className="text-muted-foreground">{release}</span> : null}
+    </span>
+  );
+}
+
+/** A counterparty: the initial and its dot, name, the verified mark, their record, and whether they are around. */
 export function AdvertiserLine({
   advertiser,
   compact = false,
+  size = "md",
 }: {
   advertiser: Advertiser;
   compact?: boolean;
+  size?: "md" | "lg";
 }) {
   return (
     <div className="flex min-w-0 items-center gap-3">
-      <span
-        aria-hidden="true"
-        className="bg-primary-soft text-primary-soft-foreground flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold uppercase"
-      >
-        {advertiser.username.slice(0, 1)}
-      </span>
+      <Avatar name={advertiser.username} online={advertiser.online} size={size} />
       <span className="min-w-0">
         <span className="text-foreground flex items-center gap-1.5 text-[15px] font-medium">
           <span className="truncate">{advertiser.username}</span>
@@ -69,9 +136,12 @@ export function AdvertiserLine({
           ) : null}
         </span>
         {!compact ? (
-          <span className="text-muted-foreground block text-[12px]">
-            {traderRecord(advertiser)}
-          </span>
+          <>
+            <span className="text-muted-foreground block text-[12px] tabular-nums">
+              {traderRecord(advertiser)}
+            </span>
+            <PresenceLine advertiser={advertiser} />
+          </>
         ) : null}
       </span>
     </div>

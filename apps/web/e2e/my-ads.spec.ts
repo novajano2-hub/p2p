@@ -35,6 +35,10 @@ const ad = (overrides: Record<string, unknown> = {}) => ({
   status: "ACTIVE",
   revision: 1,
   openOrders: 0,
+  adBalance: "60000000",
+  hiddenBecause: null,
+  unfundedSince: null,
+  pausesAt: null,
   createdAt: "2026-09-17T09:00:00.000Z",
   ...overrides,
 });
@@ -74,13 +78,13 @@ test("keeps online, offline and closed ads apart", async ({ page }) => {
   await expect(online).toContainText("158.50");
   await expect(online).toContainText("2 open orders");
   await expect(online.getByRole("link", { name: "Edit" })).toBeVisible();
-  await expect(online.getByRole("button", { name: "Take offline" })).toBeVisible();
+  await expect(online.getByRole("switch", { name: "Online" })).toBeChecked();
   await expectNoHorizontalOverflow(page);
 
   await page.getByRole("tab", { name: "Offline (1)" }).click();
   await expect(page).toHaveURL(/\/trade\/ads\?tab=offline$/);
   await expect(page.getByRole("tabpanel")).toContainText("159.00");
-  await expect(page.getByRole("button", { name: "Put online" })).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Online" })).not.toBeChecked();
   await expectNoHorizontalOverflow(page);
 
   // A closed ad is a record, not a thing to work on.

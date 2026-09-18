@@ -38,6 +38,7 @@ const offer = (side: "BUY" | "SELL", overrides: Record<string, unknown> = {}) =>
   advertiser: ADVERTISER,
   revision: 1,
   isMine: false,
+  blockedBecause: null,
   ...overrides,
 });
 
@@ -88,7 +89,7 @@ test.describe("adding a payment method from the middle of something", () => {
       page.getByRole("heading", { level: 1, name: `Sell USDT to ${ADVERTISER.username}` }),
     ).toBeVisible();
     // Selling to a BUY ad: Back goes to the Sell side of the market, not the default one.
-    await expect(page.getByRole("link", { name: "Marketplace" })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "P2P market" })).toHaveAttribute(
       "href",
       "/trade?want=SELL",
     );
@@ -124,7 +125,7 @@ test.describe("adding a payment method from the middle of something", () => {
 
     for (const next of ["https://evil.example/", "//evil.example", "/\\evil.example"]) {
       await page.goto(`/trade/payment-methods?next=${encodeURIComponent(next)}`);
-      await expect(page.getByRole("link", { name: "Marketplace" })).toHaveAttribute(
+      await expect(page.getByRole("link", { name: "P2P market" })).toHaveAttribute(
         "href",
         "/trade",
       );
@@ -150,7 +151,7 @@ test.describe("an ad that changes while you are looking at it", () => {
     await page.goto("/trade/offers/o1");
     await expect(page.getByRole("button", { name: "Buy USDT" })).toBeEnabled();
     // Buying from a SELL ad: Back goes to the Buy side of the market.
-    await expect(page.getByRole("link", { name: "Marketplace" })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "P2P market" })).toHaveAttribute(
       "href",
       "/trade?want=BUY",
     );

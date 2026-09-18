@@ -74,6 +74,10 @@ const advertiserSchema = z.object({
   userId: z.string(),
   username: z.string(),
   verified: z.boolean(),
+  /** Seen in the last five minutes. */
+  online: z.boolean(),
+  /** When they were last seen, to the minute; null when there is no record of it. */
+  lastSeenAt: z.string().nullable(),
   tradesTotal: z.number(),
   tradesCompleted: z.number(),
   completionRate: z.number().nullable(),
@@ -99,6 +103,8 @@ const marketOfferSchema = z.object({
   /** What the ad's terms are a version of: an order quotes it back. */
   revision: z.number(),
   isMine: z.boolean(),
+  /** Why the viewer could not take it, which the server would refuse; null when they could. */
+  blockedBecause: z.enum(["VERIFICATION", "COMPLETED_TRADES"]).nullable(),
 });
 export type MarketOffer = z.infer<typeof marketOfferSchema>;
 
@@ -131,6 +137,14 @@ const myOfferSchema = z.object({
   revision: z.number(),
   /** Orders from this ad that are still running. Closing the ad leaves them alone. */
   openOrders: z.number(),
+  /** What a taker could take right now: a sell ad's remainder, capped by the owner's balance. */
+  adBalance: money,
+  /** Why the market is not showing it although it is on - or would not, once switched back on. */
+  hiddenBecause: z.enum(["BALANCE", "REMAINDER"]).nullable(),
+  /** When the balance stopped covering it, as the platform last checked. */
+  unfundedSince: z.string().nullable(),
+  /** When it goes offline by itself unless the balance covers it again. */
+  pausesAt: z.string().nullable(),
   createdAt: z.string(),
 });
 export type MyOffer = z.infer<typeof myOfferSchema>;
@@ -347,12 +361,18 @@ export const marketClient = {
     want: OfferSide;
     amountSantim?: string | undefined;
     paymentKind?: PaymentMethodKind | undefined;
+    /** Only ads that give the buyer at least this long to pay. */
+    minPaymentWindowMinutes?: number | undefined;
+    /** Leave out what the viewer could not take. */
+    takeable?: boolean | undefined;
     cursor?: string | undefined;
     limit?: number | undefined;
   }) =>
-    send(`/v1/offers${query(input)}`, marketplaceSchema, {}).then((result) =>
-      result.ok ? { ok: true as const, ...result.data } : result,
-    ),
+    send(
+      `/v1/offers${query({ ...input, takeable: input.takeable ? "true" : undefined })}`,
+      marketplaceSchema,
+      {},
+    ).then((result) => (result.ok ? { ok: true as const, ...result.data } : result)),
   offer: (id: string) => send(`/v1/offers/${id}`, marketOfferSchema, {}).then(wrap("offer")),
   myOffers: () =>
     send("/v1/offers/mine", z.object({ offers: z.array(myOfferSchema) }), {}).then((result) =>
