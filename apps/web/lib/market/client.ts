@@ -23,9 +23,6 @@ export type Result<T> = ({ ok: true } & T) | Failure;
 
 /** A photograph over a mobile connection needs far longer than a form does. */
 const UPLOAD_TIMEOUT_MS = 120_000;
-/** Mirrors the API's cap on a chat image and a piece of evidence. */
-export const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
-export const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 /* --------------------------------------------------------- payment methods */
 
@@ -438,12 +435,3 @@ export const marketClient = {
 
 /** A fresh id for one intent: a message, a trade. Kept across retries, replaced on success. */
 export const newClientId = (): string => crypto.randomUUID();
-
-/** Whether a chosen file is one the API will accept, said before a byte is sent. */
-export function imageProblem(file: File): string | null {
-  if (!(IMAGE_TYPES as readonly string[]).includes(file.type)) {
-    return "Choose a JPEG, PNG or WebP image.";
-  }
-  if (file.size > IMAGE_MAX_BYTES) return "That image is over 5 MB. Choose a smaller one.";
-  return null;
-}

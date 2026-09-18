@@ -9,6 +9,7 @@ import { AuthCard, AuthFootnote, AuthLink, OrDivider } from "@/components/auth/a
 import { CodeStep } from "@/components/auth/code-step";
 import { GoogleButton } from "@/components/auth/google-button";
 import { FormError } from "@/components/auth/notices";
+import { toast } from "@/lib/toast";
 import { PasswordRules } from "@/components/auth/password-rules";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -191,6 +192,11 @@ function PasswordStep() {
       setError(result.message);
       return;
     }
+    // Said before leaving: the toaster is the root layout's, so it is still
+    // there on the home page this lands on.
+    toast.success("Your account is ready", {
+      description: `Welcome to ${site.name}. Verify your identity to raise your limits.`,
+    });
     // replace, not push: once the account exists the sign-up form must not be
     // one Back press away.
     router.replace(afterAuth);

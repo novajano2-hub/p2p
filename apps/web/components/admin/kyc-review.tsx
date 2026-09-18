@@ -8,6 +8,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { AppLink } from "@/components/ui/app-link";
 import { Field } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
+import { toast, toastFailure } from "@/lib/toast";
 import {
   KYC_REJECTION_REASONS,
   adminClient,
@@ -211,8 +212,15 @@ export function KycReview({ submissionId }: { submissionId: string }) {
                     onRun={async () => {
                       setError(null);
                       const result = await adminClient.approve(item.id);
-                      if (result.ok) setDecided("APPROVED");
-                      else setError(result.message);
+                      if (result.ok) {
+                        toast.success("Approved", {
+                          description: `${item.account.username} is verified: full limits, and may post ads.`,
+                        });
+                        setDecided("APPROVED");
+                      } else {
+                        setError(result.message);
+                        toastFailure(result);
+                      }
                     }}
                   />
                 </div>
@@ -256,8 +264,16 @@ export function KycReview({ submissionId }: { submissionId: string }) {
                       if (!reason) return;
                       setError(null);
                       const result = await adminClient.reject(item.id, reason);
-                      if (result.ok) setDecided("REJECTED");
-                      else setError(result.message);
+                      if (result.ok) {
+                        toast.success("Refused", {
+                          description:
+                            "The customer is told why, in the words of the reason you chose.",
+                        });
+                        setDecided("REJECTED");
+                      } else {
+                        setError(result.message);
+                        toastFailure(result);
+                      }
                     }}
                   />
                 </div>

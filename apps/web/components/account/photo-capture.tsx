@@ -12,7 +12,8 @@ import { useRef, useState, type ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { authClient, type KycDocumentKind } from "@/lib/auth/client";
 import { cn } from "@/lib/cn";
-import { prepareImage } from "@/lib/image";
+import { pickImage } from "@/lib/image";
+import { toastFailure } from "@/lib/toast";
 
 /*
   One photograph: take it, watch it go up, look at it, take it again if it
@@ -55,7 +56,9 @@ export function PhotoCapture({ kind, title, hint, facing, value, onChange }: Pho
     event.target.value = "";
     if (!file) return;
 
-    const image = await prepareImage(file);
+    // A file that cannot be sent is refused, and said so, by pickImage itself.
+    const image = await pickImage(file, "kyc");
+    if (!image) return;
     const previewUrl = URL.createObjectURL(image);
     setProgress({ status: "uploading", previewUrl, fraction: 0 });
 
@@ -67,6 +70,7 @@ export function PhotoCapture({ kind, title, hint, facing, value, onChange }: Pho
     if (!result.ok) {
       URL.revokeObjectURL(previewUrl);
       setProgress({ status: "failed", message: result.message });
+      toastFailure(result);
       return;
     }
     setProgress({ status: "idle" });

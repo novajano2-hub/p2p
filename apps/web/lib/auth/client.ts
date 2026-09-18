@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { apiOrigin } from "@/lib/api-origin";
+import { IMAGE_LIMITS } from "@/lib/image";
 
 /*
   The auth client the sign-up, log-in, recovery and account screens talk to.
@@ -27,13 +28,11 @@ const REQUEST_TIMEOUT_MS = 15_000;
 const UPLOAD_TIMEOUT_MS = 120_000;
 
 /**
- * Mirrors KYC_IMAGE_MAX_BYTES on the server. Checked here first because a
- * server refusing a body for its size answers 413 and drops the connection
- * mid-upload, which a browser reports as a network failure rather than as
- * the refusal it was; the same sentence, said before a byte is sent, is
- * simply true.
+ * Checked again here, after pickImage() has, because a server refusing a body
+ * for its size answers 413 and drops the connection mid-upload, which a
+ * browser reports as a network failure rather than as the refusal it was.
  */
-const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+const PHOTO_MAX_BYTES = IMAGE_LIMITS.kyc;
 
 export type AuthErrorCode =
   | "INVALID_CREDENTIALS"
@@ -247,6 +246,7 @@ const apiErrorSchema = z.object({
   error: z.object({
     code: z.string(),
     message: z.string(),
+    correlationId: z.string().optional(),
     details: z.array(z.object({ path: z.string(), message: z.string() })).optional(),
   }),
 });
@@ -297,7 +297,15 @@ function csrfHeader(method: string | undefined): Record<string, string> {
   return unsafe && csrfToken ? { "x-csrf-token": csrfToken } : {};
 }
 
-export type Failure = { ok: false; code: AuthErrorCode; message: string };
+export type Failure = {
+  ok: false;
+  code: AuthErrorCode;
+  message: string;
+  /** The server's id for the request, when the fault was its own: what a support request quotes. */
+  reference?: string | undefined;
+  /** For VALIDATION: the request field the sentence is about, so a form can show it there. */
+  field?: string | undefined;
+};
 
 const failure = (code: AuthErrorCode, message: string): Failure => ({ ok: false, code, message });
 
@@ -389,7 +397,7 @@ function failureFrom(status: number, text: string): Failure {
     return status >= 500 ? UNEXPECTED : failure("SERVER", "That request was rejected.");
   }
 
-  const { code, message, details } = parsed.data.error;
+  const { code, message, details, correlationId } = parsed.data.error;
   switch (code) {
     case "UNAUTHENTICATED":
       return failure("INVALID_CREDENTIALS", message);
@@ -398,7 +406,10 @@ function failureFrom(status: number, text: string): Failure {
     case "RATE_LIMITED":
       return failure("RATE_LIMITED", message);
     case "VALIDATION_FAILED":
-      return failure("VALIDATION", details?.[0]?.message ?? message);
+      return {
+        ...failure("VALIDATION", details?.[0]?.message ?? message),
+        field: details?.[0]?.path,
+      };
     case "FORBIDDEN":
       return failure("FORBIDDEN", message);
     case "INSUFFICIENT_FUNDS":
@@ -421,7 +432,8 @@ function failureFrom(status: number, text: string): Failure {
       */
       return failure("SERVER", message);
     default:
-      return UNEXPECTED;
+      // INTERNAL: the sentence is deliberately generic; the reference finds the log line.
+      return { ...UNEXPECTED, reference: correlationId };
   }
 }
 

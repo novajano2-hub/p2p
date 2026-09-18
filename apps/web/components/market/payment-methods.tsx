@@ -23,6 +23,8 @@ import {
 } from "@/lib/market/client";
 import { BANK_KINDS, PAYMENT_KINDS, WALLET_KINDS } from "@/lib/market/labels";
 import { safeNext } from "@/lib/next-path";
+import { placeOnField, revealProblems } from "@/lib/reveal-problems";
+import { toast, toastFailure } from "@/lib/toast";
 
 /*
   Where a seller is paid. A payment method is the account a buyer will be
@@ -111,7 +113,7 @@ export function PaymentMethods() {
   const next = safeNext(useSearchParams().get("next"), "/trade");
   const [state, setState] = useState<State>({ status: "loading" });
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
+  const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
 
   const refresh = useCallback(() => {
     void marketClient.paymentMethods().then((result) => {
@@ -129,9 +131,11 @@ export function PaymentMethods() {
     control,
     handleSubmit,
     reset,
+    setError: setFieldError,
     formState: { errors, isSubmitting },
   } = useForm<Form>({
     resolver: zodResolver(formSchema),
+    shouldFocusError: false,
     defaultValues: {
       kind: "TELEBIRR",
       accountHolder: "",
@@ -141,42 +145,55 @@ export function PaymentMethods() {
   });
   const kind = useWatch({ control, name: "kind" });
 
-  const submit = handleSubmit(async (values) => {
-    setError(null);
-    setSaved(null);
-    const result = await marketClient.addPaymentMethod(
-      isBank(values.kind)
-        ? {
-            kind: values.kind,
-            accountHolder: values.accountHolder,
-            accountNumber: values.accountNumber,
-          }
-        : {
-            kind: values.kind as WalletKind,
-            accountHolder: values.accountHolder,
-            phone: values.phone,
-          },
-    );
-    if (!result.ok) {
-      setError(result.message);
-      return;
-    }
-    if (isErrand(next)) {
-      router.push(next);
-      return;
-    }
-    setSaved(result.paymentMethod.label);
-    reset();
-    refresh();
-  });
+  const submit = handleSubmit(
+    async (values) => {
+      setError(null);
+      const result = await marketClient.addPaymentMethod(
+        isBank(values.kind)
+          ? {
+              kind: values.kind,
+              accountHolder: values.accountHolder,
+              accountNumber: values.accountNumber,
+            }
+          : {
+              kind: values.kind as WalletKind,
+              accountHolder: values.accountHolder,
+              phone: values.phone,
+            },
+      );
+      if (!result.ok) {
+        const fields = {
+          accountHolder: "accountHolder",
+          phone: "phone",
+          accountNumber: "accountNumber",
+        } as const;
+        if (!placeOnField(result, fields, setFieldError, formElement)) {
+          setError(result.message);
+          toastFailure(result);
+        }
+        return;
+      }
+      // Said before leaving: the toaster outlives the page, so it is still there on the offer.
+      toast.success("Payment method added", { description: result.paymentMethod.label });
+      if (isErrand(next)) {
+        router.push(next);
+        return;
+      }
+      reset();
+      refresh();
+    },
+    () => revealProblems(formElement),
+  );
 
   const archive = async (method: PaymentMethod) => {
     setError(null);
     const result = await marketClient.archivePaymentMethod(method.id);
     if (!result.ok) {
       setError(result.message);
+      toastFailure(result);
       return;
     }
+    toast.success("Payment method removed", { description: method.label });
     refresh();
   };
 
@@ -250,12 +267,7 @@ export function PaymentMethods() {
         </Panel>
 
         <Panel title="Add a payment method" className="lg:col-span-2">
-          {saved ? (
-            <p role="status" className="text-status-complete-fg mb-4 text-[13px] font-medium">
-              Added {saved}.
-            </p>
-          ) : null}
-          <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+          <form ref={setFormElement} onSubmit={submit} noValidate className="flex flex-col gap-4">
             <Field label="Type" error={errors.kind?.message}>
               {(a11y) => (
                 <Controller

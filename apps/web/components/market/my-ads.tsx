@@ -20,6 +20,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { type MyOffer, type OfferStatus, marketClient } from "@/lib/market/client";
 import { ASSET, FIAT } from "@/lib/market/labels";
 import { formatSantim } from "@/lib/market/money";
+import { toast, toastFailure } from "@/lib/toast";
 
 /*
   The ads a person has posted, in the three states Binance keeps them in:
@@ -37,6 +38,21 @@ const TABS = [
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
+
+/** What taking an ad offline, putting it back or closing it did, said once it has. */
+function done(action: "pause" | "resume" | "close", offer: MyOffer): [string, string] {
+  if (action === "pause") {
+    return ["Ad taken offline", "It is hidden from the market until you put it back online."];
+  }
+  if (action === "resume") return ["Ad back online", "It is listed in the market again."];
+  const orders = offer.openOrders;
+  return [
+    "Ad closed",
+    orders > 0
+      ? `${orders} open order${orders === 1 ? "" : "s"} will finish normally. It is kept under Closed.`
+      : "It is kept under Closed.",
+  ];
+}
 
 const tabFor = (value: string | null): TabId =>
   TABS.find((tab) => tab.id === value)?.id ?? "online";
@@ -72,8 +88,11 @@ export function MyAds() {
     setBusy(null);
     if (!result.ok) {
       setError(result.message);
+      toastFailure(result);
       return;
     }
+    const [title, description] = done(action, offer);
+    toast.success(title, { description });
     refresh();
   };
 

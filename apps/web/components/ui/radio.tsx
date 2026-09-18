@@ -94,15 +94,22 @@ export function RadioGroup({
   className?: string | undefined;
   children: ReactNode;
 }) {
+  const errorId = useId();
   return (
-    <fieldset className={cn("flex flex-col gap-2.5", className)}>
+    // Marked the way lib/reveal-problems.ts looks for a group: the fieldset,
+    // since no one radio in it is the wrong one.
+    <fieldset
+      data-invalid={error ? true : undefined}
+      aria-describedby={error ? errorId : undefined}
+      className={cn("flex flex-col gap-2.5", className)}
+    >
       <legend className="text-foreground mb-1 text-sm font-medium">{legend}</legend>
       {hint ? (
         <p className="text-muted-foreground -mt-1 mb-1 text-[13px] leading-relaxed">{hint}</p>
       ) : null}
       {children}
       {error ? (
-        <p role="alert" className="text-destructive text-[13px] leading-relaxed">
+        <p id={errorId} role="alert" className="text-destructive text-[13px] leading-relaxed">
           {error}
         </p>
       ) : null}

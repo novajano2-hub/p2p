@@ -8,13 +8,9 @@ import { useRealtime, useRealtimeEvent } from "@/components/app/realtime-provide
 import { clockTime } from "@/components/market/bits";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
-import {
-  imageProblem,
-  marketClient,
-  newClientId,
-  type ChatMessage,
-  type Trade,
-} from "@/lib/market/client";
+import { pickImage } from "@/lib/image";
+import { marketClient, newClientId, type ChatMessage, type Trade } from "@/lib/market/client";
+import { toastFailure } from "@/lib/toast";
 
 /*
   The chat inside a trade. Messages are rows the API numbered, in one order
@@ -129,6 +125,7 @@ export function ChatPanel({ trade, myUserId }: { trade: Trade; myUserId: string 
     setSending(false);
     if (!result.ok) {
       setError(result.message);
+      toastFailure(result);
       return;
     }
     setDraft("");
@@ -138,17 +135,19 @@ export function ChatPanel({ trade, myUserId }: { trade: Trade; myUserId: string 
 
   const attach = async (file: File | undefined) => {
     if (!file) return;
-    const problem = imageProblem(file);
-    if (problem) {
-      setError(problem);
+    setSending(true);
+    // A file that cannot be sent is refused, and said so, by pickImage itself.
+    const image = await pickImage(file, "chat");
+    if (!image) {
+      setSending(false);
       return;
     }
     setError(null);
-    setSending(true);
-    const result = await marketClient.sendImage(tradeId, newClientId(), file);
+    const result = await marketClient.sendImage(tradeId, newClientId(), image);
     setSending(false);
     if (!result.ok) {
       setError(result.message);
+      toastFailure(result);
       return;
     }
     setMessages((current) => merge(current, [result.message]));

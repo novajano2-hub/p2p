@@ -7,6 +7,7 @@ import { ActionButton } from "@/components/admin/admin-shell";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { Radio } from "@/components/ui/radio";
 import { withdrawalsClient, type AdminWithdrawal } from "@/lib/admin/operations";
+import { toast, toastFailure } from "@/lib/toast";
 
 /*
   Authorising money to leave, or saying what became of money that may already
@@ -75,8 +76,18 @@ export function WithdrawalDecision({
             onRun={async () => {
               setError(null);
               const result = await withdrawalsClient.approve(withdrawal.id, reason.trim());
-              if (result.ok) onDecided(result.withdrawal);
-              else setError(result.message);
+              if (result.ok) {
+                toast.success(remaining > 1 ? "Approval recorded" : "Withdrawal approved", {
+                  description:
+                    remaining > 1
+                      ? `${remaining - 1} more will be needed before it is sent.`
+                      : "It is queued to be built, signed and broadcast.",
+                });
+                onDecided(result.withdrawal);
+              } else {
+                setError(result.message);
+                toastFailure(result);
+              }
             }}
           />
         </Card>
@@ -95,8 +106,16 @@ export function WithdrawalDecision({
             onRun={async () => {
               setError(null);
               const result = await withdrawalsClient.reject(withdrawal.id, reason.trim());
-              if (result.ok) onDecided(result.withdrawal);
-              else setError(result.message);
+              if (result.ok) {
+                toast.success("Withdrawal rejected", {
+                  description:
+                    "The hold is released to the customer's available balance, and they are told.",
+                });
+                onDecided(result.withdrawal);
+              } else {
+                setError(result.message);
+                toastFailure(result);
+              }
             }}
           />
         </Card>
@@ -207,8 +226,18 @@ export function WithdrawalDecision({
             ...(outcome === "BROADCAST" ? { txHash: txHash.trim() } : {}),
             reason: reason.trim(),
           });
-          if (result.ok) onDecided(result.withdrawal);
-          else setError(result.message);
+          if (result.ok) {
+            toast.success("Recorded", {
+              description:
+                outcome === "BROADCAST"
+                  ? "The transfer is tracked from the hash you gave."
+                  : "It is recorded as failed, and the hold goes back to the customer.",
+            });
+            onDecided(result.withdrawal);
+          } else {
+            setError(result.message);
+            toastFailure(result);
+          }
         }}
       />
 

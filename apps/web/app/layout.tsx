@@ -3,6 +3,7 @@ import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import { Suspense } from "react";
 
 import { ScrollToTop } from "@/components/app/scroll-to-top";
+import { AppToaster } from "@/components/app/toaster";
 import { site } from "@/lib/site";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
@@ -66,6 +67,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <ScrollToTop />
         </Suspense>
         {children}
+        <AppToaster />
       </body>
     </html>
   );

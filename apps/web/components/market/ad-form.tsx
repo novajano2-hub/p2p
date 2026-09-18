@@ -1,7 +1,9 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { PageHeader, Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
@@ -13,14 +15,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { Note } from "@/components/wallet/shared";
 import { cn } from "@/lib/cn";
+import { marketClient, type MyOffer, type PaymentMethod } from "@/lib/market/client";
 import {
-  marketClient,
-  type MyOffer,
-  type OfferDraft,
-  type OfferSide,
-  type PaymentMethod,
-  type PaymentMethodKind,
-} from "@/lib/market/client";
+  adForm,
+  AUTO_REPLY_MAX,
+  TERMS_MAX,
+  toOfferDraft,
+  type AdForm as AdDraft,
+} from "@/lib/market/forms";
 import {
   ASSET,
   FIAT,
@@ -28,9 +30,11 @@ import {
   PAYMENT_KIND_LIST,
   PAYMENT_WINDOWS,
 } from "@/lib/market/labels";
-import { compareSantim, plainSantim, toSantim } from "@/lib/market/money";
-import { plainMicro, toMicro } from "@/lib/money";
+import { formatSantim, plainSantim, toSantim } from "@/lib/market/money";
+import { plainMicro } from "@/lib/money";
 import { withNext } from "@/lib/next-path";
+import { revealProblems } from "@/lib/reveal-problems";
+import { toast, toastFailure } from "@/lib/toast";
 
 /*
   Posting an ad, or changing one. The Binance form in the order it asks:
@@ -42,6 +46,10 @@ import { withNext } from "@/lib/next-path";
   can fund it, and the escrow is taken from the balance at the moment a
   trade opens - so an ad for more than is in the wallet is allowed, and
   simply shows the smaller figure.
+
+  Every rule is checked before sending, all at once (lib/market/forms.ts);
+  a submit with problems goes to the first of them rather than leaving the
+  person at the button wondering why nothing happened.
 */
 
 const SIDES = [
@@ -49,24 +57,7 @@ const SIDES = [
   { value: "BUY", label: `I want to buy ${ASSET}` },
 ] as const;
 
-type Draft = {
-  side: OfferSide;
-  price: string;
-  total: string;
-  min: string;
-  max: string;
-  window: number;
-  methodIds: string[];
-  kinds: PaymentMethodKind[];
-  terms: string;
-  autoReply: string;
-  requireVerified: boolean;
-  minCompletedTrades: string;
-};
-
-type Errors = Partial<Record<keyof Draft, string>>;
-
-const EMPTY: Draft = {
+const EMPTY: AdDraft = {
   side: "SELL",
   price: "",
   total: "",
@@ -86,7 +77,7 @@ type State =
   | { status: "error"; message: string }
   | { status: "ready"; methods: PaymentMethod[]; editing: MyOffer | null };
 
-function fromOffer(offer: MyOffer): Draft {
+function fromOffer(offer: MyOffer): AdDraft {
   return {
     side: offer.side,
     price: plainSantim(offer.priceSantim),
@@ -103,58 +94,36 @@ function fromOffer(offer: MyOffer): Draft {
   };
 }
 
-/** What the API needs, or the field that stops it. */
-function toRequest(draft: Draft): { ok: true; body: OfferDraft } | { ok: false; errors: Errors } {
-  const errors: Errors = {};
-  const price = toSantim(draft.price);
-  const total = toMicro(draft.total);
-  const min = toSantim(draft.min);
-  const max = toSantim(draft.max);
-  if (!price || price === "0") errors.price = `Enter the price in ${FIAT} per ${ASSET}.`;
-  if (!total || total === "0") errors.total = `Enter how much ${ASSET} the ad is for.`;
-  if (!min || min === "0") errors.min = `Enter the smallest trade, in ${FIAT}.`;
-  if (!max || max === "0") errors.max = `Enter the largest trade, in ${FIAT}.`;
-  if (min && max && compareSantim(min, max) > 0)
-    errors.max = "The maximum must be at least the minimum.";
-  if (draft.side === "SELL" && draft.methodIds.length === 0) {
-    errors.methodIds = "Choose at least one way to be paid.";
-  }
-  if (draft.side === "BUY" && draft.kinds.length === 0) {
-    errors.kinds = "Choose at least one way you will pay.";
-  }
-  const minTrades = Number(draft.minCompletedTrades || "0");
-  if (!Number.isInteger(minTrades) || minTrades < 0 || minTrades > 10_000) {
-    errors.minCompletedTrades = "Enter a whole number.";
-  }
-  if (Object.keys(errors).length > 0 || !price || !total || !min || !max)
-    return { ok: false, errors };
-  return {
-    ok: true,
-    body: {
-      priceSantim: price,
-      totalAmount: total,
-      minSantim: min,
-      maxSantim: max,
-      paymentWindowMinutes: draft.window,
-      ...(draft.side === "SELL"
-        ? { paymentMethodIds: draft.methodIds }
-        : { paymentKinds: draft.kinds }),
-      terms: draft.terms.trim(),
-      autoReply: draft.autoReply.trim(),
-      requireVerified: draft.requireVerified,
-      minCompletedTrades: minTrades,
-    },
-  };
+/** A list with one value in it or out of it. */
+function toggled<T>(list: readonly T[], value: T): T[] {
+  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 }
 
 export function AdForm({ offerId }: { offerId?: string | undefined }) {
   const mayPost = useMayPostAds();
   const router = useRouter();
   const [state, setState] = useState<State>({ status: "loading" });
-  const [draft, setDraft] = useState<Draft>(EMPTY);
-  const [errors, setErrors] = useState<Errors>({});
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
+  const railsErrorId = useId();
+
+  const {
+    register,
+    control,
+    handleSubmit,
+    reset,
+    setValue,
+    formState: { errors, isSubmitting, isSubmitted },
+  } = useForm<AdDraft>({
+    resolver: zodResolver(adForm),
+    defaultValues: EMPTY,
+    // revealProblems() does it, in the page's order rather than the fields'.
+    shouldFocusError: false,
+  });
+  // useWatch rather than watch(): the function watch() returns cannot be
+  // memoized, so the React Compiler gives up on the whole component.
+  const side = useWatch({ control, name: "side" });
+  const paymentWindow = useWatch({ control, name: "window" });
 
   useEffect(() => {
     let live = true;
@@ -178,49 +147,38 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
         methods: methods.paymentMethods.filter((method) => method.status === "ACTIVE"),
         editing: offer,
       });
-      if (offer) setDraft(fromOffer(offer));
+      if (offer) reset(fromOffer(offer));
     })();
     return () => {
       live = false;
     };
-  }, [offerId]);
-
-  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
-    setDraft((current) => ({ ...current, [key]: value }));
-    setErrors((current) => ({ ...current, [key]: undefined }));
-  };
-
-  const toggle = (key: "methodIds" | "kinds", value: string) => {
-    setDraft((current) => {
-      const list = current[key] as string[];
-      const next = list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
-      return { ...current, [key]: next };
-    });
-    setErrors((current) => ({ ...current, [key]: undefined }));
-  };
-
-  const submit = async () => {
-    setError(null);
-    const request = toRequest(draft);
-    if (!request.ok) {
-      setErrors(request.errors);
-      return;
-    }
-    setSubmitting(true);
-    const result =
-      state.status === "ready" && state.editing
-        ? await marketClient.updateOffer(state.editing.id, request.body)
-        : await marketClient.createOffer({ ...request.body, side: draft.side });
-    setSubmitting(false);
-    if (!result.ok) {
-      setError(result.message);
-      return;
-    }
-    router.push("/trade/ads");
-  };
+  }, [offerId, reset]);
 
   const editing = state.status === "ready" ? state.editing : null;
   const methods = state.status === "ready" ? state.methods : [];
+
+  const submit = handleSubmit(
+    async (draft) => {
+      setError(null);
+      const body = toOfferDraft(draft);
+      const result = editing
+        ? await marketClient.updateOffer(editing.id, body)
+        : await marketClient.createOffer({ ...body, side: draft.side });
+      if (!result.ok) {
+        setError(result.message);
+        toastFailure(result);
+        return;
+      }
+      const price = formatSantim(toSantim(draft.price) ?? "0");
+      toast.success(editing ? "Changes saved" : "Your ad is online", {
+        description: editing
+          ? "Orders already open keep the terms they were placed on."
+          : `${draft.side === "SELL" ? "Selling" : "Buying"} ${ASSET} at ${price} ${FIAT}.`,
+      });
+      router.push("/trade/ads");
+    },
+    () => revealProblems(formElement),
+  );
 
   return (
     <>
@@ -255,30 +213,23 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
       ) : (
         <div className="grid gap-4 lg:grid-cols-5 lg:gap-6">
           <Panel className="lg:col-span-3">
-            <FormError message={error} />
-            <form
-              noValidate
-              onSubmit={(event) => {
-                event.preventDefault();
-                void submit();
-              }}
-              className="flex flex-col gap-5"
-            >
+            <form ref={setFormElement} noValidate onSubmit={submit} className="flex flex-col gap-5">
               {editing ? null : (
                 <Segmented
-                  value={draft.side}
-                  onChange={(side) => set("side", side)}
+                  value={side}
+                  // Which way the ad goes decides which question about payment is asked:
+                  // once a submit has shown the problems, the answer is checked again.
+                  onChange={(next) => setValue("side", next, { shouldValidate: isSubmitted })}
                   options={SIDES}
                   label="Buy or sell"
                 />
               )}
 
-              <Field label={`Price, ${FIAT} per ${ASSET}`} error={errors.price}>
-                {(control) => (
+              <Field label={`Price, ${FIAT} per ${ASSET}`} error={errors.price?.message}>
+                {(a11y) => (
                   <Input
-                    {...control}
-                    value={draft.price}
-                    onChange={(e) => set("price", e.target.value)}
+                    {...a11y}
+                    {...register("price")}
                     inputMode="decimal"
                     placeholder="158.50"
                     className="tabular-nums"
@@ -289,17 +240,16 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
               <Field
                 label={`Total amount, ${ASSET}`}
                 hint={
-                  draft.side === "SELL"
+                  side === "SELL"
                     ? "How much you are offering across all trades on this ad. Nothing is locked until a trade opens."
                     : "How much you want to buy across all trades on this ad."
                 }
-                error={errors.total}
+                error={errors.total?.message}
               >
-                {(control) => (
+                {(a11y) => (
                   <Input
-                    {...control}
-                    value={draft.total}
-                    onChange={(e) => set("total", e.target.value)}
+                    {...a11y}
+                    {...register("total")}
                     inputMode="decimal"
                     placeholder="100"
                     className="tabular-nums"
@@ -308,24 +258,22 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
               </Field>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label={`Smallest trade, ${FIAT}`} error={errors.min}>
-                  {(control) => (
+                <Field label={`Smallest trade, ${FIAT}`} error={errors.min?.message}>
+                  {(a11y) => (
                     <Input
-                      {...control}
-                      value={draft.min}
-                      onChange={(e) => set("min", e.target.value)}
+                      {...a11y}
+                      {...register("min")}
                       inputMode="decimal"
                       placeholder="500"
                       className="tabular-nums"
                     />
                   )}
                 </Field>
-                <Field label={`Largest trade, ${FIAT}`} error={errors.max}>
-                  {(control) => (
+                <Field label={`Largest trade, ${FIAT}`} error={errors.max?.message}>
+                  {(a11y) => (
                     <Input
-                      {...control}
-                      value={draft.max}
-                      onChange={(e) => set("max", e.target.value)}
+                      {...a11y}
+                      {...register("max")}
                       inputMode="decimal"
                       placeholder="20000"
                       className="tabular-nums"
@@ -341,11 +289,11 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                     <button
                       key={minutes}
                       type="button"
-                      aria-pressed={draft.window === minutes}
-                      onClick={() => set("window", minutes)}
+                      aria-pressed={paymentWindow === minutes}
+                      onClick={() => setValue("window", minutes)}
                       className={cn(
                         "rounded-control h-9 border px-4 text-sm font-medium transition-colors duration-150",
-                        draft.window === minutes
+                        paymentWindow === minutes
                           ? "border-primary bg-primary-soft text-primary-soft-foreground"
                           : "border-border text-muted-foreground hover:text-foreground",
                       )}
@@ -359,77 +307,102 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                 </p>
               </fieldset>
 
-              {draft.side === "SELL" ? (
-                <fieldset>
-                  <legend className="text-foreground mb-2 text-sm font-medium">
-                    Be paid through
-                  </legend>
-                  {methods.length === 0 ? (
-                    <p className="text-muted-foreground text-[13px]">
-                      You have no payment method yet.{" "}
-                      <AppLink
-                        href={withNext(
-                          "/trade/payment-methods",
-                          offerId ? `/trade/ads/${offerId}/edit` : "/trade/ads/new",
-                        )}
-                        className="text-primary font-medium underline-offset-4 hover:underline"
-                      >
-                        Add one
-                      </AppLink>{" "}
-                      to post a sell ad.
-                    </p>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      {methods.map((method) => (
-                        <Checkbox
-                          key={method.id}
-                          label={`${method.label} · ${PAYMENT_KINDS[method.kind].label}`}
-                          checked={draft.methodIds.includes(method.id)}
-                          onChange={() => toggle("methodIds", method.id)}
-                        />
-                      ))}
-                    </div>
+              {side === "SELL" ? (
+                <Controller
+                  control={control}
+                  name="methodIds"
+                  render={({ field }) => (
+                    <fieldset
+                      data-invalid={errors.methodIds ? true : undefined}
+                      aria-describedby={errors.methodIds ? railsErrorId : undefined}
+                    >
+                      <legend className="text-foreground mb-2 text-sm font-medium">
+                        Be paid through
+                      </legend>
+                      {methods.length === 0 ? (
+                        <p className="text-muted-foreground text-[13px]">
+                          You have no payment method yet.{" "}
+                          <AppLink
+                            href={withNext(
+                              "/trade/payment-methods",
+                              offerId ? `/trade/ads/${offerId}/edit` : "/trade/ads/new",
+                            )}
+                            className="text-primary font-medium underline-offset-4 hover:underline"
+                          >
+                            Add one
+                          </AppLink>{" "}
+                          to post a sell ad.
+                        </p>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {methods.map((method) => (
+                            <Checkbox
+                              key={method.id}
+                              label={`${method.label} · ${PAYMENT_KINDS[method.kind].label}`}
+                              checked={field.value.includes(method.id)}
+                              onChange={() => field.onChange(toggled(field.value, method.id))}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {errors.methodIds ? (
+                        <p
+                          id={railsErrorId}
+                          role="alert"
+                          className="text-destructive mt-2 text-[13px]"
+                        >
+                          {errors.methodIds.message}
+                        </p>
+                      ) : null}
+                    </fieldset>
                   )}
-                  {errors.methodIds ? (
-                    <p role="alert" className="text-destructive mt-2 text-[13px]">
-                      {errors.methodIds}
-                    </p>
-                  ) : null}
-                </fieldset>
+                />
               ) : (
-                <fieldset>
-                  <legend className="text-foreground mb-2 text-sm font-medium">
-                    I can pay through
-                  </legend>
-                  <div className="flex flex-col gap-2">
-                    {PAYMENT_KIND_LIST.map((kind) => (
-                      <Checkbox
-                        key={kind}
-                        label={PAYMENT_KINDS[kind].label}
-                        checked={draft.kinds.includes(kind)}
-                        onChange={() => toggle("kinds", kind)}
-                      />
-                    ))}
-                  </div>
-                  {errors.kinds ? (
-                    <p role="alert" className="text-destructive mt-2 text-[13px]">
-                      {errors.kinds}
-                    </p>
-                  ) : null}
-                </fieldset>
+                <Controller
+                  control={control}
+                  name="kinds"
+                  render={({ field }) => (
+                    <fieldset
+                      data-invalid={errors.kinds ? true : undefined}
+                      aria-describedby={errors.kinds ? railsErrorId : undefined}
+                    >
+                      <legend className="text-foreground mb-2 text-sm font-medium">
+                        I can pay through
+                      </legend>
+                      <div className="flex flex-col gap-2">
+                        {PAYMENT_KIND_LIST.map((kind) => (
+                          <Checkbox
+                            key={kind}
+                            label={PAYMENT_KINDS[kind].label}
+                            checked={field.value.includes(kind)}
+                            onChange={() => field.onChange(toggled(field.value, kind))}
+                          />
+                        ))}
+                      </div>
+                      {errors.kinds ? (
+                        <p
+                          id={railsErrorId}
+                          role="alert"
+                          className="text-destructive mt-2 text-[13px]"
+                        >
+                          {errors.kinds.message}
+                        </p>
+                      ) : null}
+                    </fieldset>
+                  )}
+                />
               )}
 
               <Field
                 label="Terms"
                 hint="Shown to a taker before they place the order. Optional."
-                error={errors.terms}
+                error={errors.terms?.message}
               >
-                {(control) => (
+                {(a11y) => (
                   <Textarea
-                    {...control}
-                    value={draft.terms}
-                    onChange={(e) => set("terms", e.target.value)}
-                    maxLength={1000}
+                    {...a11y}
+                    {...register("terms")}
+                    maxLength={TERMS_MAX}
                     placeholder="Pay from an account in your own name. No third-party payments."
                   />
                 )}
@@ -438,14 +411,13 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
               <Field
                 label="Auto-reply"
                 hint="The first message in every trade's chat, from you. Optional."
-                error={errors.autoReply}
+                error={errors.autoReply?.message}
               >
-                {(control) => (
+                {(a11y) => (
                   <Textarea
-                    {...control}
-                    value={draft.autoReply}
-                    onChange={(e) => set("autoReply", e.target.value)}
-                    maxLength={500}
+                    {...a11y}
+                    {...register("autoReply")}
+                    maxLength={AUTO_REPLY_MAX}
                     rows={2}
                     placeholder="Thanks! Send the money and press I have paid; I release within a few minutes."
                   />
@@ -453,17 +425,12 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
               </Field>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <Checkbox
-                  label="Verified accounts only"
-                  checked={draft.requireVerified}
-                  onChange={(e) => set("requireVerified", e.target.checked)}
-                />
-                <Field label="Minimum completed trades" error={errors.minCompletedTrades}>
-                  {(control) => (
+                <Checkbox label="Verified accounts only" {...register("requireVerified")} />
+                <Field label="Minimum completed trades" error={errors.minCompletedTrades?.message}>
+                  {(a11y) => (
                     <Input
-                      {...control}
-                      value={draft.minCompletedTrades}
-                      onChange={(e) => set("minCompletedTrades", e.target.value)}
+                      {...a11y}
+                      {...register("minCompletedTrades")}
                       inputMode="numeric"
                       className="tabular-nums"
                     />
@@ -471,9 +438,13 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                 </Field>
               </div>
 
-              <Button type="submit" size="lg" className="w-full" loading={submitting}>
-                {editing ? "Save changes" : "Post ad"}
-              </Button>
+              {/* A refusal is answered where the button is, not at the top of a long form. */}
+              <div>
+                <FormError message={error} />
+                <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
+                  {editing ? "Save changes" : "Post ad"}
+                </Button>
+              </div>
             </form>
           </Panel>
 

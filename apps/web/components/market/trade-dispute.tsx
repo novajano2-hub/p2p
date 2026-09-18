@@ -1,6 +1,8 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
 
 import { Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
@@ -11,14 +13,12 @@ import { Radio, RadioGroup } from "@/components/ui/radio";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Note } from "@/components/wallet/shared";
 import { cn } from "@/lib/cn";
-import {
-  imageProblem,
-  marketClient,
-  type Dispute,
-  type DisputeReason,
-  type Trade,
-} from "@/lib/market/client";
+import { pickImage } from "@/lib/image";
+import { marketClient, type Dispute, type Trade } from "@/lib/market/client";
+import { DISPUTE_DESCRIPTION_MAX, disputeForm, type DisputeForm } from "@/lib/market/forms";
 import { DISPUTE_REASONS, DISPUTE_REASONS_FOR } from "@/lib/market/labels";
+import { revealProblems } from "@/lib/reveal-problems";
+import { toast, toastFailure, type Refusal } from "@/lib/toast";
 
 /*
   Asking a person to look: the Binance appeal, in the trade rather than on
@@ -30,6 +30,10 @@ import { DISPUTE_REASONS, DISPUTE_REASONS_FOR } from "@/lib/market/labels";
   The cooldown is the server's: the button appears when the server's
   `actions` say a dispute may be opened, and until then this panel says
   when that will be, from the moment the buyer marked paid.
+
+  Every step says it happened, as a toast. A refusal is said twice: as a
+  toast, where the person is looking, and at the top of this panel, where it
+  stays.
 */
 
 /** Mirrors TRADE_DISPUTE_COOLDOWN_MINUTES on the server, for the sentence only. The server is what refuses. */
@@ -37,7 +41,11 @@ const COOLDOWN_MINUTES = 10;
 
 export function DisputePanel({ trade, onUpdated }: { trade: Trade; onUpdated: () => void }) {
   const [dispute, setDispute] = useState<Dispute | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setShownError] = useState<string | null>(null);
+  const setError = useCallback((refusal: Refusal | null) => {
+    setShownError(refusal?.message ?? null);
+    if (refusal) toastFailure(refusal);
+  }, []);
   const [opening, setOpening] = useState(false);
   const summary = trade.dispute;
 
@@ -126,66 +134,54 @@ function OpenDispute({
   trade: Trade;
   onDone: () => void;
   onCancel: () => void;
-  onError: (message: string | null) => void;
+  onError: (refusal: Refusal | null) => void;
 }) {
   const reasons = DISPUTE_REASONS_FOR[trade.role];
-  const [reason, setReason] = useState<DisputeReason>(reasons[0] ?? "OTHER");
-  const [description, setDescription] = useState("");
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<DisputeForm>({
+    resolver: zodResolver(disputeForm),
+    defaultValues: { reason: reasons[0] ?? "OTHER", description: "" },
+    shouldFocusError: false,
+  });
 
-  const submit = async () => {
-    if (description.trim().length < 10) {
-      setProblem("Say what happened, in at least a few words.");
-      return;
-    }
-    setProblem(null);
-    onError(null);
-    setBusy(true);
-    const result = await marketClient.openDispute(trade.id, {
-      reason,
-      description: description.trim(),
-    });
-    setBusy(false);
-    if (!result.ok) {
-      onError(result.message);
-      return;
-    }
-    onDone();
-  };
+  const submit = handleSubmit(
+    async ({ reason, description }) => {
+      onError(null);
+      const result = await marketClient.openDispute(trade.id, { reason, description });
+      if (!result.ok) {
+        onError(result);
+        return;
+      }
+      toast.success("Dispute opened", {
+        description:
+          "A reviewer reads the chat and the evidence from both of you. Attach what you have below.",
+      });
+      onDone();
+    },
+    () => revealProblems(formElement),
+  );
 
   return (
-    <form
-      noValidate
-      className="mt-4 flex flex-col gap-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-    >
-      <RadioGroup legend="What happened?">
+    <form ref={setFormElement} noValidate className="mt-4 flex flex-col gap-4" onSubmit={submit}>
+      <RadioGroup legend="What happened?" error={errors.reason?.message}>
         {reasons.map((value) => (
-          <Radio
-            key={value}
-            name="reason"
-            value={value}
-            checked={reason === value}
-            onChange={() => setReason(value)}
-            label={DISPUTE_REASONS[value]}
-          />
+          <Radio key={value} value={value} label={DISPUTE_REASONS[value]} {...register("reason")} />
         ))}
       </RadioGroup>
       <Field
         label="Tell the reviewer"
         hint="What you did, when, and what you see. Attach screenshots after opening."
-        error={problem ?? undefined}
+        error={errors.description?.message}
       >
-        {(control) => (
+        {(a11y) => (
           <Textarea
-            {...control}
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            maxLength={1000}
+            {...a11y}
+            {...register("description")}
+            maxLength={DISPUTE_DESCRIPTION_MAX}
             rows={4}
           />
         )}
@@ -195,7 +191,7 @@ function OpenDispute({
         withdrawn. Both of you can add evidence, and the reviewer reads the chat.
       </Note>
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" size="md" loading={busy}>
+        <Button type="submit" size="md" loading={isSubmitting}>
           Open the dispute
         </Button>
         <Button type="button" variant="ghost" size="md" onClick={onCancel}>
@@ -215,7 +211,7 @@ function DisputeDetail({
   trade: Trade;
   dispute: Dispute;
   onChanged: () => Promise<void>;
-  onError: (message: string | null) => void;
+  onError: (refusal: Refusal | null) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [note, setNote] = useState("");
@@ -230,19 +226,23 @@ function DisputeDetail({
 
   const attach = async (file: File | undefined) => {
     if (!file) return;
-    const problem = imageProblem(file);
-    if (problem) {
-      onError(problem);
+    setBusy(true);
+    // A file that cannot be sent is refused, and said so, by pickImage itself.
+    const image = await pickImage(file, "evidence");
+    if (!image) {
+      setBusy(false);
       return;
     }
     onError(null);
-    setBusy(true);
-    const result = await marketClient.addEvidence(trade.id, file, note.trim());
+    const result = await marketClient.addEvidence(trade.id, image, note.trim());
     setBusy(false);
     if (!result.ok) {
-      onError(result.message);
+      onError(result);
       return;
     }
+    toast.success("Screenshot attached", {
+      description: "The reviewer and the other side can see it now.",
+    });
     setNote("");
     await onChanged();
   };
@@ -356,9 +356,12 @@ function DisputeDetail({
               onError(null);
               const result = await marketClient.withdrawDispute(trade.id);
               if (!result.ok) {
-                onError(result.message);
+                onError(result);
                 return;
               }
+              toast.success("Dispute withdrawn", {
+                description: "The trade is back to waiting for the seller to release.",
+              });
               await onChanged();
             }}
           >
