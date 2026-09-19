@@ -652,8 +652,8 @@ export class OfferService {
       let paused = 0;
       for (const row of uncovered) {
         const since = row.unfunded_since;
-        const what = `Your sell ad at ${formatEtb(row.price_santim)} birr`;
-        const smallest = `${formatEtb(row.min_santim)} birr`;
+        const what = `Your sell ad at ${formatEtb(row.price_santim)} ETB`;
+        const smallest = `${formatEtb(row.min_santim)} ETB`;
 
         if (since && now.getTime() - since.getTime() >= hours * HOUR_MS) {
           assertTransition(SUBJECT, OFFER_TRANSITIONS, "ACTIVE", "PAUSED");
@@ -741,7 +741,7 @@ export class OfferService {
       throw AppError.validation([
         {
           path: "minSantim",
-          message: `The whole offer is worth ${formatEtb(worth)} birr, which is less than your minimum.`,
+          message: `The whole offer is worth ${formatEtb(worth)} ETB, which is less than your minimum.`,
         },
       ]);
     }

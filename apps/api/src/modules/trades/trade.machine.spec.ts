@@ -81,7 +81,7 @@ describe("the trade state machine", () => {
 
   /*
     If this pair were ever listed, escrow could be paid to the buyer before
-    they had even claimed to have sent birr - the seller would lose the coins
+    they had even claimed to have sent ETB - the seller would lose the coins
     for nothing. Release is only reachable through BUYER_MARKED_PAID or
     through a decision on a dispute.
   */
@@ -98,7 +98,7 @@ describe("the trade state machine", () => {
   /*
     AT-4, expressed on the table: once the buyer says they have paid, the only
     ways out are a release or a person. An EXPIRED or CANCELLED edge here
-    would hand the seller their coins back after the birr had been sent.
+    would hand the seller their coins back after the ETB had been sent.
   */
   it("gives a paid trade no exit but a release or a dispute", () => {
     expect(TRADE_TRANSITIONS.BUYER_MARKED_PAID).toEqual(["COMPLETED", "DISPUTED"]);

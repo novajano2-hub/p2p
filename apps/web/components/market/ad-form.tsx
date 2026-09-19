@@ -609,24 +609,26 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                                   {method.label}
                                 </Chip>
                               ))}
-                              <AppLink
-                                href={withNext(
-                                  "/trade/payment-methods",
-                                  offerId ? `/trade/ads/${offerId}/edit` : "/trade/ads/new",
-                                )}
-                                onClick={() =>
-                                  keepDraft({
-                                    ad: offerId ?? "new",
-                                    step,
-                                    values: getValues(),
-                                    methodIds: methods.map((method) => method.id),
-                                  })
-                                }
-                                className="rounded-control border-border text-primary hover:border-primary/40 flex h-10 items-center gap-1.5 border border-dashed px-3.5 text-[13px] font-semibold"
-                              >
-                                <Plus size={14} weight="bold" aria-hidden="true" />
-                                {methods.length === 0 ? "Add a payment method" : "Add another"}
-                              </AppLink>
+                              {methods.length < PAYMENT_KIND_LIST.length ? (
+                                <AppLink
+                                  href={withNext(
+                                    "/trade/payment-methods",
+                                    offerId ? `/trade/ads/${offerId}/edit` : "/trade/ads/new",
+                                  )}
+                                  onClick={() =>
+                                    keepDraft({
+                                      ad: offerId ?? "new",
+                                      step,
+                                      values: getValues(),
+                                      methodIds: methods.map((method) => method.id),
+                                    })
+                                  }
+                                  className="rounded-control border-border text-primary hover:border-primary/40 flex h-10 items-center gap-1.5 border border-dashed px-3.5 text-[13px] font-semibold"
+                                >
+                                  <Plus size={14} weight="bold" aria-hidden="true" />
+                                  {methods.length === 0 ? "Add a payment method" : "Add another"}
+                                </AppLink>
+                              ) : null}
                             </div>
                             {errors.methodIds ? (
                               <p

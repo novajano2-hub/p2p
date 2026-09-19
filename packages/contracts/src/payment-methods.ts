@@ -101,9 +101,6 @@ export const PAYMENT_METHOD_KINDS: Record<
   },
 };
 
-/** How many a customer may keep. Binance allows a handful; nobody needs more. */
-export const PAYMENT_METHODS_MAX = 10;
-
 /**
  * The name on the account, as the bank or wallet has it. The buyer sees it
  * and the payer's name is checked against it in a dispute (threat model
@@ -145,8 +142,10 @@ const bank = <K extends BankKind>(kind: K) =>
 
 /**
  * Adding a method. The shape follows the rail: a wallet is a phone number, a
- * bank is an account number. There is no edit: a method whose number changed
- * is a different method, and the old one is archived.
+ * bank is an account number. One live method of each kind: an order names the
+ * kind, so the account behind it has to be the only one, and a second is
+ * refused. There is no edit: a method whose number changed is a different
+ * method, and the old one is archived - which is what replacing does.
  */
 export const createPaymentMethodRequest = z.discriminatedUnion("kind", [
   wallet("TELEBIRR"),
@@ -158,6 +157,15 @@ export const createPaymentMethodRequest = z.discriminatedUnion("kind", [
   bank("AWASH"),
 ]);
 export type CreatePaymentMethodRequest = z.infer<typeof createPaymentMethodRequest>;
+
+/**
+ * Replacing a method: the same kind, new details. The old method is archived
+ * and the new one takes its place on every live ad that named it - a taker
+ * reads the kind, never which account is behind it, so no ad changes version -
+ * while a trade already open keeps the details it was opened with.
+ */
+export const replacePaymentMethodRequest = createPaymentMethodRequest;
+export type ReplacePaymentMethodRequest = CreatePaymentMethodRequest;
 
 /**
  * The instructions, in the clear: what a buyer needs to make the payment.

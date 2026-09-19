@@ -27,7 +27,7 @@ const MINUTE = 60_000;
 const minutesAgo = (minutes: number) =>
   new Date(Date.now() - minutes * MINUTE - 20_000).toISOString();
 
-/** 100 USDT at 158.50 birr, 10 to 20,000 birr a trade, paid through Telebirr. */
+/** 100 USDT at 158.50 ETB, 10 to 20,000 ETB a trade, paid through Telebirr. */
 const offer = (id: string, overrides: Record<string, unknown> = {}) => ({
   id,
   side: "SELL",
@@ -329,7 +329,7 @@ test.describe("posting an ad", () => {
     await page.goto("/trade/ads/new");
     // The price, against the best one in the market now.
     await expect(page.getByText("Best sell price in the market now:")).toContainText("158.20");
-    await page.getByLabel("Price, birr per USDT").fill("158.80");
+    await page.getByLabel("Price, ETB per USDT").fill("158.80");
     await expect(page.getByText("0.38% above it")).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await page.getByRole("button", { name: "Next" }).click();
@@ -347,7 +347,7 @@ test.describe("posting an ad", () => {
 
     // Back keeps what was typed.
     await page.getByRole("button", { name: "Back" }).click();
-    await expect(page.getByLabel("Price, birr per USDT")).toHaveValue("158.80");
+    await expect(page.getByLabel("Price, ETB per USDT")).toHaveValue("158.80");
   });
 
   test("an ad the balance cannot cover is posted as hidden, not as online", async ({
@@ -370,11 +370,11 @@ test.describe("posting an ad", () => {
     ]);
 
     await page.goto("/trade/ads/new");
-    await page.getByLabel("Price, birr per USDT").fill("158.50");
+    await page.getByLabel("Price, ETB per USDT").fill("158.50");
     await page.getByRole("button", { name: "Next" }).click();
     await page.getByLabel("Total amount, USDT").fill("100");
-    await page.getByLabel("Smallest trade, birr").fill("1000");
-    await page.getByLabel("Largest trade, birr").fill("20000");
+    await page.getByLabel("Smallest trade, ETB").fill("1000");
+    await page.getByLabel("Largest trade, ETB").fill("20000");
     await page.getByText("Telebirr ····5678").click();
     await page.getByRole("button", { name: "Next" }).click();
     await page.getByRole("button", { name: "Post ad" }).click();
@@ -412,10 +412,10 @@ test.describe("posting an ad", () => {
     ]);
 
     await page.goto("/trade/ads/new");
-    await page.getByLabel("Price, birr per USDT").fill("158.80");
+    await page.getByLabel("Price, ETB per USDT").fill("158.80");
     await page.getByRole("button", { name: "Next" }).click();
     await page.getByLabel("Total amount, USDT").fill("2");
-    await page.getByLabel("Smallest trade, birr").fill("100");
+    await page.getByLabel("Smallest trade, ETB").fill("100");
     await page.getByRole("link", { name: "Add a payment method" }).click();
 
     // Adding one is the errand, so its panel is open on arrival.
@@ -427,11 +427,11 @@ test.describe("posting an ad", () => {
     // Back on the second step as it was left, with the new method in the ad.
     await expect(page).toHaveURL(/\/trade\/ads\/new$/);
     await expect(page.getByLabel("Total amount, USDT")).toHaveValue("2");
-    await expect(page.getByLabel("Smallest trade, birr")).toHaveValue("100");
+    await expect(page.getByLabel("Smallest trade, ETB")).toHaveValue("100");
     await expect(page.getByRole("checkbox", { name: "Telebirr ····5678" })).toBeChecked();
     await expectNoHorizontalOverflow(page);
     await page.getByRole("button", { name: "Back" }).click();
-    await expect(page.getByLabel("Price, birr per USDT")).toHaveValue("158.80");
+    await expect(page.getByLabel("Price, ETB per USDT")).toHaveValue("158.80");
   });
 
   test("lists at most five ways to be paid, and says so before the server has to", async ({
@@ -439,11 +439,21 @@ test.describe("posting an ad", () => {
     context,
   }) => {
     await withSession(context);
-    const methods = [1, 2, 3, 4, 5, 6].map((n) => ({
+    // One account for each type, so six accounts are six types.
+    const LABELS = [
+      ["TELEBIRR", "Telebirr ····0001"],
+      ["CBE_BIRR", "CBE Birr ····0002"],
+      ["MPESA", "M-Pesa ····0003"],
+      ["CBE", "CBE ····0004"],
+      ["DASHEN", "Dashen Bank ····0005"],
+      ["ABYSSINIA", "Bank of Abyssinia ····0006"],
+    ] as const;
+    const methods = LABELS.map(([kind, label], index) => ({
       ...TELEBIRR,
-      id: `pm${n}`,
-      label: `Telebirr ····000${n}`,
-      hint: `000${n}`,
+      id: `pm${index + 1}`,
+      kind,
+      label,
+      hint: label.slice(-4),
     }));
     await stubApi(page, [
       ...signedIn(VERIFIED),
@@ -457,12 +467,12 @@ test.describe("posting an ad", () => {
     ]);
 
     await page.goto("/trade/ads/new");
-    await page.getByLabel("Price, birr per USDT").fill("158.50");
+    await page.getByLabel("Price, ETB per USDT").fill("158.50");
     await page.getByRole("button", { name: "Next" }).click();
-    for (const n of [1, 2, 3, 4, 5]) await page.getByText(`Telebirr ····000${n}`).click();
+    for (const [, label] of LABELS.slice(0, 5)) await page.getByText(label).click();
 
     // The sixth can only be looked at, and the legend says why.
-    const sixth = page.getByRole("checkbox", { name: "Telebirr ····0006" });
+    const sixth = page.getByRole("checkbox", { name: "Bank of Abyssinia ····0006" });
     await expect(sixth).toBeDisabled();
     await expect(page.getByText("5 of 5")).toBeVisible();
     await expectNoHorizontalOverflow(page);

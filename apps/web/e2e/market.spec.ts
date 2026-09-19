@@ -22,7 +22,7 @@ import {
 const desktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1024;
 const mobile = (page: Page) => (page.viewportSize()?.width ?? 0) < 768;
 
-/** 100 USDT at 158.50 birr, 10 to 20,000 birr a trade, paid through Telebirr. */
+/** 100 USDT at 158.50 ETB, 10 to 20,000 ETB a trade, paid through Telebirr. */
 const offer = (side: "BUY" | "SELL", overrides: Record<string, unknown> = {}) => ({
   id: "o1",
   side,
@@ -226,7 +226,7 @@ test.describe("the amount filter", () => {
     }
     const quick = page.getByRole("group", { name: "Quick amounts" });
     await expect(quick.getByRole("button")).toHaveText(["1,000", "5,000", "10,000", "50,000"]);
-    const field = page.getByLabel("Amount in birr");
+    const field = page.getByLabel("Amount in ETB");
 
     // A tap fills the field and asks the market for offers that fit it.
     await quick.getByRole("button", { name: "5,000" }).click();

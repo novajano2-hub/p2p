@@ -15,7 +15,7 @@ import type {
   schema; this file pins the words to the enumerations.
 */
 
-export const FIAT = "birr";
+export const FIAT = "ETB";
 export const ASSET = "USDT";
 
 export const PAYMENT_KINDS: Record<

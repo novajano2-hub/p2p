@@ -1,9 +1,9 @@
 import { fundingOf, type AdNumbers } from "@/modules/offers/offer-funding";
 
 /*
-  An ad's balance and why it is hidden, as arithmetic. At 158.50 birr a
-  USDT, a smallest order of 1,000.00 birr takes 6.309117 USDT: that is worth
-  999.995 birr and a little more, which rounds half up to 1,000.00, while
+  An ad's balance and why it is hidden, as arithmetic. At 158.50 ETB a
+  USDT, a smallest order of 1,000.00 ETB takes 6.309117 USDT: that is worth
+  999.995 ETB and a little more, which rounds half up to 1,000.00, while
   6.309116 comes to 999.99.
 */
 

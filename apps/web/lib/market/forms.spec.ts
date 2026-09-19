@@ -16,7 +16,7 @@ import {
   the santim and the millionth rather than left to a browser test.
 */
 
-/** 158.50 birr a USDT, 10 to 20,000 birr a trade, 200 USDT left. */
+/** 158.50 ETB a USDT, 10 to 20,000 ETB a trade, 200 USDT left. */
 const BOUNDS: OrderBounds = {
   mode: "fiat",
   priceSantim: "15850",
@@ -28,9 +28,9 @@ const BOUNDS: OrderBounds = {
 
 describe("taking an ad", () => {
   it("previews the pair the server will open, rounding the way it does", () => {
-    // 1,000 birr buys 6.309148 USDT, rounded down to the millionth.
+    // 1,000 ETB buys 6.309148 USDT, rounded down to the millionth.
     expect(orderPair("1000", "fiat", "15850")).toEqual({ santim: "100000", micro: "6309148" });
-    // 10 USDT costs 1,585.00 birr.
+    // 10 USDT costs 1,585.00 ETB.
     expect(orderPair("10", "usdt", "15850")).toEqual({ micro: "10000000", santim: "158500" });
     expect(orderPair("1,000.5", "fiat", "15850")?.santim).toBe("100050");
     expect(orderPair("12.345", "fiat", "15850")).toBeNull();
@@ -40,28 +40,28 @@ describe("taking an ad", () => {
   it("holds an amount to the ad's limits and to what is left", () => {
     expect(amountProblem("", BOUNDS)).toBe("Enter an amount.");
     expect(amountProblem("0", BOUNDS)).toBe("Enter an amount.");
-    expect(amountProblem("9.99", BOUNDS)).toBe("The smallest trade on this offer is 10.00 birr.");
+    expect(amountProblem("9.99", BOUNDS)).toBe("The smallest trade on this offer is 10.00 ETB.");
     expect(amountProblem("10", BOUNDS)).toBeNull();
     expect(amountProblem("20000", BOUNDS)).toBeNull();
     expect(amountProblem("20000.01", BOUNDS)).toBe(
-      "The largest trade on this offer is 20,000.00 birr.",
+      "The largest trade on this offer is 20,000.00 ETB.",
     );
     const nearlyGone = { ...BOUNDS, available: "5000000" };
-    // 1,000 birr is 6.309148 USDT, more than the 5 left.
+    // 1,000 ETB is 6.309148 USDT, more than the 5 left.
     expect(amountProblem("1000", nearlyGone)).toBe("Only 5.00 USDT is available right now.");
   });
 
   it("reads the amount in whichever unit the person chose", () => {
     const inUsdt = { ...BOUNDS, mode: "usdt" as const };
     expect(amountProblem("10", inUsdt)).toBeNull();
-    // 0.05 USDT is 7.93 birr, under the smallest trade.
-    expect(amountProblem("0.05", inUsdt)).toBe("The smallest trade on this offer is 10.00 birr.");
-    // 101 USDT is 16,008.50 birr: inside the limits, but more than is left on this one.
+    // 0.05 USDT is 7.93 ETB, under the smallest trade.
+    expect(amountProblem("0.05", inUsdt)).toBe("The smallest trade on this offer is 10.00 ETB.");
+    // 101 USDT is 16,008.50 ETB: inside the limits, but more than is left on this one.
     expect(amountProblem("101", { ...inUsdt, available: "100000000" })).toBe(
       "Only 100.00 USDT is available right now.",
     );
-    // 127 USDT is 20,129.50 birr.
-    expect(amountProblem("127", inUsdt)).toBe("The largest trade on this offer is 20,000.00 birr.");
+    // 127 USDT is 20,129.50 ETB.
+    expect(amountProblem("127", inUsdt)).toBe("The largest trade on this offer is 20,000.00 ETB.");
   });
 
   it("asks for a payment method only when there is a choice to make", () => {

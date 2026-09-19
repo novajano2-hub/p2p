@@ -2,14 +2,14 @@ import { amountForFiat, fiatForAmount, formatEtb } from "@/common/money/fiat";
 
 describe("fiatForAmount", () => {
   it("multiplies millionths by a santim price and scales back down", () => {
-    // 100 USDT at 158.50 birr = 15,850.00 birr
+    // 100 USDT at 158.50 ETB = 15,850.00 ETB
     expect(fiatForAmount(100_000_000n, 15_850n)).toBe(1_585_000n);
   });
 
   it("rounds half up when the product leaves a fraction of a santim", () => {
-    // 0.333333 USDT at 1.50 birr = 0.4999995 birr -> 50 santim
+    // 0.333333 USDT at 1.50 ETB = 0.4999995 ETB -> 50 santim
     expect(fiatForAmount(333_333n, 150n)).toBe(50n);
-    // 0.000001 USDT at 1.00 birr = 0.0001 santim -> 0
+    // 0.000001 USDT at 1.00 ETB = 0.0001 santim -> 0
     expect(fiatForAmount(1n, 100n)).toBe(0n);
     // exactly half a santim rounds up
     expect(fiatForAmount(500_000n, 1n)).toBe(1n);
@@ -23,7 +23,7 @@ describe("fiatForAmount", () => {
 
 describe("amountForFiat", () => {
   it("divides santim by the price and rounds down", () => {
-    // 1,000.00 birr at 158.50 = 6.309148... USDT
+    // 1,000.00 ETB at 158.50 = 6.309148... USDT
     expect(amountForFiat(100_000n, 15_850n)).toBe(6_309_148n);
   });
 
@@ -41,7 +41,7 @@ describe("amountForFiat", () => {
 });
 
 describe("formatEtb", () => {
-  it("prints santim as birr with two decimals and grouping", () => {
+  it("prints santim as ETB with two decimals and grouping", () => {
     expect(formatEtb(1_585_000n)).toBe("15,850.00");
     expect(formatEtb(5n)).toBe("0.05");
     expect(formatEtb(123_456_789n)).toBe("1,234,567.89");

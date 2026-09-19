@@ -37,7 +37,7 @@ export function tradeMail(
   },
 ): Mail {
   const usdt = `${formatUsdt(input.amount)} USDT`;
-  const birr = `${formatEtb(input.fiatSantim)} birr`;
+  const birr = `${formatEtb(input.fiatSantim)} ETB`;
   const other = input.counterparty;
 
   let subject: string;
@@ -50,7 +50,7 @@ export function tradeMail(
           : `${other} is selling you ${usdt}`;
       body =
         input.role === "SELLER"
-          ? `${other} has opened a trade for ${usdt} at ${birr}. Your USDT is held in escrow until you confirm the birr has arrived - do not release before it has.`
+          ? `${other} has opened a trade for ${usdt} at ${birr}. Your USDT is held in escrow until you confirm the ETB has arrived - do not release before it has.`
           : `${other} has opened a trade to sell you ${usdt} for ${birr}. Their USDT is held in escrow. Pay them with the details shown in the app, then mark the trade as paid.`;
       break;
     case "PAID":
@@ -67,7 +67,7 @@ export function tradeMail(
       break;
     case "CANCELLED":
       subject = `Trade for ${usdt} cancelled`;
-      body = `${other} cancelled their trade for ${usdt}. Your USDT is back in your available balance. If you have already received birr for it, contact them in the app.`;
+      body = `${other} cancelled their trade for ${usdt}. Your USDT is back in your available balance. If you have already received ETB for it, contact them in the app.`;
       break;
     case "EXPIRED":
       subject = `Trade for ${usdt} expired`;

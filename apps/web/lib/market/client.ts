@@ -353,6 +353,11 @@ export const marketClient = {
     ),
   addPaymentMethod: (input: NewPaymentMethod) =>
     post("/v1/payment-methods", input, paymentMethodSchema).then(wrap("paymentMethod")),
+  /** The same type, new details: the old account is archived and the ads that named it follow. */
+  replacePaymentMethod: (id: string, input: NewPaymentMethod) =>
+    post(`/v1/payment-methods/${id}/replace`, input, paymentMethodSchema).then(
+      wrap("paymentMethod"),
+    ),
   archivePaymentMethod: (id: string) =>
     send(`/v1/payment-methods/${id}`, empty, { method: "DELETE" }).then(wrap("done")),
 

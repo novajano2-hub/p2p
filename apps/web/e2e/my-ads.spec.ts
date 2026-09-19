@@ -122,7 +122,7 @@ test("moves an ad the platform took offline as it happens, not at the next visit
       id: "n1",
       type: "OFFER_PAUSED",
       title: "Your ad went offline",
-      body: "Your sell ad at 158.50 birr was taken offline: for 24 hours your available balance could not cover its smallest order of 10.00 birr. Add USDT, then switch it back on in My ads.",
+      body: "Your sell ad at 158.50 ETB was taken offline: for 24 hours your available balance could not cover its smallest order of 10.00 ETB. Add USDT, then switch it back on in My ads.",
       link: "/trade/ads?tab=offline",
       readAt: null,
       createdAt: new Date().toISOString(),

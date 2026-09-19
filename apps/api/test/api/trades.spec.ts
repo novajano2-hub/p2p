@@ -116,7 +116,7 @@ async function addMethod(who: Api, body: object = TELEBIRR): Promise<PaymentMeth
   return response.body as PaymentMethodDetailView;
 }
 
-/** 100 USDT at 158.50 birr, 10 to 20,000 birr a trade, 30 minutes to pay. */
+/** 100 USDT at 158.50 ETB, 10 to 20,000 ETB a trade, 30 minutes to pay. */
 async function sellOffer(
   who: Api,
   methodId: string,
@@ -194,7 +194,7 @@ describe("opening a trade", () => {
     expect(trade.role).toBe("BUYER");
     expect(trade.status).toBe("AWAITING_FIAT_PAYMENT");
     expect(trade.amount).toBe((40n * USDT).toString());
-    // 40 USDT at 158.50 = 6,340.00 birr
+    // 40 USDT at 158.50 = 6,340.00 ETB
     expect(trade.fiatSantim).toBe("634000");
     expect(trade.priceSantim).toBe("15850");
     expect(trade.fee).toBe("0");
@@ -294,7 +294,7 @@ describe("opening a trade", () => {
     const { buyer, offer } = await pair();
 
     const byBirr = await take(buyer.api, { offerId: offer.id, fiatSantim: "100000" }).expect(201);
-    // 1,000 birr at 158.50 buys 6.309148 USDT, worth 999.99958 birr - never more than typed.
+    // 1,000 ETB at 158.50 buys 6.309148 USDT, worth 999.99958 ETB - never more than typed.
     expect(byBirr.body.amount).toBe("6309148");
     expect(byBirr.body.fiatSantim).toBe("100000");
 
@@ -305,11 +305,11 @@ describe("opening a trade", () => {
     }).expect(400);
     expect(both.body.error.details[0].path).toBe("amount");
 
-    // Under the offer's minimum of 10 birr: 0.05 USDT is 7.93 birr.
+    // Under the offer's minimum of 10 ETB: 0.05 USDT is 7.93 ETB.
     const tiny = await take(buyer.api, { offerId: offer.id, amount: "50000" }).expect(400);
     expect(tiny.body.error.details[0].path).toBe("amount");
 
-    // More than remains (110 USDT is 17,435 birr: inside the limits, over what is left).
+    // More than remains (110 USDT is 17,435 ETB: inside the limits, over what is left).
     const tooMuch = await take(buyer.api, {
       offerId: offer.id,
       amount: (110n * USDT).toString(),
@@ -394,7 +394,7 @@ describe("opening a trade", () => {
       remainingAmount: (100n * USDT).toString(),
     });
 
-    // Looked at again, at the new price, it opens: 10 USDT at 160.00 is 1,600.00 birr.
+    // Looked at again, at the new price, it opens: 10 USDT at 160.00 is 1,600.00 ETB.
     const fresh = await take(buyer.api, {
       offerId: offer.id,
       amount: (10n * USDT).toString(),
@@ -947,7 +947,10 @@ describe("the ad underneath a trade", () => {
     };
 
     // Somebody else taking part of it.
-    await take(buyer.api, { offerId: offer.id, amount: (10n * USDT).toString() }).expect(201);
+    const first = await take(buyer.api, {
+      offerId: offer.id,
+      amount: (10n * USDT).toString(),
+    }).expect(201);
     expect(await version()).toBe(1);
 
     // A trip offline and back.
@@ -970,15 +973,26 @@ describe("the ad underneath a trade", () => {
 
     // A different account of the seller's behind a rail the ad already offers:
     // a taker reads the kind, never which account is behind it.
-    const another = await addMethod(seller.api, {
-      kind: "TELEBIRR",
-      accountHolder: "Abebe Bikila",
-      phone: "0911111111",
-    });
-    await seller.api
-      .patch(`/v1/offers/${offer.id}`, { paymentMethodIds: [another.id] })
+    const another = await seller.api
+      .post(`/v1/payment-methods/${method.id}/replace`, {
+        kind: "TELEBIRR",
+        accountHolder: "Abebe Bikila",
+        phone: "0911111111",
+      })
       .expect(200);
     expect(await version()).toBe(1);
+    const mine = await seller.api.get(`/v1/offers/${offer.id}/mine`).expect(200);
+    expect((mine.body as OfferView).paymentMethods[0]?.paymentMethodId).toBe(another.body.id);
+
+    // The next order is told the new account; the one already open keeps what it showed.
+    const later = await customer();
+    const next = await take(later.api, {
+      offerId: offer.id,
+      amount: (5n * USDT).toString(),
+    }).expect(201);
+    expect(next.body.payment.instructions.accountNumber).toBe("0911111111");
+    const still = await buyer.api.get(`/v1/trades/${first.body.id}`).expect(200);
+    expect(still.body.payment.instructions.accountNumber).toBe("0912345678");
   });
 
   it("says an ad taken offline in the moment of ordering is not available", async () => {

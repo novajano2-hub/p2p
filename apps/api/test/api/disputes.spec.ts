@@ -369,7 +369,7 @@ describe("opening a dispute", () => {
     const reopened = await seller.api
       .post(`/v1/trades/${trade.id}/dispute`, {
         reason: "WRONG_AMOUNT",
-        description: "6,000 birr arrived, not 6,340.",
+        description: "6,000 ETB arrived, not 6,340.",
       })
       .expect(201);
     expect(reopened.body).toMatchObject({

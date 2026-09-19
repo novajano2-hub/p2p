@@ -98,7 +98,7 @@ export function Marketplace() {
 
   const amountSantim = toSantim(amount) ?? undefined;
   const amountProblem =
-    amount !== "" && amountSantim === undefined ? "Enter an amount in birr." : null;
+    amount !== "" && amountSantim === undefined ? "Enter an amount in ETB." : null;
 
   const load = useCallback(
     async (cursor?: string) => {
@@ -159,7 +159,7 @@ export function Marketplace() {
     <>
       <PageHeader
         title="P2P market"
-        description="Buy and sell USDT for birr with other people. Every trade is held in escrow until the seller confirms the birr arrived."
+        description="Buy and sell USDT for ETB with other people. Every trade is held in escrow until the seller confirms the ETB arrived."
       >
         <ButtonLink
           href={withNext("/trade/payment-methods", `/trade?want=${want}`)}
@@ -502,7 +502,7 @@ function FiltersControl({
   The amount and its quick amounts, one thing in two places. On a desk they
   sit in the toolbar, the quick amounts under the field. On a phone the
   toolbar is the mockup's one compact row, so they fold behind a chip that
-  says what is set ("5,000 birr") and come up in the sheet.
+  says what is set ("5,000 ETB") and come up in the sheet.
 */
 function AmountControl({
   amount,

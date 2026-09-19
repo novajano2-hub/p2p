@@ -1,12 +1,13 @@
 import {
   PAYMENT_METHOD_KINDS,
-  PAYMENT_METHODS_MAX,
   type CreatePaymentMethodRequest,
   type PaymentInstructions,
   type PaymentMethodDetailView,
+  type PaymentMethodKind,
   type PaymentMethodView,
+  type ReplacePaymentMethodRequest,
 } from "@abay/contracts";
-import { type PaymentMethod, type Prisma } from "@abay/database";
+import { Prisma, type PaymentMethod } from "@abay/database";
 import { Injectable } from "@nestjs/common";
 import { PinoLogger } from "nestjs-pino";
 
@@ -20,11 +21,15 @@ import {
 /*
   A customer's ways of receiving birr.
 
-  Three rules shape this service. The details are written once and never
+  Four rules shape this service. The details are written once and never
   edited - a changed number is a new method, so a trade that snapshotted the
   old one still says where its buyer was told to pay. A method is archived,
-  never deleted, for the same reason. And ownership is part of every lookup:
-  somebody else's id and an id that never existed answer the same 404.
+  never deleted, for the same reason. There is one live method of each kind:
+  an order names the kind - "Telebirr" - and its buyer is shown the account
+  behind it, so that account has to be the only one; a changed number is a
+  replacement, which hands the old method's place on live ads to the new one.
+  And ownership is part of every lookup: somebody else's id and an id that
+  never existed answer the same 404.
 */
 
 /** Digits of the number a list shows, enough to tell two apart, too few to use. */
@@ -66,33 +71,77 @@ export class PaymentMethodService {
     userId: string,
     input: CreatePaymentMethodRequest,
   ): Promise<PaymentMethodDetailView> {
-    const live = await this.prisma.client.paymentMethod.count({
-      where: { userId, status: "ACTIVE" },
-    });
-    if (live >= PAYMENT_METHODS_MAX) {
-      throw AppError.conflict(
-        `You can keep up to ${PAYMENT_METHODS_MAX} payment methods. Remove one first.`,
-      );
-    }
-
     const instructions = toInstructions(input);
-    const hint = instructions.accountNumber.slice(-HINT_DIGITS);
-    const institution = PAYMENT_METHOD_KINDS[instructions.kind].label;
-
-    const row = await this.prisma.client.paymentMethod.create({
-      data: {
-        userId,
-        kind: instructions.kind,
-        label: `${institution} ····${hint}`,
-        hint,
-        detailsEncrypted: this.cipher.encrypt(instructions, PAYMENT_METHOD_PURPOSE),
-      },
+    const taken = await this.prisma.client.paymentMethod.findFirst({
+      where: { userId, kind: instructions.kind, status: "ACTIVE" },
+      select: { id: true },
     });
+    if (taken) throw AppError.conflict(alreadyHave(instructions.kind));
+
+    let row: PaymentMethod;
+    try {
+      row = await this.prisma.client.paymentMethod.create({
+        data: this.rowFor(userId, instructions),
+      });
+    } catch (error) {
+      // Two requests at once: the database's own rule - one live method of a kind - decides.
+      if (isOneOfAKind(error)) throw AppError.conflict(alreadyHave(instructions.kind));
+      throw error;
+    }
 
     // The kind, and that one arrived. Never the number, never the name.
     this.logger.info(
       { event: "payment_method.added", userId, kind: row.kind },
       "payment method added",
+    );
+    return { ...toView(row), instructions };
+  }
+
+  /*
+    Replacing: the same kind, new details. One transaction archives the old
+    method, adds the new one and hands it the old one's place on every live
+    ad - a taker reads the kind, never which account is behind it, so no ad
+    changes version. Closed ads go on pointing at the old method, as history,
+    and a trade already open keeps its own snapshot.
+  */
+  async replace(
+    userId: string,
+    id: string,
+    input: ReplacePaymentMethodRequest,
+  ): Promise<PaymentMethodDetailView> {
+    const instructions = toInstructions(input);
+    const row = await this.prisma.client.$transaction(async (tx) => {
+      // Locked, so two replacements of the same method take turns.
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM payment_methods WHERE id = ${id} AND user_id = ${userId} FOR UPDATE`;
+      if (!locked[0]) throw AppError.notFound("There is no such payment method.");
+      const old = await tx.paymentMethod.findUniqueOrThrow({ where: { id } });
+      if (old.status !== "ACTIVE") {
+        throw AppError.conflict("That payment method was removed. Add a new one instead.");
+      }
+      if (old.kind !== instructions.kind) {
+        const institution = PAYMENT_METHOD_KINDS[old.kind].label;
+        throw AppError.validation([
+          { path: "kind", message: `Replace it with another ${institution} account.` },
+        ]);
+      }
+
+      // The old one first: the database allows one live method of a kind.
+      await tx.paymentMethod.update({
+        where: { id },
+        data: { status: "ARCHIVED", archivedAt: new Date() },
+      });
+      const created = await tx.paymentMethod.create({ data: this.rowFor(userId, instructions) });
+      await tx.offerPaymentMethod.updateMany({
+        where: { paymentMethodId: id, offer: { status: { in: ["ACTIVE", "PAUSED"] } } },
+        data: { paymentMethodId: created.id },
+      });
+      return created;
+    });
+
+    this.logger.info(
+      { event: "payment_method.replaced", userId, kind: row.kind },
+      "payment method replaced",
     );
     return { ...toView(row), instructions };
   }
@@ -165,9 +214,28 @@ export class PaymentMethodService {
       ),
     };
   }
+
+  /** The row a set of instructions becomes: the label and hint in the clear, the rest sealed. */
+  private rowFor(userId: string, instructions: PaymentInstructions) {
+    const hint = instructions.accountNumber.slice(-HINT_DIGITS);
+    return {
+      userId,
+      kind: instructions.kind,
+      label: `${PAYMENT_METHOD_KINDS[instructions.kind].label} ····${hint}`,
+      hint,
+      detailsEncrypted: this.cipher.encrypt(instructions, PAYMENT_METHOD_PURPOSE),
+    };
+  }
 }
 
 /* --------------------------------------------------------------- plumbing */
+
+const alreadyHave = (kind: PaymentMethodKind): string =>
+  `You already have a ${PAYMENT_METHOD_KINDS[kind].label} account here. Replace it, or remove it first.`;
+
+/** The partial unique index speaking: a live method of this kind is already there. */
+const isOneOfAKind = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 
 function toInstructions(input: CreatePaymentMethodRequest): PaymentInstructions {
   return {

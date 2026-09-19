@@ -37,7 +37,7 @@ const orderReads = (trade: () => object) => [
   },
 ];
 
-/** 100 USDT at 158.50 birr, as the marketplace lists it. */
+/** 100 USDT at 158.50 ETB, as the marketplace lists it. */
 const OFFER = {
   id: "o1",
   side: "SELL",

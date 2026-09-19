@@ -115,7 +115,7 @@ export const OUTCOME_WORDS: Record<
     words: "Release the USDT to the buyer",
     short: "Released to the buyer",
     consequence:
-      "The escrow is paid out to the buyer exactly as a normal release would, fee included, and the trade completes. Decide this when you are satisfied the birr reached the seller.",
+      "The escrow is paid out to the buyer exactly as a normal release would, fee included, and the trade completes. Decide this when you are satisfied the ETB reached the seller.",
   },
   REFUND_TO_SELLER: {
     words: "Return the USDT to the seller",
@@ -128,7 +128,7 @@ export const OUTCOME_WORDS: Record<
 /** What the timeline calls each event, with nobody addressed as "you". */
 export const EVENT_WORDS: Record<TradeEventKind, string> = {
   CREATED: "Trade opened, USDT locked in escrow",
-  MARKED_PAID: "Buyer marked the birr as sent",
+  MARKED_PAID: "Buyer marked the ETB as sent",
   CANCELLED: "Cancelled, escrow returned to the seller",
   EXPIRED: "Expired unpaid, escrow returned to the seller",
   RELEASED: "USDT released to the buyer",

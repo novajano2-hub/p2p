@@ -139,7 +139,7 @@ function Queue({ disputes, empty }: { disputes: AdminDispute[]; empty: string })
                 <span className="text-muted-foreground ml-1.5 text-[12px] font-medium">USDT</span>
                 <span className="text-muted-foreground mx-1.5 text-[12px]">for</span>
                 <Birr value={dispute.trade.fiatSantim} className="text-[13px] font-medium" />
-                <span className="text-muted-foreground ml-1 text-[12px] font-medium">birr</span>
+                <span className="text-muted-foreground ml-1 text-[12px] font-medium">ETB</span>
               </span>
               <Verdict dispute={dispute} />
             </div>

@@ -137,7 +137,7 @@ export const createOfferRequest = offerBody
       });
     }
     if (BigInt(value.minSantim) < BigInt(OFFER_BOUNDS.minLimitSantim)) {
-      ctx.addIssue({ code: "custom", path: ["minSantim"], message: "At least 1 birr." });
+      ctx.addIssue({ code: "custom", path: ["minSantim"], message: "At least 1 ETB." });
     }
     if (value.side === "SELL" && !(value.paymentMethodIds && value.paymentMethodIds.length > 0)) {
       ctx.addIssue({

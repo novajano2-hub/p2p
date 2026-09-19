@@ -78,7 +78,7 @@ export const createTradeRequest = z
       ctx.addIssue({
         code: "custom",
         path: ["amount"],
-        message: "Enter how much USDT or how much birr, one of the two.",
+        message: "Enter how much USDT or how much ETB, one of the two.",
       });
     }
   });

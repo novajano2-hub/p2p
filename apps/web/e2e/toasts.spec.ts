@@ -36,7 +36,7 @@ const TELEBIRR = {
   createdAt: "2026-09-17T09:00:00.000Z",
 };
 
-/** 100 USDT at 158.50 birr, 10 to 20,000 birr a trade. */
+/** 100 USDT at 158.50 ETB, 10 to 20,000 ETB a trade. */
 const OFFER = {
   id: "o1",
   side: "SELL",
@@ -113,9 +113,9 @@ test.describe("a form that cannot be sent", () => {
     // Each step checks its own fields before moving on, and goes to the first problem.
     await page.getByRole("button", { name: "Next" }).click();
 
-    const said = toastSaying(page, "Enter the price in birr per USDT.");
+    const said = toastSaying(page, "Enter the price in ETB per USDT.");
     await expect(said).toBeVisible();
-    const price = page.getByLabel("Price, birr per USDT");
+    const price = page.getByLabel("Price, ETB per USDT");
     await expect(price).toBeFocused();
     await expect(price).toBeInViewport();
 
@@ -149,7 +149,7 @@ test.describe("a form that cannot be sent", () => {
 
     // As it is typed, against the ad's own limits.
     await amount.fill("5");
-    await expect(page.getByText("The smallest trade on this offer is 10.00 birr.")).toBeVisible();
+    await expect(page.getByText("The smallest trade on this offer is 10.00 ETB.")).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
 });
@@ -173,11 +173,11 @@ test.describe("a refusal", () => {
     ]);
 
     await page.goto("/trade/ads/new");
-    await page.getByLabel("Price, birr per USDT").fill("158.50");
+    await page.getByLabel("Price, ETB per USDT").fill("158.50");
     await page.getByRole("button", { name: "Next" }).click();
     await page.getByLabel("Total amount, USDT").fill("100");
-    await page.getByLabel("Smallest trade, birr").fill("500");
-    await page.getByLabel("Largest trade, birr").fill("20000");
+    await page.getByLabel("Smallest trade, ETB").fill("500");
+    await page.getByLabel("Largest trade, ETB").fill("20000");
     await page.getByText("Telebirr ····5678").click();
     await page.getByRole("button", { name: "Next" }).click();
     await page.getByRole("button", { name: "Post ad" }).click();
@@ -330,7 +330,7 @@ test.describe("news from the socket", () => {
       notification({
         type: "OFFER_HIDDEN",
         title: "Your ad is hidden from the market",
-        body: "Your sell ad at 158.50 birr is hidden: your available balance of 0.00 USDT is worth less than its smallest order of 1,000.00 birr. Add USDT within 24 hours or the ad goes offline.",
+        body: "Your sell ad at 158.50 ETB is hidden: your available balance of 0.00 USDT is worth less than its smallest order of 1,000.00 ETB. Add USDT within 24 hours or the ad goes offline.",
         link: "/trade/ads",
       }),
     );

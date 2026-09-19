@@ -21,7 +21,7 @@ import {
   type PaymentMethod,
   type PaymentMethodKind,
 } from "@/lib/market/client";
-import { BANK_KINDS, PAYMENT_KINDS, WALLET_KINDS } from "@/lib/market/labels";
+import { BANK_KINDS, PAYMENT_KINDS, PAYMENT_KIND_LIST, WALLET_KINDS } from "@/lib/market/labels";
 import { safeNext } from "@/lib/next-path";
 import { placeOnField, revealProblems } from "@/lib/reveal-problems";
 import { toast, toastFailure } from "@/lib/toast";
@@ -39,6 +39,11 @@ import { toast, toastFailure } from "@/lib/toast";
   to pay from, and how Binance lists them. The methods are cards; adding one
   opens a panel beside them on a desk and a sheet from the bottom on a
   phone, where the wallet or bank is picked from all seven at once.
+
+  One account for each type. An order names the type - "Telebirr" - and its
+  buyer is shown the account behind it, so there can only be one; a type that
+  has an account says "Added" in the picker, and a changed number is a
+  replacement, which keeps the account's place on the ads that named it.
 
   Reached from the middle of something as often as from the market: an offer
   that needs a method of a kind the buyer pays through, an ad being posted.
@@ -108,8 +113,11 @@ export function PaymentMethods() {
   const next = safeNext(useSearchParams().get("next"), "/trade");
   const [state, setState] = useState<State>({ status: "loading" });
   const [error, setError] = useState<string | null>(null);
-  // Open on arrival when another screen sent the person here to add one.
-  const [adding, setAdding] = useState(() => isErrand(next));
+  // Which sheet is up: adding one, or replacing this one. Adding is open on
+  // arrival when another screen sent the person here to add one.
+  const [sheet, setSheet] = useState<"add" | PaymentMethod | null>(() =>
+    isErrand(next) ? "add" : null,
+  );
 
   const refresh = useCallback(() => {
     void marketClient.paymentMethods().then((result) => {
@@ -135,15 +143,24 @@ export function PaymentMethods() {
   };
 
   const active = state.status === "ready" ? state.methods.filter((m) => m.status === "ACTIVE") : [];
+  // One account for each type: a type that has one can be replaced, not added again.
+  const taken = active.map((method) => method.kind);
+  const full = state.status === "ready" && taken.length >= PAYMENT_KIND_LIST.length;
 
   return (
     <>
       <BackTo href={next}>{placeName(next)}</BackTo>
       <PageHeader
         title="Payment methods"
-        description="The accounts a buyer is told to pay you at. Shown to a buyer only while a trade between you is open."
+        description="The accounts a buyer is told to pay you at, one for each type. Shown to a buyer only while a trade between you is open."
       >
-        <Button type="button" size="sm" onClick={() => setAdding(true)} aria-expanded={adding}>
+        <Button
+          type="button"
+          size="sm"
+          disabled={full}
+          onClick={() => setSheet("add")}
+          aria-expanded={sheet === "add"}
+        >
           <Plus size={15} weight="bold" aria-hidden="true" />
           Add a payment method
         </Button>
@@ -194,7 +211,16 @@ export function PaymentMethods() {
                   {isBank(method.kind) ? "Bank" : "Mobile money"}
                 </span>
               </div>
-              <div className="flex justify-end">
+              <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-[13px]"
+                  aria-label={`Replace ${method.label}`}
+                  onClick={() => setSheet(method)}
+                >
+                  Replace
+                </Button>
                 <ConfirmButton
                   question="Remove it?"
                   confirmLabel="Remove"
@@ -209,22 +235,28 @@ export function PaymentMethods() {
         </ul>
       )}
       <p className="text-muted-foreground mt-4 max-w-2xl text-[13px] leading-relaxed">
-        An account an ad names cannot be removed; close or edit the ad first. Details are never
-        edited in place: add the new one and remove the old, so an order that showed the old details
-        keeps them.
+        {full ? "You have an account for every type. " : null}
+        One account for each type. To change an account&apos;s details, replace it: your ads that
+        used the old one use the new one, and an order already open keeps the details it showed. An
+        account an ad names cannot be removed; close or edit the ad first.
       </p>
 
-      {adding ? (
-        <AddSheet
-          onClose={() => setAdding(false)}
-          onAdded={(method) => {
+      {sheet && state.status === "ready" && !(sheet === "add" && full) ? (
+        <MethodSheet
+          key={sheet === "add" ? "add" : sheet.id}
+          taken={taken}
+          replacing={sheet === "add" ? null : sheet}
+          onClose={() => setSheet(null)}
+          onDone={(method, replaced) => {
             // Said before leaving: the toaster outlives the page, so it is still there on the offer.
-            toast.success("Payment method added", { description: method.label });
-            if (isErrand(next)) {
+            toast.success(replaced ? "Payment method replaced" : "Payment method added", {
+              description: method.label,
+            });
+            if (!replaced && isErrand(next)) {
               router.push(next);
               return;
             }
-            setAdding(false);
+            setSheet(null);
             refresh();
           }}
         />
@@ -234,16 +266,22 @@ export function PaymentMethods() {
 }
 
 /*
-  Adding one: a panel from the right on a desk, a sheet from the bottom on a
-  phone, over a scrim that closes it, as Escape does. The first field takes
-  the focus, so the keyboard starts where the work does.
+  Adding one, or replacing one: a panel from the right on a desk, the sheet
+  from the bottom on a phone. Adding picks the type from those that have no
+  account yet - the rest say "Added", because there is one account for each
+  type. Replacing keeps the type and takes new details: the old account is
+  archived and the new one takes its place on the ads that named it.
 */
-function AddSheet({
+function MethodSheet({
+  taken,
+  replacing,
   onClose,
-  onAdded,
+  onDone,
 }: {
+  taken: readonly PaymentMethodKind[];
+  replacing: PaymentMethod | null;
   onClose: () => void;
-  onAdded: (method: PaymentMethod) => void;
+  onDone: (method: PaymentMethod, replaced: boolean) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
@@ -256,26 +294,33 @@ function AddSheet({
   } = useForm<Form>({
     resolver: zodResolver(formSchema),
     shouldFocusError: false,
-    defaultValues: { kind: "TELEBIRR", accountHolder: "", phone: "", accountNumber: "" },
+    defaultValues: {
+      kind:
+        replacing?.kind ?? PAYMENT_KIND_LIST.find((kind) => !taken.includes(kind)) ?? "TELEBIRR",
+      accountHolder: "",
+      phone: "",
+      accountNumber: "",
+    },
   });
   const kind = useWatch({ control, name: "kind" });
 
   const submit = handleSubmit(
     async (values) => {
       setError(null);
-      const result = await marketClient.addPaymentMethod(
-        isBank(values.kind)
-          ? {
-              kind: values.kind,
-              accountHolder: values.accountHolder,
-              accountNumber: values.accountNumber,
-            }
-          : {
-              kind: values.kind as WalletKind,
-              accountHolder: values.accountHolder,
-              phone: values.phone,
-            },
-      );
+      const details = isBank(values.kind)
+        ? {
+            kind: values.kind,
+            accountHolder: values.accountHolder,
+            accountNumber: values.accountNumber,
+          }
+        : {
+            kind: values.kind as WalletKind,
+            accountHolder: values.accountHolder,
+            phone: values.phone,
+          };
+      const result = replacing
+        ? await marketClient.replacePaymentMethod(replacing.id, details)
+        : await marketClient.addPaymentMethod(details);
       if (!result.ok) {
         const fields = {
           accountHolder: "accountHolder",
@@ -288,7 +333,7 @@ function AddSheet({
         }
         return;
       }
-      onAdded(result.paymentMethod);
+      onDone(result.paymentMethod, replacing !== null);
     },
     () => revealProblems(formElement),
   );
@@ -296,19 +341,47 @@ function AddSheet({
   return (
     <Sheet
       open
-      title="Add a payment method"
+      title={
+        replacing
+          ? `Replace your ${PAYMENT_KINDS[replacing.kind].label} account`
+          : "Add a payment method"
+      }
       onClose={onClose}
       closeLabel="Close"
       desktop="panel"
-      initialFocus="input:checked"
+      initialFocus={replacing ? "input" : "input:checked"}
       className="px-5 pb-5 sm:px-6 sm:pb-6"
     >
       <form ref={setFormElement} onSubmit={submit} noValidate className="flex flex-col gap-5">
-        <fieldset>
-          <legend className="text-foreground mb-2 text-[13px] font-medium">Type</legend>
-          <KindGroup label="Mobile money" kinds={WALLET_KINDS} register={register} value={kind} />
-          <KindGroup label="Banks" kinds={BANK_KINDS} register={register} value={kind} />
-        </fieldset>
+        {replacing ? (
+          <p className="text-muted-foreground text-[13px] leading-relaxed">
+            Replacing {replacing.label}. It will be archived, and your ads that used it will use the
+            new account. An order already open keeps the details it showed.
+          </p>
+        ) : (
+          <fieldset>
+            <legend className="text-foreground mb-2 text-[13px] font-medium">Type</legend>
+            <KindGroup
+              label="Mobile money"
+              kinds={WALLET_KINDS}
+              taken={taken}
+              register={register}
+              value={kind}
+            />
+            <KindGroup
+              label="Banks"
+              kinds={BANK_KINDS}
+              taken={taken}
+              register={register}
+              value={kind}
+            />
+            {taken.length > 0 ? (
+              <p className="text-muted-foreground text-[12px] leading-relaxed">
+                One account for each type. To change one you have, replace it.
+              </p>
+            ) : null}
+          </fieldset>
+        )}
 
         <Field
           label="Name on the account"
@@ -356,7 +429,7 @@ function AddSheet({
 
         <FormError message={error} />
         <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
-          Add payment method
+          {replacing ? "Replace account" : "Add payment method"}
         </Button>
       </form>
     </Sheet>
@@ -367,11 +440,14 @@ function AddSheet({
 function KindGroup({
   label,
   kinds,
+  taken,
   register,
   value,
 }: {
   label: string;
   kinds: readonly PaymentMethodKind[];
+  /** The types that have an account already: shown, and not to be picked. */
+  taken: readonly PaymentMethodKind[];
   register: ReturnType<typeof useForm<Form>>["register"];
   value: PaymentMethodKind;
 }) {
@@ -379,25 +455,39 @@ function KindGroup({
     <div className="mb-3">
       <p className="text-muted-foreground mb-1.5 text-[12px] font-medium">{label}</p>
       <div className="grid grid-cols-2 gap-2">
-        {kinds.map((kind) => (
-          <label
-            key={kind}
-            className={cn(
-              "rounded-control flex h-11 cursor-pointer items-center gap-2 border px-3 text-[13px] font-medium transition-colors duration-150",
-              "has-focus-visible:outline-ring has-focus-visible:outline-2 has-focus-visible:outline-offset-2",
-              value === kind
-                ? "border-primary bg-primary-soft text-primary-soft-foreground"
-                : "border-border text-foreground hover:border-primary/40",
-            )}
-          >
-            <input type="radio" value={kind} {...register("kind")} className="sr-only" />
-            <span
-              aria-hidden="true"
-              className={cn("h-3.5 w-0.5 rounded-full", PAYMENT_KINDS[kind].bar)}
-            />
-            <span className="truncate">{PAYMENT_KINDS[kind].label}</span>
-          </label>
-        ))}
+        {kinds.map((kind) => {
+          const added = taken.includes(kind);
+          return (
+            <label
+              key={kind}
+              className={cn(
+                "rounded-control flex h-11 items-center gap-2 border px-3 text-[13px] font-medium transition-colors duration-150",
+                "has-focus-visible:outline-ring has-focus-visible:outline-2 has-focus-visible:outline-offset-2",
+                value === kind
+                  ? "border-primary bg-primary-soft text-primary-soft-foreground cursor-pointer"
+                  : added
+                    ? "border-border text-muted-foreground cursor-not-allowed opacity-60"
+                    : "border-border text-foreground hover:border-primary/40 cursor-pointer",
+              )}
+            >
+              <input
+                type="radio"
+                value={kind}
+                disabled={added}
+                {...register("kind")}
+                className="sr-only"
+              />
+              <span
+                aria-hidden="true"
+                className={cn("h-3.5 w-0.5 rounded-full", PAYMENT_KINDS[kind].bar)}
+              />
+              <span className="truncate">{PAYMENT_KINDS[kind].label}</span>
+              {added ? (
+                <span className="ml-auto shrink-0 text-[11px] font-normal">Added</span>
+              ) : null}
+            </label>
+          );
+        })}
       </div>
     </div>
   );

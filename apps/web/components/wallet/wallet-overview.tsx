@@ -254,7 +254,7 @@ export function WalletOverview() {
             </li>
           </ul>
           <p className="text-muted-foreground border-border mt-4 border-t pt-4 text-[12px] leading-relaxed">
-            {ASSET.symbol} is the only asset BIRQ holds. Birr never sits here: it moves directly
+            {ASSET.symbol} is the only asset BIRQ holds. ETB never sits here: it moves directly
             between you and the person you trade with.
           </p>
         </Panel>
