@@ -562,7 +562,7 @@ describe("sending, and settling", () => {
     ]);
 
     const told = await db.notification.findFirst({ where: { userId, type: "WITHDRAWAL_SENT" } });
-    expect(told?.body).toContain("40.000000 USDT");
+    expect(told?.body).toContain("40.00 USDT");
     const asked = await request(server())
       .get(`/v1/wallet/withdrawals/${view.id}`)
       .set("Cookie", cookie)

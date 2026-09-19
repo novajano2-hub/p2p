@@ -19,16 +19,27 @@ import {
 */
 
 describe("formatting millionths", () => {
-  it("always shows six places, grouped", () => {
-    expect(formatMicro("0")).toBe("0.000000");
-    expect(formatMicro("1")).toBe("0.000001");
-    expect(formatMicro("1000000")).toBe("1.000000");
-    expect(formatMicro("1234567890")).toBe("1,234.567890");
-    expect(formatMicro("1000000000000")).toBe("1,000,000.000000");
+  it("shows two places, half up, grouped", () => {
+    expect(formatMicro("0")).toBe("0.00");
+    expect(formatMicro("1000000")).toBe("1.00");
+    expect(formatMicro("1234567890")).toBe("1,234.57");
+    expect(formatMicro("1234564999")).toBe("1,234.56");
+    expect(formatMicro("1000000000000")).toBe("1,000,000.00");
+  });
+
+  it("says a whisker is there rather than rounding it to nothing", () => {
+    expect(formatMicro("1")).toBe("<0.01");
+    expect(formatMicro("4999")).toBe("<0.01");
+    expect(formatMicro("5000")).toBe("0.01");
+  });
+
+  it("keeps all six places when asked, for the ledger", () => {
+    expect(formatMicro("1", 6)).toBe("0.000001");
+    expect(formatMicro("1234567890", 6)).toBe("1,234.567890");
   });
 
   it("marks a negative with a real minus sign, not a hyphen", () => {
-    expect(formatMicro("-1500000")).toBe("\u22121.500000");
+    expect(formatMicro("-1500000")).toBe("\u22121.50");
   });
 
   it("hands back anything that is not an integer string, rather than guessing", () => {
@@ -37,13 +48,17 @@ describe("formatting millionths", () => {
 
   it("survives values a double cannot hold", () => {
     // 2^63 - 1 millionths: the top of what the database column can carry.
-    expect(formatMicro("9223372036854775807")).toBe("9,223,372,036,854.775807");
+    expect(formatMicro("9223372036854775807", 6)).toBe("9,223,372,036,854.775807");
     // One above the largest exact integer a double has. A float would round it.
-    expect(formatMicro("9007199254740993")).toBe("9,007,199,254.740993");
+    expect(formatMicro("9007199254740993", 6)).toBe("9,007,199,254.740993");
+    expect(formatMicro("9007199254740993")).toBe("9,007,199,254.74");
   });
 
-  it("plainMicro is the same digits without the grouping, for an input", () => {
-    expect(plainMicro("1234567890")).toBe("1234.567890");
+  it("plainMicro is every digit without the grouping or trailing zeros, for an input", () => {
+    expect(plainMicro("1234567890")).toBe("1234.56789");
+    expect(plainMicro("2000000")).toBe("2");
+    expect(plainMicro("2500000")).toBe("2.5");
+    expect(plainMicro("0")).toBe("0");
   });
 
   it("knows zero without parsing it", () => {

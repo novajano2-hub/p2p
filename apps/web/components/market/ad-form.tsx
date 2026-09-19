@@ -588,7 +588,10 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                             <legend className="text-foreground mb-2 text-sm font-medium">
                               Where buyers pay you{" "}
                               <span className="text-muted-foreground font-normal">
-                                · up to {RAILS_MAX}
+                                ·{" "}
+                                {field.value.length >= RAILS_MAX
+                                  ? `${RAILS_MAX} of ${RAILS_MAX}`
+                                  : `up to ${RAILS_MAX}`}
                               </span>
                             </legend>
                             <div className="flex flex-wrap gap-2">
@@ -598,6 +601,10 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                                   checked={field.value.includes(method.id)}
                                   onChange={() => field.onChange(toggled(field.value, method.id))}
                                   bar={PAYMENT_KINDS[method.kind].bar}
+                                  disabled={
+                                    field.value.length >= RAILS_MAX &&
+                                    !field.value.includes(method.id)
+                                  }
                                 >
                                   {method.label}
                                 </Chip>
@@ -643,7 +650,13 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                             aria-describedby={errors.kinds ? railsErrorId : undefined}
                           >
                             <legend className="text-foreground mb-2 text-sm font-medium">
-                              I can pay through
+                              I can pay through{" "}
+                              <span className="text-muted-foreground font-normal">
+                                ·{" "}
+                                {field.value.length >= RAILS_MAX
+                                  ? `${RAILS_MAX} of ${RAILS_MAX}`
+                                  : `up to ${RAILS_MAX}`}
+                              </span>
                             </legend>
                             <div className="flex flex-wrap gap-2">
                               {PAYMENT_KIND_LIST.map((kind) => (
@@ -652,6 +665,9 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                                   checked={field.value.includes(kind)}
                                   onChange={() => field.onChange(toggled(field.value, kind))}
                                   bar={PAYMENT_KINDS[kind].bar}
+                                  disabled={
+                                    field.value.length >= RAILS_MAX && !field.value.includes(kind)
+                                  }
                                 >
                                   {PAYMENT_KINDS[kind].label}
                                 </Chip>
@@ -992,24 +1008,36 @@ function Chip({
   checked,
   onChange,
   bar,
+  disabled = false,
   children,
 }: {
   checked: boolean;
   onChange: () => void;
   bar: string;
+  /** The ad has all the rails it may have: this one can only be watched. */
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
     <label
       className={cn(
-        "rounded-control flex h-10 cursor-pointer items-center gap-2 border px-3.5 text-[13px] font-medium transition-colors duration-150",
+        "rounded-control flex h-10 items-center gap-2 border px-3.5 text-[13px] font-medium transition-colors duration-150",
         "has-focus-visible:outline-ring has-focus-visible:outline-2 has-focus-visible:outline-offset-2",
         checked
           ? "border-primary bg-primary-soft text-primary-soft-foreground"
-          : "border-border text-foreground hover:border-primary/40",
+          : disabled
+            ? "border-border text-muted-foreground cursor-not-allowed opacity-60"
+            : "border-border text-foreground hover:border-primary/40",
+        !disabled && "cursor-pointer",
       )}
     >
-      <input type="checkbox" checked={checked} onChange={onChange} className="sr-only" />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        disabled={disabled}
+        className="sr-only"
+      />
       <span aria-hidden="true" className={cn("h-3.5 w-0.5 rounded-full", bar)} />
       {children}
       {checked ? <Check size={14} weight="bold" aria-hidden="true" /> : null}

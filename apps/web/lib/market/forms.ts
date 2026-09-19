@@ -129,9 +129,13 @@ export function adProblems(draft: AdForm): [keyof AdForm, string][] {
   }
   if (draft.side === "SELL" && draft.methodIds.length === 0) {
     problems.push(["methodIds", "Choose at least one way to be paid."]);
+  } else if (draft.side === "SELL" && draft.methodIds.length > RAILS_MAX) {
+    problems.push(["methodIds", `Choose up to ${RAILS_MAX} ways to be paid.`]);
   }
   if (draft.side === "BUY" && draft.kinds.length === 0) {
     problems.push(["kinds", "Choose at least one way you will pay."]);
+  } else if (draft.side === "BUY" && draft.kinds.length > RAILS_MAX) {
+    problems.push(["kinds", `Choose up to ${RAILS_MAX} ways to pay.`]);
   }
   if (draft.terms.trim().length > TERMS_MAX) {
     problems.push(["terms", `Keep the terms under ${TERMS_MAX} characters.`]);

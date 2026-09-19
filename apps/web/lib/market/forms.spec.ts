@@ -48,7 +48,7 @@ describe("taking an ad", () => {
     );
     const nearlyGone = { ...BOUNDS, available: "5000000" };
     // 1,000 birr is 6.309148 USDT, more than the 5 left.
-    expect(amountProblem("1000", nearlyGone)).toBe("Only 5.000000 USDT is available right now.");
+    expect(amountProblem("1000", nearlyGone)).toBe("Only 5.00 USDT is available right now.");
   });
 
   it("reads the amount in whichever unit the person chose", () => {
@@ -58,7 +58,7 @@ describe("taking an ad", () => {
     expect(amountProblem("0.05", inUsdt)).toBe("The smallest trade on this offer is 10.00 birr.");
     // 101 USDT is 16,008.50 birr: inside the limits, but more than is left on this one.
     expect(amountProblem("101", { ...inUsdt, available: "100000000" })).toBe(
-      "Only 100.000000 USDT is available right now.",
+      "Only 100.00 USDT is available right now.",
     );
     // 127 USDT is 20,129.50 birr.
     expect(amountProblem("127", inUsdt)).toBe("The largest trade on this offer is 20,000.00 birr.");
@@ -151,6 +151,17 @@ describe("posting an ad", () => {
     ]);
     expect(adProblems({ ...AD, minCompletedTrades: "10001" })).toHaveLength(1);
     expect(toOfferDraft({ ...AD, minCompletedTrades: " 12 " }).minCompletedTrades).toBe(12);
+  });
+  it("takes up to five ways to be paid, or to pay, and says so", () => {
+    const six = ["a", "b", "c", "d", "e", "f"];
+    expect(adProblems({ ...AD, methodIds: six })).toEqual([
+      ["methodIds", "Choose up to 5 ways to be paid."],
+    ]);
+    expect(adProblems({ ...AD, methodIds: six.slice(0, 5) })).toEqual([]);
+    const kinds = ["TELEBIRR", "CBE_BIRR", "MPESA", "CBE", "DASHEN", "ABYSSINIA"] as const;
+    expect(adProblems({ ...AD, side: "BUY", methodIds: [], kinds: [...kinds] })).toEqual([
+      ["kinds", "Choose up to 5 ways to pay."],
+    ]);
   });
 });
 

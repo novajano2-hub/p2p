@@ -603,6 +603,13 @@
   }
 }
 
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
 /*
   Toasts (components/app/toaster.tsx). sonner injects its own stylesheet at
   runtime, outside any cascade layer, so these rules sit outside one too - a

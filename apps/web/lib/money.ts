@@ -10,9 +10,15 @@
 */
 
 const SCALE = 6;
+/** The places a person is shown. The ledger keeps six; a screen shows two, as a price does. */
+const SHOWN = 2;
 
-/** "1234567890" -> "1,234.567890". Always six decimals: the ledger's precision is the point. */
-export function formatMicro(amount: string): string {
+/**
+ * "1234567890" -> "1,234.57": grouped, two places, half up. A whisker of USDT
+ * reads "<0.01" rather than a "0.00" that says there is nothing. Ask for all
+ * six places where the ledger's precision is the point.
+ */
+export function formatMicro(amount: string, places: number = SHOWN): string {
   let value: bigint;
   try {
     value = BigInt(amount);
@@ -20,19 +26,24 @@ export function formatMicro(amount: string): string {
     return amount;
   }
   const negative = value < 0n;
+  const sign = negative ? "−" : "";
   const magnitude = negative ? -value : value;
-  const whole = magnitude / 10n ** BigInt(SCALE);
-  const fraction = (magnitude % 10n ** BigInt(SCALE)).toString().padStart(SCALE, "0");
-  const grouped = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${negative ? "−" : ""}${grouped}.${fraction}`;
+  const dropped = 10n ** BigInt(SCALE - places);
+  const rounded = (magnitude + dropped / 2n) / dropped;
+  if (magnitude > 0n && rounded === 0n) return `${sign}<0.${"0".repeat(places - 1)}1`;
+  const unit = 10n ** BigInt(places);
+  const grouped = (rounded / unit).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const fraction = (rounded % unit).toString().padStart(places, "0");
+  return `${sign}${grouped}${places > 0 ? `.${fraction}` : ""}`;
 }
 
 /** Whether an amount string is exactly zero, without parsing it as a number. */
 export const isZeroMicro = (amount: string): boolean => /^-?0+$/.test(amount);
 
-/** "1234567890" -> "1234.567890". The same digits without grouping, for an input's value. */
+/** "1234567890" -> "1234.56789": every digit, no grouping, no trailing zeros, for an input's value. */
 export function plainMicro(amount: string): string {
-  return formatMicro(amount).replace(/,/g, "");
+  const exact = formatMicro(amount, SCALE).replace(/,/g, "");
+  return exact.includes(".") ? exact.replace(/\.?0+$/, "") : exact;
 }
 
 /**

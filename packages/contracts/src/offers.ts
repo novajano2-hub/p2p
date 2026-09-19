@@ -107,9 +107,19 @@ const offerBody = z.object({
   maxSantim: positiveSantim("a maximum"),
   paymentWindowMinutes,
   /** SELL offers: the seller's own methods, by id, where the buyer will pay. */
-  paymentMethodIds: z.array(z.uuid()).max(OFFER_BOUNDS.maxPaymentMethods).optional(),
+  paymentMethodIds: z
+    .array(z.uuid())
+    .max(OFFER_BOUNDS.maxPaymentMethods, {
+      error: `Choose up to ${OFFER_BOUNDS.maxPaymentMethods} ways to be paid.`,
+    })
+    .optional(),
   /** BUY offers: the rails the buyer can pay through. */
-  paymentKinds: z.array(paymentMethodKind).max(OFFER_BOUNDS.maxPaymentMethods).optional(),
+  paymentKinds: z
+    .array(paymentMethodKind)
+    .max(OFFER_BOUNDS.maxPaymentMethods, {
+      error: `Choose up to ${OFFER_BOUNDS.maxPaymentMethods} ways to pay.`,
+    })
+    .optional(),
   terms: z.string().trim().max(OFFER_BOUNDS.termsMaxLength).optional(),
   autoReply: z.string().trim().max(OFFER_BOUNDS.autoReplyMaxLength).optional(),
   requireVerified: z.boolean().optional(),

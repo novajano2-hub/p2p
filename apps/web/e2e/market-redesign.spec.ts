@@ -272,7 +272,7 @@ test.describe("my ads", () => {
 
     await page.goto("/trade/ads");
     await expect(page.getByRole("region", { name: "Your available balance" })).toContainText(
-      "2.000000 USDT",
+      "2.00 USDT",
     );
 
     const uncovered = itemWith(page, "158.50");
@@ -338,11 +338,11 @@ test.describe("posting an ad", () => {
     await page.getByLabel("Total amount, USDT").fill("100");
     const warning = page
       .getByRole("status")
-      .filter({ hasText: "Your balance covers 2.000000 USDT of these 100.000000 USDT." });
+      .filter({ hasText: "Your balance covers 2.00 USDT of these 100.00 USDT." });
     await expect(warning).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await page.getByRole("button", { name: "Use all" }).click();
-    await expect(page.getByLabel("Total amount, USDT")).toHaveValue("2.000000");
+    await expect(page.getByLabel("Total amount, USDT")).toHaveValue("2");
     await expect(warning).toBeHidden();
 
     // Back keeps what was typed.
@@ -432,6 +432,45 @@ test.describe("posting an ad", () => {
     await expectNoHorizontalOverflow(page);
     await page.getByRole("button", { name: "Back" }).click();
     await expect(page.getByLabel("Price, birr per USDT")).toHaveValue("158.80");
+  });
+
+  test("lists at most five ways to be paid, and says so before the server has to", async ({
+    page,
+    context,
+  }) => {
+    await withSession(context);
+    const methods = [1, 2, 3, 4, 5, 6].map((n) => ({
+      ...TELEBIRR,
+      id: `pm${n}`,
+      label: `Telebirr ····000${n}`,
+      hint: `000${n}`,
+    }));
+    await stubApi(page, [
+      ...signedIn(VERIFIED),
+      balance("2000000"),
+      {
+        method: "GET",
+        path: /^\/v1\/payment-methods$/,
+        reply: () => ok({ paymentMethods: methods }),
+      },
+      { method: "GET", path: /^\/v1\/offers$/, reply: () => ok({ offers: [], nextCursor: null }) },
+    ]);
+
+    await page.goto("/trade/ads/new");
+    await page.getByLabel("Price, birr per USDT").fill("158.50");
+    await page.getByRole("button", { name: "Next" }).click();
+    for (const n of [1, 2, 3, 4, 5]) await page.getByText(`Telebirr ····000${n}`).click();
+
+    // The sixth can only be looked at, and the legend says why.
+    const sixth = page.getByRole("checkbox", { name: "Telebirr ····0006" });
+    await expect(sixth).toBeDisabled();
+    await expect(page.getByText("5 of 5")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    // Untick one and it opens up again.
+    await page.getByText("Telebirr ····0001").click();
+    await expect(sixth).toBeEnabled();
+    await expect(page.getByText("up to 5")).toBeVisible();
   });
 });
 

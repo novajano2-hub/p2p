@@ -760,7 +760,7 @@ describe("an ad its seller's balance cannot cover", () => {
       link: "/trade/ads",
     });
     expect(hidden[0]?.body).toBe(
-      "Your sell ad at 158.50 birr is hidden: your available balance of 0.000000 USDT is worth less than its smallest order of 1,000.00 birr. Add USDT within 24 hours or the ad goes offline.",
+      "Your sell ad at 158.50 birr is hidden: your available balance of 0.00 USDT is worth less than its smallest order of 1,000.00 birr. Add USDT within 24 hours or the ad goes offline.",
     );
 
     const waiting = await mine(seller, ad.id);

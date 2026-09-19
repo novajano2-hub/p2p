@@ -28,18 +28,13 @@ export const birr = (santim: string): string => `${formatSantim(santim)} ${FIAT}
 /** Rails as Binance draws them: a coloured bar and the name. */
 export function PaymentKindChips({
   kinds,
-  stacked = false,
   className,
 }: {
   kinds: readonly PaymentMethodKind[];
-  /** One under another, as the market's Payment column has them. */
-  stacked?: boolean;
   className?: string | undefined;
 }) {
   return (
-    <ul
-      className={cn(stacked ? "flex flex-col gap-1" : "flex flex-wrap gap-x-3 gap-y-1", className)}
-    >
+    <ul className={cn("flex flex-wrap gap-x-3 gap-y-1", className)}>
       {kinds.map((kind) => (
         <li key={kind} className="flex items-center gap-1.5 text-[13px]">
           <span

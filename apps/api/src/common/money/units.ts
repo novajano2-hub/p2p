@@ -57,13 +57,17 @@ function assertDecimals(decimals: number): void {
   }
 }
 
-/** Millionths as "123.456789", for an email or a log line. Never for arithmetic. */
+/**
+ * Millionths as "123.46", for an email, a notice or a log line: two places,
+ * half up, and "<0.01" for a whisker rather than a "0.00" that says there is
+ * nothing. Never for arithmetic.
+ */
 export function formatUsdt(micro: bigint): string {
   const negative = micro < 0n;
+  const sign = negative ? "-" : "";
   const magnitude = negative ? -micro : micro;
-  const whole = magnitude / 10n ** BigInt(LEDGER_DECIMALS);
-  const fraction = (magnitude % 10n ** BigInt(LEDGER_DECIMALS))
-    .toString()
-    .padStart(LEDGER_DECIMALS, "0");
-  return `${negative ? "-" : ""}${whole.toString()}.${fraction}`;
+  const dropped = 10n ** BigInt(LEDGER_DECIMALS - 2);
+  const rounded = (magnitude + dropped / 2n) / dropped;
+  if (magnitude > 0n && rounded === 0n) return `${sign}<0.01`;
+  return `${sign}${rounded / 100n}.${(rounded % 100n).toString().padStart(2, "0")}`;
 }

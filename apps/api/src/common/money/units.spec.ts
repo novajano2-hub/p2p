@@ -42,9 +42,10 @@ describe("chain units <-> ledger units", () => {
 describe("formatUsdt", () => {
   it("renders millionths with six decimals", async () => {
     const { formatUsdt } = await import("./units");
-    expect(formatUsdt(100_000_000n)).toBe("100.000000");
-    expect(formatUsdt(1_500_000n)).toBe("1.500000");
-    expect(formatUsdt(7n)).toBe("0.000007");
-    expect(formatUsdt(-2_000_000n)).toBe("-2.000000");
+    expect(formatUsdt(100_000_000n)).toBe("100.00");
+    expect(formatUsdt(1_500_000n)).toBe("1.50");
+    expect(formatUsdt(6_309_148n)).toBe("6.31");
+    expect(formatUsdt(7n)).toBe("<0.01");
+    expect(formatUsdt(-2_000_000n)).toBe("-2.00");
   });
 });

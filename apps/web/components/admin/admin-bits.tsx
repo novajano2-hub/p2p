@@ -97,7 +97,7 @@ export function Amount({ value, className }: { value: string; className?: string
         className,
       )}
     >
-      {formatMicro(value)}
+      {formatMicro(value, 6)}
     </span>
   );
 }
@@ -263,7 +263,7 @@ export function AmountHeader({
     <div className="border-border border-b px-5 py-6 text-center">
       <p className="text-foreground font-mono text-[28px] leading-none font-semibold tabular-nums sm:text-[32px]">
         {sign}
-        {formatMicro(amount)}
+        {formatMicro(amount, 6)}
         <span className="text-muted-foreground ml-2 text-[15px] font-medium">{asset}</span>
       </p>
       <div className="mt-3 flex justify-center">

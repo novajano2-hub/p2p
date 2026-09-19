@@ -1,9 +1,9 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CreditCard, Plus, X } from "@phosphor-icons/react";
+import { CreditCard, Plus } from "@phosphor-icons/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
@@ -13,6 +13,7 @@ import { FormError } from "@/components/auth/notices";
 import { BackTo, ConfirmButton, ListNotice } from "@/components/market/bits";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
+import { Sheet } from "@/components/ui/sheet";
 import { cn } from "@/lib/cn";
 import {
   marketClient,
@@ -246,9 +247,6 @@ function AddSheet({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
-  const titleId = useId();
-  const sheet = useRef<HTMLDivElement>(null);
-
   const {
     register,
     control,
@@ -261,15 +259,6 @@ function AddSheet({
     defaultValues: { kind: "TELEBIRR", accountHolder: "", phone: "", accountNumber: "" },
   });
   const kind = useWatch({ control, name: "kind" });
-
-  useEffect(() => {
-    sheet.current?.querySelector<HTMLInputElement>("input:checked")?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   const submit = handleSubmit(
     async (values) => {
@@ -305,95 +294,72 @@ function AddSheet({
   );
 
   return (
-    <>
-      <div aria-hidden="true" onClick={onClose} className="bg-foreground/40 fixed inset-0 z-50" />
-      <div
-        ref={sheet}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className={cn(
-          "bg-surface shadow-panel fixed z-50 flex flex-col overflow-y-auto",
-          "inset-x-0 bottom-0 max-h-[90dvh] rounded-t-[20px] px-4 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] motion-safe:animate-[sheet-up_220ms_ease-out] sm:motion-safe:animate-none",
-          "sm:inset-x-auto sm:top-0 sm:right-0 sm:bottom-0 sm:max-h-none sm:w-[26rem] sm:rounded-none sm:px-6 sm:pt-6",
-        )}
-      >
-        <span
-          aria-hidden="true"
-          className="bg-border mx-auto mb-3 h-1 w-10 rounded-full sm:hidden"
-        />
-        <div className="mb-4 flex items-center justify-between">
-          <h2 id={titleId} className="text-foreground text-lg font-semibold">
-            Add a payment method
-          </h2>
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
-            className="text-muted-foreground hover:text-foreground flex size-9 items-center justify-center"
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </div>
+    <Sheet
+      open
+      title="Add a payment method"
+      onClose={onClose}
+      closeLabel="Close"
+      desktop="panel"
+      initialFocus="input:checked"
+      className="px-5 pb-5 sm:px-6 sm:pb-6"
+    >
+      <form ref={setFormElement} onSubmit={submit} noValidate className="flex flex-col gap-5">
+        <fieldset>
+          <legend className="text-foreground mb-2 text-[13px] font-medium">Type</legend>
+          <KindGroup label="Mobile money" kinds={WALLET_KINDS} register={register} value={kind} />
+          <KindGroup label="Banks" kinds={BANK_KINDS} register={register} value={kind} />
+        </fieldset>
 
-        <form ref={setFormElement} onSubmit={submit} noValidate className="flex flex-col gap-5">
-          <fieldset>
-            <legend className="text-foreground mb-2 text-[13px] font-medium">Type</legend>
-            <KindGroup label="Mobile money" kinds={WALLET_KINDS} register={register} value={kind} />
-            <KindGroup label="Banks" kinds={BANK_KINDS} register={register} value={kind} />
-          </fieldset>
+        <Field
+          label="Name on the account"
+          hint="Must be your own name. A payment from a different name is grounds for a dispute."
+          error={errors.accountHolder?.message}
+        >
+          {(a11y) => (
+            <Input
+              {...a11y}
+              {...register("accountHolder")}
+              autoComplete="name"
+              placeholder="Abebe Bikila"
+            />
+          )}
+        </Field>
 
+        {isBank(kind) ? (
           <Field
-            label="Name on the account"
-            hint="Must be your own name. A payment from a different name is grounds for a dispute."
-            error={errors.accountHolder?.message}
+            label={PAYMENT_KINDS[kind].numberLabel}
+            hint={`Your account at ${PAYMENT_KINDS[kind].fullName}.`}
+            error={errors.accountNumber?.message}
           >
             {(a11y) => (
               <Input
                 {...a11y}
-                {...register("accountHolder")}
-                autoComplete="name"
-                placeholder="Abebe Bikila"
+                {...register("accountNumber")}
+                inputMode="numeric"
+                autoComplete="off"
               />
             )}
           </Field>
+        ) : (
+          <Field label={PAYMENT_KINDS[kind].numberLabel} error={errors.phone?.message}>
+            {(a11y) => (
+              <Input
+                {...a11y}
+                {...register("phone")}
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="0912345678"
+              />
+            )}
+          </Field>
+        )}
 
-          {isBank(kind) ? (
-            <Field
-              label={PAYMENT_KINDS[kind].numberLabel}
-              hint={`Your account at ${PAYMENT_KINDS[kind].fullName}.`}
-              error={errors.accountNumber?.message}
-            >
-              {(a11y) => (
-                <Input
-                  {...a11y}
-                  {...register("accountNumber")}
-                  inputMode="numeric"
-                  autoComplete="off"
-                />
-              )}
-            </Field>
-          ) : (
-            <Field label={PAYMENT_KINDS[kind].numberLabel} error={errors.phone?.message}>
-              {(a11y) => (
-                <Input
-                  {...a11y}
-                  {...register("phone")}
-                  inputMode="tel"
-                  autoComplete="tel"
-                  placeholder="0912345678"
-                />
-              )}
-            </Field>
-          )}
-
-          <FormError message={error} />
-          <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
-            Add payment method
-          </Button>
-        </form>
-      </div>
-    </>
+        <FormError message={error} />
+        <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
+          Add payment method
+        </Button>
+      </form>
+    </Sheet>
   );
 }
 
