@@ -1,6 +1,14 @@
 "use client";
 
-import { ArrowsClockwise, Clock, Funnel, Plus, Storefront, X } from "@phosphor-icons/react";
+import {
+  ArrowsClockwise,
+  CaretDown,
+  Clock,
+  Funnel,
+  Plus,
+  Storefront,
+  X,
+} from "@phosphor-icons/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
@@ -10,7 +18,6 @@ import { AdvertiserLine, ListNotice, PaymentKindChips, birr, usdt } from "@/comp
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
-import { StatusPill } from "@/components/ui/status-pill";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/cn";
 import {
@@ -59,14 +66,6 @@ const grouped = new Intl.NumberFormat("en-GB");
 type Filters = { window: number | null; takeable: boolean };
 const NO_FILTERS: Filters = { window: null, takeable: false };
 
-/*
-  Time to pay is a floor. No ad gives less than the shortest window, so at
-  least that is every ad - All - and the choices start above it.
-*/
-const SHORTEST = Math.min(...PAYMENT_WINDOWS);
-const LONGEST = Math.max(...PAYMENT_WINDOWS);
-const FLOORS = PAYMENT_WINDOWS.filter((minutes) => minutes > SHORTEST);
-
 type State =
   | { status: "loading" }
   | { status: "error"; message: string }
@@ -113,7 +112,7 @@ export function Marketplace() {
         want,
         amountSantim,
         paymentKind: kind || undefined,
-        minPaymentWindowMinutes: filters.window ?? undefined,
+        paymentWindowMinutes: filters.window ?? undefined,
         takeable: filters.takeable,
         cursor,
       });
@@ -181,84 +180,37 @@ export function Marketplace() {
         </ButtonLink>
       </PageHeader>
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-        <div className="flex items-center gap-3">
-          <SideToggle value={want} onChange={setWant} />
-          <StatusPill status="neutral" className="hidden sm:inline-flex">
-            {ASSET}
-          </StatusPill>
-        </div>
-        <div className="hidden flex-1 lg:block" />
-        <div className="flex min-w-0 flex-col gap-2.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-0 flex-1 sm:w-56 sm:flex-none">
-              <Input
-                aria-label={`Amount in ${FIAT}`}
-                aria-invalid={amountProblem ? true : undefined}
-                inputMode="decimal"
-                placeholder="Amount"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                className="pr-14"
-              />
-              <span className="text-muted-foreground pointer-events-none absolute inset-y-0 right-3.5 flex items-center text-[13px] font-medium">
-                {FIAT}
-              </span>
-            </div>
-            <div className="order-last min-w-0 basis-full sm:order-none sm:w-56 sm:basis-auto">
-              <Select
-                aria-label="Payment method"
-                value={kind}
-                onChange={(value) => setKind(value as PaymentMethodKind | "")}
-                options={[
-                  { value: "", label: "All payment methods" },
-                  ...PAYMENT_KIND_LIST.map((value) => ({
-                    value,
-                    label: PAYMENT_KINDS[value].label,
-                    bar: PAYMENT_KINDS[value].bar,
-                  })),
-                ]}
-              />
-            </div>
-            <FiltersControl want={want} value={filters} onChange={setFilters} />
-            <button
-              type="button"
-              aria-label="Refresh the list"
-              onClick={() => {
-                setState({ status: "loading" });
-                setAttempt((value) => value + 1);
-              }}
-              className="rounded-control border-border bg-surface text-foreground hover:text-primary flex size-10 shrink-0 items-center justify-center border transition-colors duration-150"
-            >
-              <ArrowsClockwise size={17} aria-hidden="true" />
-            </button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
+        <SideToggle value={want} onChange={setWant} />
+        <div className="flex min-w-0 items-center gap-2 sm:items-start">
+          <AmountControl amount={amount} onChange={setAmount} problem={amountProblem} />
+          <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+            <Select
+              aria-label="Payment method"
+              value={kind}
+              onChange={(value) => setKind(value as PaymentMethodKind | "")}
+              options={[
+                { value: "", label: "All payment methods" },
+                ...PAYMENT_KIND_LIST.map((value) => ({
+                  value,
+                  label: PAYMENT_KINDS[value].label,
+                  bar: PAYMENT_KINDS[value].bar,
+                })),
+              ]}
+            />
           </div>
-          <div role="group" aria-label="Quick amounts" className="flex flex-wrap gap-2">
-            {QUICK_AMOUNTS.map((value) => {
-              const pressed = amount.trim() === String(value);
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={pressed}
-                  onClick={() => setAmount(pressed ? "" : String(value))}
-                  className={cn(
-                    "rounded-control h-8 border px-3.5 text-[13px] font-medium tabular-nums transition-colors duration-150",
-                    pressed
-                      ? "border-primary bg-primary-soft text-primary-soft-foreground"
-                      : "border-border text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {grouped.format(value)}
-                </button>
-              );
-            })}
-          </div>
-          {amountProblem ? (
-            <p role="alert" className="text-destructive text-[13px]">
-              {amountProblem}
-            </p>
-          ) : null}
+          <FiltersControl want={want} value={filters} onChange={setFilters} />
+          <button
+            type="button"
+            aria-label="Refresh the list"
+            onClick={() => {
+              setState({ status: "loading" });
+              setAttempt((value) => value + 1);
+            }}
+            className="rounded-control border-border bg-surface text-foreground hover:text-primary hidden size-10 shrink-0 items-center justify-center border transition-colors duration-150 sm:flex"
+          >
+            <ArrowsClockwise size={17} aria-hidden="true" />
+          </button>
         </div>
       </div>
 
@@ -347,7 +299,11 @@ function SideToggle({
   onChange: (side: OfferSide) => void;
 }) {
   return (
-    <div role="group" aria-label="Buy or sell" className="bg-muted rounded-control inline-flex p-1">
+    <div
+      role="group"
+      aria-label="Buy or sell"
+      className="bg-muted rounded-control flex w-full p-1 sm:inline-flex sm:w-auto"
+    >
       {(["BUY", "SELL"] as const).map((side) => {
         const selected = side === value;
         return (
@@ -357,7 +313,7 @@ function SideToggle({
             aria-pressed={selected}
             onClick={() => onChange(side)}
             className={cn(
-              "rounded-control h-9 min-w-20 px-4 text-sm font-semibold transition-[background-color,color,box-shadow] duration-150",
+              "rounded-control h-9 min-w-20 flex-1 px-4 text-sm font-semibold transition-[background-color,color,box-shadow] duration-150 sm:flex-none",
               selected
                 ? side === "BUY"
                   ? "bg-primary text-primary-foreground shadow-raised-soft"
@@ -374,8 +330,8 @@ function SideToggle({
 }
 
 /*
-  Binance's filter popover, with the two that mean something here: the least
-  time the buyer has to pay, and "only ads I can take" - which leaves out the
+  Binance's filter popover, with the two that mean something here: how long
+  the buyer has to pay, and "only ads I can take" - which leaves out the
   viewer's own ads and those for verified or more experienced traders than
   they are yet. Chosen in a draft and applied at once, so the list does not
   refetch on every tap. A popover on a desk, a sheet on a phone.
@@ -423,14 +379,22 @@ function FiltersControl({
           setOpen((current) => !current);
         }}
         className={cn(
-          "rounded-control bg-surface flex h-10 items-center gap-2 border px-3.5 text-sm font-medium transition-colors duration-150",
+          "rounded-control bg-surface relative flex h-10 shrink-0 items-center gap-2 border text-sm font-medium transition-colors duration-150 max-sm:w-10 max-sm:justify-center sm:px-3.5",
           active > 0
             ? "border-primary text-primary"
             : "border-border text-foreground hover:text-primary",
         )}
       >
         <Funnel size={16} aria-hidden="true" />
-        {active > 0 ? `Filters · ${active}` : "Filters"}
+        <span className="max-sm:sr-only">{active > 0 ? `Filters · ${active}` : "Filters"}</span>
+        {active > 0 ? (
+          <span
+            aria-hidden="true"
+            className="bg-primary text-primary-foreground absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full text-[10px] font-semibold sm:hidden"
+          >
+            {active}
+          </span>
+        ) : null}
       </button>
 
       <div
@@ -456,7 +420,7 @@ function FiltersControl({
             Time to pay
           </legend>
           <div className="flex flex-wrap gap-1.5">
-            {[null, ...FLOORS].map((minutes) => {
+            {[null, ...PAYMENT_WINDOWS].map((minutes) => {
               const pressed = draft.window === minutes;
               return (
                 <button
@@ -471,19 +435,15 @@ function FiltersControl({
                       : "border-border text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {minutes === null
-                    ? "All"
-                    : minutes === LONGEST
-                      ? `${minutes} min`
-                      : `${minutes}+ min`}
+                  {minutes === null ? "All" : `${minutes} min`}
                 </button>
               );
             })}
           </div>
           <p className="text-muted-foreground mt-2 text-[12px]">
             {want === "BUY"
-              ? "Ads that give you at least this long to pay."
-              : "Ads whose buyer has at least this long to pay you."}
+              ? "Only ads that give you this long to pay."
+              : "Only ads whose buyer has this long to pay you."}
           </p>
         </fieldset>
         <div className="bg-border my-4 h-px" />
@@ -527,6 +487,133 @@ function FiltersControl({
             Apply
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/*
+  The amount and its quick amounts, rendered once. On a desk they sit in the
+  toolbar, the quick amounts under the field. On a phone the toolbar is the
+  mockup's compact row, so they fold behind a chip that says what is set
+  ("5,000 birr") and open as a sheet above the tab bar.
+*/
+function AmountControl({
+  amount,
+  onChange,
+  problem,
+}: {
+  amount: string;
+  onChange: (next: string) => void;
+  problem: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const container = useRef<HTMLDivElement>(null);
+  const panelId = useId();
+  const typed = amount.trim();
+  const chip =
+    typed === ""
+      ? "Amount"
+      : `${/^\d+$/.test(typed) ? grouped.format(Number(typed)) : typed} ${FIAT}`;
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (container.current && !container.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={container} className="shrink-0">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((current) => !current)}
+        className={cn(
+          "rounded-control bg-surface flex h-10 max-w-40 items-center gap-1 border px-3 text-sm font-medium tabular-nums sm:hidden",
+          problem
+            ? "border-destructive text-destructive"
+            : typed !== ""
+              ? "border-primary text-primary"
+              : "border-border text-foreground",
+        )}
+      >
+        <span className="truncate">{chip}</span>
+        <CaretDown size={14} aria-hidden="true" />
+      </button>
+
+      <div
+        id={panelId}
+        className={cn(
+          "flex-col gap-2 sm:flex sm:w-64",
+          open ? "max-sm:flex" : "max-sm:hidden",
+          "max-sm:border-border max-sm:bg-surface max-sm:shadow-panel max-sm:rounded-surface max-sm:fixed max-sm:inset-x-4 max-sm:bottom-[5.5rem] max-sm:z-50 max-sm:gap-3 max-sm:border max-sm:p-4",
+        )}
+      >
+        <div className="flex items-center justify-between sm:hidden">
+          <p className="text-foreground text-sm font-semibold">Amount</p>
+          <button
+            type="button"
+            aria-label="Close the amount"
+            onClick={() => setOpen(false)}
+            className="text-muted-foreground hover:text-foreground flex size-9 items-center justify-center"
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="relative">
+          <Input
+            aria-label={`Amount in ${FIAT}`}
+            aria-invalid={problem ? true : undefined}
+            inputMode="decimal"
+            placeholder="Amount"
+            value={amount}
+            onChange={(event) => onChange(event.target.value)}
+            className="pr-14"
+          />
+          <span className="text-muted-foreground pointer-events-none absolute inset-y-0 right-3.5 flex items-center text-[13px] font-medium">
+            {FIAT}
+          </span>
+        </div>
+        <div role="group" aria-label="Quick amounts" className="flex flex-wrap gap-1.5">
+          {QUICK_AMOUNTS.map((value) => {
+            const pressed = typed === String(value);
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={pressed}
+                onClick={() => onChange(pressed ? "" : String(value))}
+                className={cn(
+                  "rounded-control h-8 border px-2.5 text-[12px] font-medium tabular-nums transition-colors duration-150 max-sm:flex-1",
+                  pressed
+                    ? "border-primary bg-primary-soft text-primary-soft-foreground"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {grouped.format(value)}
+              </button>
+            );
+          })}
+        </div>
+        {problem ? (
+          <p role="alert" className="text-destructive text-[13px]">
+            {problem}
+          </p>
+        ) : null}
+        <Button type="button" size="sm" className="sm:hidden" onClick={() => setOpen(false)}>
+          Done
+        </Button>
       </div>
     </div>
   );
@@ -583,16 +670,19 @@ function OfferRow({ offer, want }: { offer: MarketOffer; want: OfferSide }) {
       </div>
 
       <div className="flex flex-col items-end gap-1.5 lg:contents">
-        <PaymentKindChips
-          kinds={offer.paymentKinds}
-          stacked
-          className="items-end text-[12px] lg:items-start lg:text-[13px]"
-        />
-        <div className="flex flex-col items-end gap-1.5">
-          <span className="text-muted-foreground flex items-center gap-1 text-[12px] lg:hidden">
+        <div className="flex flex-col items-end gap-1.5 lg:items-start">
+          <PaymentKindChips
+            kinds={offer.paymentKinds}
+            stacked
+            className="items-end text-[12px] lg:items-start lg:text-[13px]"
+          />
+          <span className="text-muted-foreground flex items-center gap-1 text-[12px]">
             <Clock size={13} aria-hidden="true" />
+            <span className="sr-only">Time to pay:</span>
             {offer.paymentWindowMinutes} min
           </span>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
           {offer.isMine ? (
             <ButtonLink
               href={`/trade/ads/${offer.id}/edit`}

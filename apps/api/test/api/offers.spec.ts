@@ -615,12 +615,12 @@ describe("the market's filters, and what its viewer can take", () => {
     const one = await newcomer.get(`/v1/offers/${verifiedOnly.id}`).expect(200);
     expect(one.body.blockedBecause).toBe("VERIFICATION");
 
-    // Only the ads that give the buyer at least 45 minutes: those with 45, and with 60.
-    const slow = await listed(newcomer, "BUY", "&minPaymentWindowMinutes=45");
+    // Only the ads that give the buyer exactly 45 minutes: not 15, not 60.
+    const slow = await listed(newcomer, "BUY", "&paymentWindowMinutes=45");
     expect(find(slow, quick.id)).toBeUndefined();
     expect(find(slow, verifiedOnly.id)).toBeDefined();
-    expect(find(slow, experienced.id)).toBeDefined();
-    expect(slow.every((o) => o.paymentWindowMinutes >= 45)).toBe(true);
+    expect(find(slow, experienced.id)).toBeUndefined();
+    expect(slow.every((o) => o.paymentWindowMinutes === 45)).toBe(true);
 
     // Only the ads the newcomer could take.
     const takeable = await listed(newcomer, "BUY", "&takeable=true");
@@ -639,7 +639,7 @@ describe("the market's filters, and what its viewer can take", () => {
     expect(find(await listed(seller, "BUY"), quick.id)?.isMine).toBe(true);
 
     // A value the market does not offer is refused, not ignored.
-    await newcomer.get("/v1/offers?want=BUY&minPaymentWindowMinutes=20").expect(400);
+    await newcomer.get("/v1/offers?want=BUY&paymentWindowMinutes=20").expect(400);
     await newcomer.get("/v1/offers?want=BUY&takeable=perhaps").expect(400);
   });
 });

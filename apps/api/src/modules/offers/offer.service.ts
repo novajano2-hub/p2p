@@ -390,7 +390,7 @@ export class OfferService {
       limit: query.limit + 1,
       amountSantim: query.amountSantim ? BigInt(query.amountSantim) : null,
       paymentKind: query.paymentKind ?? null,
-      minPaymentWindow: query.minPaymentWindowMinutes ?? null,
+      paymentWindow: query.paymentWindowMinutes ?? null,
       takeableBy: query.takeable ? viewer : null,
       cursor,
       id: null,
@@ -410,7 +410,7 @@ export class OfferService {
       limit: 1,
       amountSantim: null,
       paymentKind: null,
-      minPaymentWindow: null,
+      paymentWindow: null,
       takeableBy: null,
       cursor: null,
       id,
@@ -439,7 +439,7 @@ export class OfferService {
       limit: number;
       amountSantim: bigint | null;
       paymentKind: PaymentMethodKind | null;
-      minPaymentWindow: number | null;
+      paymentWindow: number | null;
       takeableBy: Viewer | null;
       cursor: { price: bigint; id: string } | null;
       id: string | null;
@@ -457,8 +457,8 @@ export class OfferService {
       ? Prisma.sql`AND EXISTS (SELECT 1 FROM offer_payment_methods pm WHERE pm.offer_id = p.id AND pm.kind = ${options.paymentKind}::payment_method_kind)`
       : Prisma.empty;
     const windowFilter =
-      options.minPaymentWindow !== null
-        ? Prisma.sql`AND p.payment_window_minutes >= ${options.minPaymentWindow}::int`
+      options.paymentWindow !== null
+        ? Prisma.sql`AND p.payment_window_minutes = ${options.paymentWindow}::int`
         : Prisma.empty;
     // The trade engine's own rules (TradeService.create), so nothing listed here is refused there.
     const takeableFilter = options.takeableBy

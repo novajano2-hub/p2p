@@ -173,15 +173,16 @@ test.describe("the market", () => {
     const filters = page.getByRole("dialog", { name: "Filters" });
     await expect(filters).toBeVisible();
     await expectNoHorizontalOverflow(page);
-    // A floor: "at least 15 minutes" would be every ad, so the choices start at 30.
-    await expect(filters).toContainText("Ads whose buyer has at least this long to pay you.");
-    await expect(filters.getByRole("button", { name: "15" })).toHaveCount(0);
-    await filters.getByRole("button", { name: "45+ min" }).click();
+    await expect(
+      filters.getByRole("group", { name: "Time to pay" }).getByRole("button"),
+    ).toHaveText(["All", "15 min", "30 min", "45 min", "60 min"]);
+    await expect(filters).toContainText("Only ads whose buyer has this long to pay you.");
+    await filters.getByRole("button", { name: "45 min" }).click();
     await filters.getByRole("switch", { name: "Only ads I can take" }).click();
     await filters.getByRole("button", { name: "Apply" }).click();
     await expect(filters).toBeHidden();
 
-    await expect.poll(() => asked.at(-1)).toContain("minPaymentWindowMinutes=45");
+    await expect.poll(() => asked.at(-1)).toContain("paymentWindowMinutes=45");
     expect(asked.at(-1)).toContain("takeable=true");
     expect(asked.at(-1)).toContain("want=SELL");
     await expect(page.getByRole("button", { name: "Filters · 2" })).toBeVisible();

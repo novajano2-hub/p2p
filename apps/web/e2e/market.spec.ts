@@ -220,6 +220,10 @@ test.describe("the amount filter", () => {
     ]);
 
     await page.goto("/trade");
+    // A phone keeps the amount behind a chip, as in the mockup.
+    if ((page.viewportSize()?.width ?? 0) < 640) {
+      await page.getByRole("button", { name: "Amount", exact: true }).click();
+    }
     const quick = page.getByRole("group", { name: "Quick amounts" });
     await expect(quick.getByRole("button")).toHaveText(["1,000", "5,000", "10,000", "50,000"]);
     const field = page.getByLabel("Amount in birr");

@@ -278,8 +278,8 @@ export const marketplaceQuery = z.object({
   /** A birr amount the viewer means to trade: offers whose limits exclude it are left out. */
   amountSantim: santimAmount.optional(),
   paymentKind: paymentMethodKind.optional(),
-  /** Only ads that give the buyer at least this long to pay. */
-  minPaymentWindowMinutes: z.coerce.number().pipe(paymentWindowMinutes).optional(),
+  /** Only ads that give the buyer exactly this long to pay. */
+  paymentWindowMinutes: z.coerce.number().pipe(paymentWindowMinutes).optional(),
   /**
    * Leave out what the viewer could not take: their own ads, and those for
    * verified or more experienced traders than they are yet.

@@ -361,8 +361,8 @@ export const marketClient = {
     want: OfferSide;
     amountSantim?: string | undefined;
     paymentKind?: PaymentMethodKind | undefined;
-    /** Only ads that give the buyer at least this long to pay. */
-    minPaymentWindowMinutes?: number | undefined;
+    /** Only ads that give the buyer exactly this long to pay. */
+    paymentWindowMinutes?: number | undefined;
     /** Leave out what the viewer could not take. */
     takeable?: boolean | undefined;
     cursor?: string | undefined;
