@@ -107,6 +107,8 @@ export type AdForm = {
 
 export const TERMS_MAX = 1_000;
 export const AUTO_REPLY_MAX = 500;
+/** The most ways to be paid, or to pay, one ad may name: the API's own cap. */
+export const RAILS_MAX = 5;
 
 /** Every problem with an ad, by field, in the order the form asks. */
 export function adProblems(draft: AdForm): [keyof AdForm, string][] {
@@ -127,9 +129,13 @@ export function adProblems(draft: AdForm): [keyof AdForm, string][] {
   }
   if (draft.side === "SELL" && draft.methodIds.length === 0) {
     problems.push(["methodIds", "Choose at least one way to be paid."]);
+  } else if (draft.side === "SELL" && draft.methodIds.length > RAILS_MAX) {
+    problems.push(["methodIds", `Choose up to ${RAILS_MAX} ways to be paid.`]);
   }
   if (draft.side === "BUY" && draft.kinds.length === 0) {
     problems.push(["kinds", "Choose at least one way you will pay."]);
+  } else if (draft.side === "BUY" && draft.kinds.length > RAILS_MAX) {
+    problems.push(["kinds", `Choose up to ${RAILS_MAX} ways to pay.`]);
   }
   if (draft.terms.trim().length > TERMS_MAX) {
     problems.push(["terms", `Keep the terms under ${TERMS_MAX} characters.`]);
@@ -148,28 +154,29 @@ export function adProblems(draft: AdForm): [keyof AdForm, string][] {
   Every field is a plain value to the schema, and every rule is in the one
   refinement: that way all of them are checked on every submit and all the
   problems are shown at once, rather than a field's problem hiding the
-  others' until it is fixed.
+  others' until it is fixed. The fields alone are what a draft kept for
+  later is checked against (lib/market/ad-draft.ts): half written is fine.
 */
-export const adForm = z
-  .object({
-    side: z.enum(["SELL", "BUY"]),
-    price: z.string(),
-    total: z.string(),
-    min: z.string(),
-    max: z.string(),
-    window: z.number(),
-    methodIds: z.array(z.string()),
-    kinds: z.array(z.custom<PaymentMethodKind>((value) => typeof value === "string")),
-    terms: z.string(),
-    autoReply: z.string(),
-    requireVerified: z.boolean(),
-    minCompletedTrades: z.string(),
-  })
-  .superRefine((draft, ctx) => {
-    for (const [path, message] of adProblems(draft)) {
-      ctx.addIssue({ code: "custom", path: [path], message });
-    }
-  });
+export const adFields = z.object({
+  side: z.enum(["SELL", "BUY"]),
+  price: z.string(),
+  total: z.string(),
+  min: z.string(),
+  max: z.string(),
+  window: z.number(),
+  methodIds: z.array(z.string()),
+  kinds: z.array(z.custom<PaymentMethodKind>((value) => typeof value === "string")),
+  terms: z.string(),
+  autoReply: z.string(),
+  requireVerified: z.boolean(),
+  minCompletedTrades: z.string(),
+});
+
+export const adForm = adFields.superRefine((draft, ctx) => {
+  for (const [path, message] of adProblems(draft)) {
+    ctx.addIssue({ code: "custom", path: [path], message });
+  }
+});
 
 /** The request a checked ad becomes. Call only once adProblems() has found nothing. */
 export function toOfferDraft(draft: AdForm): OfferDraft {

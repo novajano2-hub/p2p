@@ -95,7 +95,7 @@ export function DisputeDecision({
             {...a11y}
             value={note}
             maxLength={NOTE_MAXIMUM}
-            placeholder="What the evidence shows, which account the birr came from, and why that decides it."
+            placeholder="What the evidence shows, which account the ETB came from, and why that decides it."
             onChange={(event) => {
               setNote(event.target.value);
               setConfirming(false);

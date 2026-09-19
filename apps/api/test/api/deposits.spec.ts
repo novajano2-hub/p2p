@@ -298,7 +298,7 @@ describe("confirmation and credit", () => {
     expect(await creditsFor(id)).toBe(1);
 
     const told = await db.notification.findFirst({ where: { userId, type: "DEPOSIT_CREDITED" } });
-    expect(told?.body).toContain("10.000000 USDT");
+    expect(told?.body).toContain("10.00 USDT");
     const email = await db.outboxEvent.findFirst({
       where: { type: "email.send", correlationId: row.correlationId },
     });

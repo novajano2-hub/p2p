@@ -23,7 +23,7 @@ test("an order shows the terms it was taken under", async ({ page, context }) =>
 
   await page.goto("/orders/t1");
 
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Buy 6.309148 USDT");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Buy 6.31 USDT");
   const terms = page.getByRole("region", { name: "The advertiser's terms" });
   await expect(terms).toContainText("No third-party payments");
   await expect(terms).toContainText("As they stood when this order opened");

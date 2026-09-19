@@ -15,7 +15,7 @@ import type {
   schema; this file pins the words to the enumerations.
 */
 
-export const FIAT = "birr";
+export const FIAT = "ETB";
 export const ASSET = "USDT";
 
 export const PAYMENT_KINDS: Record<
@@ -177,13 +177,32 @@ export const EVENT_LABELS: Record<string, string> = {
 export function traderRecord(stats: {
   tradesTotal: number;
   completionRate: number | null;
-  avgReleaseSeconds: number | null;
 }): string {
   const parts = [`${stats.tradesTotal} ${stats.tradesTotal === 1 ? "order" : "orders"}`];
   if (stats.completionRate !== null) parts.push(`${stats.completionRate}% completion`);
-  if (stats.avgReleaseSeconds !== null)
-    parts.push(`releases in ~${minutes(stats.avgReleaseSeconds)}`);
   return parts.join(" · ");
+}
+
+/** "releases in ~4 min", or null before there is anything to average. */
+export function releaseHint(stats: { avgReleaseSeconds: number | null }): string | null {
+  return stats.avgReleaseSeconds === null
+    ? null
+    : `releases in ~${minutes(stats.avgReleaseSeconds)}`;
+}
+
+/** "~6 min", or a dash before there is anything to average. */
+export function averageMinutes(seconds: number | null): string {
+  return seconds === null ? "—" : `~${minutes(seconds)}`;
+}
+
+/** "23 h 41 min", "41 min": how long until a moment, rounded up to the minute. */
+export function untilLabel(ms: number): string {
+  const total = Math.ceil(ms / 60_000);
+  if (total <= 0) return "less than a minute";
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  if (hours === 0) return `${rest} min`;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 }
 
 function minutes(seconds: number): string {

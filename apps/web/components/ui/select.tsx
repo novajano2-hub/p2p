@@ -9,8 +9,8 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type Ref,
 } from "react";
-import { createPortal } from "react-dom";
 
+import { PHONE, Sheet } from "@/components/ui/sheet";
 import { cn } from "@/lib/cn";
 import { useMediaQuery } from "@/lib/use-media-query";
 
@@ -61,8 +61,6 @@ export type SelectProps = {
 };
 
 const SEARCH_FROM = 9;
-/** Below this width the choices come up as a sheet. Tailwind's sm breakpoint. */
-const PHONE = "(max-width: 639px)";
 /** Letters typed within this long of each other are one word to jump to. */
 const TYPEAHEAD_MS = 600;
 /** A row, for guessing whether the panel fits below the field. */
@@ -272,16 +270,6 @@ export function Select({
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  // The page behind a sheet does not scroll.
-  useEffect(() => {
-    if (!open || !phone) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [open, phone]);
-
   // The active choice stays in view as the keyboard moves it.
   useEffect(() => {
     if (!open || active < 0) return;
@@ -447,38 +435,18 @@ export function Select({
         </div>
       ) : null}
 
-      {open && phone
-        ? createPortal(
-            <div className="fixed inset-0 z-50">
-              <div aria-hidden="true" className="bg-foreground/40 absolute inset-0" />
-              <div
-                ref={sheet}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={titleId}
-                onKeyDown={onOpenKeyDown}
-                className={cn(
-                  "bg-surface shadow-panel absolute inset-x-0 bottom-0 flex max-h-[80dvh] flex-col rounded-t-[20px] pb-[env(safe-area-inset-bottom)]",
-                  "motion-safe:animate-[sheet-up_220ms_ease-out]",
-                )}
-              >
-                <span
-                  aria-hidden="true"
-                  className="bg-border mx-auto mt-2.5 h-1 w-10 rounded-full"
-                />
-                <h2
-                  id={titleId}
-                  className="text-foreground px-5 pt-3 pb-3 text-[17px] font-semibold"
-                >
-                  {sheetTitle || "Choose"}
-                </h2>
-                {searchBox}
-                {listbox}
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      <Sheet
+        open={open && phone}
+        title={sheetTitle || "Choose"}
+        titleId={titleId}
+        dialogRef={sheet}
+        onKeyDown={onOpenKeyDown}
+        onClose={() => hide()}
+        initialFocus={false}
+      >
+        {searchBox}
+        {listbox}
+      </Sheet>
     </div>
   );
 }

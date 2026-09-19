@@ -1,8 +1,10 @@
 import {
   createPaymentMethodRequest,
+  replacePaymentMethodRequest,
   type CreatePaymentMethodRequest,
   type PaymentMethodDetailView,
   type PaymentMethodsResponse,
+  type ReplacePaymentMethodRequest,
 } from "@abay/contracts";
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
@@ -49,6 +51,18 @@ export class PaymentMethodsController {
     @CurrentSession() session: AuthenticatedSession,
   ): Promise<PaymentMethodDetailView> {
     return this.methods.create(session.user.id, body);
+  }
+
+  /** The same kind, new details: the old one archived, its place on live ads taken by the new. */
+  @Post(":id/replace")
+  @HttpCode(200)
+  @RateLimit(perSession(20, hours(1)))
+  replace(
+    @Param("id", new ZodValidationPipe(idParam)) id: string,
+    @Body(zodBody(replacePaymentMethodRequest)) body: ReplacePaymentMethodRequest,
+    @CurrentSession() session: AuthenticatedSession,
+  ): Promise<PaymentMethodDetailView> {
+    return this.methods.replace(session.user.id, id, body);
   }
 
   /** Archives, never deletes: trades that snapshotted it still point at it. */

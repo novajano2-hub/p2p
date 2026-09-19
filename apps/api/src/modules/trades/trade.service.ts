@@ -208,7 +208,7 @@ export class TradeService {
       throw AppError.validation([
         {
           path: "amount",
-          message: `This offer takes between ${formatEtb(offer.minSantim)} and ${formatEtb(offer.maxSantim)} birr a trade.`,
+          message: `This offer takes between ${formatEtb(offer.minSantim)} and ${formatEtb(offer.maxSantim)} ETB a trade.`,
         },
       ]);
     }
@@ -380,7 +380,7 @@ export class TradeService {
           userId: offer.userId,
           type: "TRADE_OPENED",
           title: offer.side === "SELL" ? "Someone is buying from you" : "Someone is selling to you",
-          body: `${taker.username} opened a trade for ${formatUsdt(amount)} USDT at ${formatEtb(fiat)} birr.`,
+          body: `${taker.username} opened a trade for ${formatUsdt(amount)} USDT at ${formatEtb(fiat)} ETB.`,
           tradeId: id,
           mail: {
             kind: "OPENED",
@@ -466,7 +466,7 @@ export class TradeService {
         userId: trade.sellerId,
         type: "TRADE_PAID",
         title: "The buyer says they have paid",
-        body: `${buyer.username} marked ${formatEtb(trade.fiatSantim)} birr as paid. Check your account before you release.`,
+        body: `${buyer.username} marked ${formatEtb(trade.fiatSantim)} ETB as paid. Check your account before you release.`,
         tradeId: id,
         mail: {
           kind: "PAID",

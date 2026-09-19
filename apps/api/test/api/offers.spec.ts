@@ -124,7 +124,7 @@ async function addMethod(who: Api, body: object = TELEBIRR): Promise<PaymentMeth
   return response.body as PaymentMethodDetailView;
 }
 
-/** A SELL offer: 100 USDT at 158.50 birr, 10 to 20,000 birr a trade, unless overridden. */
+/** A SELL offer: 100 USDT at 158.50 ETB, 10 to 20,000 ETB a trade, unless overridden. */
 async function sellOffer(
   who: Api,
   methodId: string,
@@ -214,6 +214,8 @@ describe("payment methods", () => {
         .post("/v1/payment-methods", { ...TELEBIRR, phone: phone.replace(/\s/g, "") })
         .expect(201);
       expect(created.body.instructions.accountNumber).toBe("0912345678");
+      // One Telebirr account at a time: this one makes way for the next.
+      await me.del(`/v1/payment-methods/${created.body.id}`).expect(204);
     }
     // Safaricom numbers start with 7 and are just as Ethiopian.
     const mpesa = await addMethod(me, {
@@ -294,13 +296,73 @@ describe("payment methods", () => {
     expect(archived.body.status).toBe("ARCHIVED");
   });
 
-  it("keeps at most ten", async () => {
+  it("keeps one live account of each kind", async () => {
     const { api: me } = await customer();
-    for (let i = 0; i < 10; i++) {
-      await addMethod(me, { ...TELEBIRR, phone: `09123456${String(i).padStart(2, "0")}` });
-    }
-    const eleventh = await me.post("/v1/payment-methods", TELEBIRR).expect(409);
-    expect(eleventh.body.error.code).toBe("CONFLICT");
+    const first = await addMethod(me);
+    const second = await me
+      .post("/v1/payment-methods", { ...TELEBIRR, phone: "0911111111" })
+      .expect(409);
+    expect(second.body.error.code).toBe("CONFLICT");
+    expect(second.body.error.message).toBe(
+      "You already have a Telebirr account here. Replace it, or remove it first.",
+    );
+
+    // Another kind is another matter.
+    await addMethod(me, AWASH);
+    // And once the first is removed, its kind is free again.
+    await me.del(`/v1/payment-methods/${first.id}`).expect(204);
+    await addMethod(me, { ...TELEBIRR, phone: "0911111111" });
+    const list = await me.get("/v1/payment-methods").expect(200);
+    const kinds = (list.body.paymentMethods as { kind: string }[]).map((m) => m.kind);
+    expect(kinds.sort()).toEqual(["AWASH", "TELEBIRR"]);
+  });
+
+  it("lets two requests at once add only one", async () => {
+    const { api: me } = await customer();
+    const both = await Promise.all([
+      me.post("/v1/payment-methods", TELEBIRR),
+      me.post("/v1/payment-methods", { ...TELEBIRR, phone: "0911111111" }),
+    ]);
+    expect(both.map((response) => response.status).sort()).toEqual([201, 409]);
+    const list = await me.get("/v1/payment-methods").expect(200);
+    expect(list.body.paymentMethods).toHaveLength(1);
+  });
+
+  it("replaces an account, and the ads that named it follow without changing version", async () => {
+    const { api: me } = await customer({ usdt: 200n });
+    const { api: stranger } = await customer();
+    const old = await addMethod(me);
+    const offer = await sellOffer(me, old.id);
+
+    const replaced = await me
+      .post(`/v1/payment-methods/${old.id}/replace`, { ...TELEBIRR, phone: "0911111111" })
+      .expect(200);
+    expect(replaced.body.id).not.toBe(old.id);
+    expect(replaced.body.label).toBe("Telebirr ····1111");
+    expect(replaced.body.instructions.accountNumber).toBe("0911111111");
+
+    // One live Telebirr account, the new one; the old one is history.
+    const list = await me.get("/v1/payment-methods").expect(200);
+    expect((list.body.paymentMethods as { id: string }[]).map((m) => m.id)).toEqual([
+      replaced.body.id,
+    ]);
+    const was = await me.get(`/v1/payment-methods/${old.id}`).expect(200);
+    expect(was.body.status).toBe("ARCHIVED");
+
+    // The ad names the new account and is the same version: a taker reads the kind.
+    const mine = await me.get(`/v1/offers/${offer.id}/mine`).expect(200);
+    expect(mine.body.paymentMethods).toMatchObject([
+      { kind: "TELEBIRR", paymentMethodId: replaced.body.id },
+    ]);
+    expect(mine.body.revision).toBe(offer.revision);
+
+    // Another kind's details are not a replacement; nor is somebody else's method, or one gone.
+    const wrongKind = await me
+      .post(`/v1/payment-methods/${replaced.body.id}/replace`, AWASH)
+      .expect(400);
+    expect(wrongKind.body.error.code).toBe("VALIDATION_FAILED");
+    await stranger.post(`/v1/payment-methods/${replaced.body.id}/replace`, TELEBIRR).expect(404);
+    await me.post(`/v1/payment-methods/${old.id}/replace`, TELEBIRR).expect(409);
   });
 });
 
@@ -370,7 +432,7 @@ describe("offers", () => {
       .expect(400);
     expect(inverted.body.error.details[0].path).toBe("maxSantim");
 
-    // 1 USDT at 150.00 birr is worth 150 birr; a 200 birr minimum can never be met.
+    // 1 USDT at 150.00 ETB is worth 150 ETB; a 200 ETB minimum can never be met.
     const unreachable = await me
       .post("/v1/offers", {
         side: "SELL",
@@ -400,7 +462,7 @@ describe("offers", () => {
     expect(shown).toBeDefined();
     // 100 USDT posted, 50 in the account: 50 is what a buyer could take.
     expect(shown?.available).toBe((50n * USDT).toString());
-    // ...and the maximum is capped by it: 50 USDT at 158.50 = 7,925.00 birr.
+    // ...and the maximum is capped by it: 50 USDT at 158.50 = 7,925.00 ETB.
     expect(shown?.maxSantim).toBe("792500");
     expect(shown?.minSantim).toBe("1000");
     expect(shown?.paymentKinds).toEqual(["TELEBIRR"]);
@@ -442,7 +504,7 @@ describe("offers", () => {
     const market = await listed(seller, "SELL");
     const shown = market.find((o) => o.id === offer.body.id);
     expect(shown?.available).toBe((30n * USDT).toString());
-    // 30 USDT at 158.00 = 4,740.00 birr caps a 1,000,000 birr maximum.
+    // 30 USDT at 158.00 = 4,740.00 ETB caps a 1,000,000 ETB maximum.
     expect(shown?.maxSantim).toBe("474000");
     expect(shown?.paymentKinds).toEqual(["CBE_BIRR", "TELEBIRR"]);
     // A BUY offer is not in the list of things to buy.
@@ -460,7 +522,7 @@ describe("offers", () => {
     });
     const offer = await sellOffer(seller, telebirr.id, { paymentMethodIds: [telebirr.id, cbe.id] });
 
-    // 3,000 birr is inside 10 .. 7,925; 8,000 birr is not.
+    // 3,000 ETB is inside 10 .. 7,925; 8,000 ETB is not.
     const inside = await listed(buyer, "BUY", "&amountSantim=300000");
     expect(inside.map((o) => o.id)).toContain(offer.id);
     const outside = await listed(buyer, "BUY", "&amountSantim=800000");
@@ -581,6 +643,69 @@ describe("offers", () => {
   });
 });
 
+/* ------------------------------------------- the market's filters */
+
+/*
+  Phase 5, stage 5. Two filters from Binance's popover - the time a buyer has
+  to pay, and "only ads I can take" - and, on every ad, why this viewer could
+  not take it, which is what its Limited button says. The rules are the trade
+  engine's own, so nothing the filter lets through is refused at order time.
+*/
+describe("the market's filters, and what its viewer can take", () => {
+  const find = (list: MarketplaceOffer[], id: string) => list.find((o) => o.id === id);
+
+  it("filters by time to pay, and says why an ad cannot be taken - or leaves it out", async () => {
+    const { api: seller } = await customer({ usdt: 500n });
+    const method = await addMethod(seller);
+    const quick = await sellOffer(seller, method.id, { paymentWindowMinutes: 15 });
+    const verifiedOnly = await sellOffer(seller, method.id, {
+      paymentWindowMinutes: 45,
+      requireVerified: true,
+    });
+    const experienced = await sellOffer(seller, method.id, {
+      paymentWindowMinutes: 60,
+      minCompletedTrades: 5,
+    });
+
+    // A newcomer: not verified, no trades yet.
+    const { api: newcomer } = await customer({ verified: false });
+    const all = await listed(newcomer, "BUY");
+    expect(find(all, quick.id)?.blockedBecause).toBeNull();
+    expect(find(all, verifiedOnly.id)?.blockedBecause).toBe("VERIFICATION");
+    expect(find(all, experienced.id)?.blockedBecause).toBe("COMPLETED_TRADES");
+    // One ad on its own says the same.
+    const one = await newcomer.get(`/v1/offers/${verifiedOnly.id}`).expect(200);
+    expect(one.body.blockedBecause).toBe("VERIFICATION");
+
+    // Only the ads that give the buyer exactly 45 minutes: not 15, not 60.
+    const slow = await listed(newcomer, "BUY", "&paymentWindowMinutes=45");
+    expect(find(slow, quick.id)).toBeUndefined();
+    expect(find(slow, verifiedOnly.id)).toBeDefined();
+    expect(find(slow, experienced.id)).toBeUndefined();
+    expect(slow.every((o) => o.paymentWindowMinutes === 45)).toBe(true);
+
+    // Only the ads the newcomer could take.
+    const takeable = await listed(newcomer, "BUY", "&takeable=true");
+    expect(find(takeable, quick.id)).toBeDefined();
+    expect(find(takeable, verifiedOnly.id)).toBeUndefined();
+    expect(find(takeable, experienced.id)).toBeUndefined();
+    expect(takeable.every((o) => o.blockedBecause === null && !o.isMine)).toBe(true);
+
+    // Verified, the second opens up; the third still wants five trades.
+    const { api: verified } = await customer();
+    const forVerified = await listed(verified, "BUY", "&takeable=true");
+    expect(find(forVerified, verifiedOnly.id)).toBeDefined();
+    expect(find(forVerified, experienced.id)).toBeUndefined();
+    // Nobody can take their own ad, so it is left out for its owner.
+    expect(find(await listed(seller, "BUY", "&takeable=true"), quick.id)).toBeUndefined();
+    expect(find(await listed(seller, "BUY"), quick.id)?.isMine).toBe(true);
+
+    // A value the market does not offer is refused, not ignored.
+    await newcomer.get("/v1/offers?want=BUY&paymentWindowMinutes=20").expect(400);
+    await newcomer.get("/v1/offers?want=BUY&takeable=perhaps").expect(400);
+  });
+});
+
 /* --------------------------------------------------- the ad balance */
 
 /*
@@ -593,7 +718,7 @@ describe("offers", () => {
 */
 describe("an ad its seller's balance cannot cover", () => {
   const HOUR = 3_600_000;
-  /** 1,000.00 birr: at 158.50 that takes 6.309117 USDT. */
+  /** 1,000.00 ETB: at 158.50 that takes 6.309117 USDT. */
   const THOUSAND_BIRR = "100000";
 
   const mine = async (who: Api, id: string) =>
@@ -638,14 +763,14 @@ describe("an ad its seller's balance cannot cover", () => {
       (10n * USDT).toString(),
     );
 
-    // A smallest order of 2,000.00 birr is more than 10 USDT is worth (1,585.00).
+    // A smallest order of 2,000.00 ETB is more than 10 USDT is worth (1,585.00).
     const raised = await seller.patch(`/v1/offers/${ad.id}`, { minSantim: "200000" }).expect(200);
     expect(raised.body.hiddenBecause).toBe("BALANCE");
     expect(raised.body.adBalance).toBe((10n * USDT).toString());
     expect((await listed(buyer, "BUY")).find((o) => o.id === ad.id)).toBeUndefined();
     await buyer.get(`/v1/offers/${ad.id}`).expect(404);
 
-    // Sold down, as trades would have: 3.5 USDT left is worth 554.75 birr,
+    // Sold down, as trades would have: 3.5 USDT left is worth 554.75 ETB,
     // less than the 1,000.00 minimum however much the seller holds.
     await seller.patch(`/v1/offers/${ad.id}`, { minSantim: THOUSAND_BIRR }).expect(200);
     await db.offer.update({ where: { id: ad.id }, data: { remainingAmount: 3_500_000n } });
@@ -697,7 +822,7 @@ describe("an ad its seller's balance cannot cover", () => {
       link: "/trade/ads",
     });
     expect(hidden[0]?.body).toBe(
-      "Your sell ad at 158.50 birr is hidden: your available balance of 0.000000 USDT is worth less than its smallest order of 1,000.00 birr. Add USDT within 24 hours or the ad goes offline.",
+      "Your sell ad at 158.50 ETB is hidden: your available balance of 0.00 USDT is worth less than its smallest order of 1,000.00 ETB. Add USDT within 24 hours or the ad goes offline.",
     );
 
     const waiting = await mine(seller, ad.id);
@@ -735,7 +860,7 @@ describe("an ad its seller's balance cannot cover", () => {
       link: "/trade/ads?tab=offline",
     });
     expect(offline[0]?.body).toBe(
-      "Your sell ad at 158.50 birr was taken offline: for 24 hours your available balance could not cover its smallest order of 1,000.00 birr. Add USDT, then switch it back on in My ads.",
+      "Your sell ad at 158.50 ETB was taken offline: for 24 hours your available balance could not cover its smallest order of 1,000.00 ETB. Add USDT, then switch it back on in My ads.",
     );
 
     // An ad that is off is nobody's concern: nothing more happens to it.
@@ -770,7 +895,7 @@ describe("an ad its seller's balance cannot cover", () => {
     expect(covered.hiddenBecause).toBeNull();
     expect(covered.unfundedSince).toBeNull();
 
-    // 50 USDT is worth 7,925.00 birr; a smallest order of 8,000.00 is out of
+    // 50 USDT is worth 7,925.00 ETB; a smallest order of 8,000.00 is out of
     // reach again. The clock restarts, but its owner heard an hour ago.
     await seller.patch(`/v1/offers/${ad.id}`, { minSantim: "800000" }).expect(200);
     expect(await pass([ad.id])).toEqual({ hidden: 0, paused: 0, cleared: 0 });

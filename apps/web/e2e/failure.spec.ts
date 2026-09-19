@@ -37,7 +37,7 @@ const orderReads = (trade: () => object) => [
   },
 ];
 
-/** 100 USDT at 158.50 birr, as the marketplace lists it. */
+/** 100 USDT at 158.50 ETB, as the marketplace lists it. */
 const OFFER = {
   id: "o1",
   side: "SELL",
@@ -53,6 +53,7 @@ const OFFER = {
   advertiser: ADVERTISER,
   revision: 1,
   isMine: false,
+  blockedBecause: null,
 };
 
 test.describe("a session that ends", () => {
@@ -241,6 +242,7 @@ test.describe("the connection", () => {
     await expect(offline).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
+    await page.getByRole("button", { name: "Add a payment method" }).click();
     await page.getByLabel("Name on the account").fill("Abebe Bikila");
     await page.getByLabel("Telebirr phone number").fill("0912345678");
     await page.getByRole("button", { name: "Add payment method" }).click();

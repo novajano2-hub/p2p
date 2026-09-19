@@ -22,7 +22,7 @@ import {
 const desktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1024;
 const mobile = (page: Page) => (page.viewportSize()?.width ?? 0) < 768;
 
-/** 100 USDT at 158.50 birr, 10 to 20,000 birr a trade, paid through Telebirr. */
+/** 100 USDT at 158.50 ETB, 10 to 20,000 ETB a trade, paid through Telebirr. */
 const offer = (side: "BUY" | "SELL", overrides: Record<string, unknown> = {}) => ({
   id: "o1",
   side,
@@ -38,6 +38,7 @@ const offer = (side: "BUY" | "SELL", overrides: Record<string, unknown> = {}) =>
   advertiser: ADVERTISER,
   revision: 1,
   isMine: false,
+  blockedBecause: null,
   ...overrides,
 });
 
@@ -88,7 +89,7 @@ test.describe("adding a payment method from the middle of something", () => {
       page.getByRole("heading", { level: 1, name: `Sell USDT to ${ADVERTISER.username}` }),
     ).toBeVisible();
     // Selling to a BUY ad: Back goes to the Sell side of the market, not the default one.
-    await expect(page.getByRole("link", { name: "Marketplace" })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "P2P market" })).toHaveAttribute(
       "href",
       "/trade?want=SELL",
     );
@@ -124,7 +125,7 @@ test.describe("adding a payment method from the middle of something", () => {
 
     for (const next of ["https://evil.example/", "//evil.example", "/\\evil.example"]) {
       await page.goto(`/trade/payment-methods?next=${encodeURIComponent(next)}`);
-      await expect(page.getByRole("link", { name: "Marketplace" })).toHaveAttribute(
+      await expect(page.getByRole("link", { name: "P2P market" })).toHaveAttribute(
         "href",
         "/trade",
       );
@@ -150,7 +151,7 @@ test.describe("an ad that changes while you are looking at it", () => {
     await page.goto("/trade/offers/o1");
     await expect(page.getByRole("button", { name: "Buy USDT" })).toBeEnabled();
     // Buying from a SELL ad: Back goes to the Buy side of the market.
-    await expect(page.getByRole("link", { name: "Marketplace" })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "P2P market" })).toHaveAttribute(
       "href",
       "/trade?want=BUY",
     );
@@ -219,9 +220,13 @@ test.describe("the amount filter", () => {
     ]);
 
     await page.goto("/trade");
+    // A phone keeps the amount behind a chip, as in the mockup.
+    if ((page.viewportSize()?.width ?? 0) < 640) {
+      await page.getByRole("button", { name: "Amount", exact: true }).click();
+    }
     const quick = page.getByRole("group", { name: "Quick amounts" });
     await expect(quick.getByRole("button")).toHaveText(["1,000", "5,000", "10,000", "50,000"]);
-    const field = page.getByLabel("Amount in birr");
+    const field = page.getByLabel("Amount in ETB");
 
     // A tap fills the field and asks the market for offers that fit it.
     await quick.getByRole("button", { name: "5,000" }).click();

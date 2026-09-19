@@ -8,14 +8,14 @@ import {
 } from "@/lib/market/money";
 
 /*
-  AT-21, the birr half: the browser previews the pair the server will
+  AT-21, the ETB half: the browser previews the pair the server will
   answer with, and never a different one. The two conversions here have to
   agree with apps/api/src/common/money/fiat.ts to the santim and to the
   millionth, so the cases below are the server's own.
 */
 
 describe("formatSantim", () => {
-  it("prints santim as birr with two decimals and thousands separators", () => {
+  it("prints santim as ETB with two decimals and thousands separators", () => {
     expect(formatSantim("634000")).toBe("6,340.00");
     expect(formatSantim("15850")).toBe("158.50");
     expect(formatSantim("5")).toBe("0.05");
@@ -52,15 +52,15 @@ describe("toSantim", () => {
 });
 
 describe("the two conversions agree with the server", () => {
-  it("40 USDT at 158.50 is 6,340.00 birr", () => {
+  it("40 USDT at 158.50 is 6,340.00 ETB", () => {
     expect(fiatForAmount("40000000", "15850")).toBe("634000");
   });
 
-  it("rounds birr half up: 6.309148 USDT at 158.50 is 999.99958, so 1,000.00", () => {
+  it("rounds ETB half up: 6.309148 USDT at 158.50 is 999.99958, so 1,000.00", () => {
     expect(fiatForAmount("6309148", "15850")).toBe("100000");
   });
 
-  it("rounds USDT down: 1,000 birr at 158.50 buys 6.309148, never more", () => {
+  it("rounds USDT down: 1,000 ETB at 158.50 buys 6.309148, never more", () => {
     expect(amountForFiat("100000", "15850")).toBe("6309148");
     expect(fiatForAmount(amountForFiat("100000", "15850"), "15850")).toBe("100000");
   });

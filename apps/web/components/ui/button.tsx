@@ -4,7 +4,7 @@ import type { ComponentPropsWithoutRef } from "react";
 import { AppLink } from "@/components/ui/app-link";
 import { cn } from "@/lib/cn";
 
-type Variant = "primary" | "secondary" | "ghost" | "inverse" | "destructive";
+type Variant = "primary" | "secondary" | "ghost" | "inverse" | "destructive" | "sell";
 type Size = "sm" | "md" | "lg";
 
 /*
@@ -43,6 +43,16 @@ const variants: Record<Variant, string> = {
     lift,
   ),
   destructive: cn(
+    "bg-destructive text-destructive-foreground shadow-raised",
+    "hover:bg-destructive/90 hover:shadow-raised-hover active:shadow-pressed",
+    lift,
+  ),
+  /*
+    Selling, as Binance colours it: the red side of the market, with nothing
+    about it that warns. The same paint as destructive, a different meaning,
+    so a sell button never reads as one in the code.
+  */
+  sell: cn(
     "bg-destructive text-destructive-foreground shadow-raised",
     "hover:bg-destructive/90 hover:shadow-raised-hover active:shadow-pressed",
     lift,

@@ -34,6 +34,8 @@ export const ADVERTISER = {
   completionRate: 93,
   avgReleaseSeconds: 240,
   avgPaySeconds: 600,
+  online: true,
+  lastSeenAt: "2026-09-17T09:00:00.000Z",
 };
 
 /** An open order, carrying the terms it was taken under. */

@@ -18,13 +18,13 @@ const actions = [
   {
     href: "/trade?want=BUY",
     title: "Buy USDT",
-    description: "Pay birr to a seller; the USDT is held for you until it arrives.",
+    description: "Pay ETB to a seller; the USDT is held for you until it arrives.",
     Icon: ArrowCircleDown,
   },
   {
     href: "/trade?want=SELL",
     title: "Sell USDT",
-    description: "Lock USDT in escrow, get paid in birr, then release it.",
+    description: "Lock USDT in escrow, get paid in ETB, then release it.",
     Icon: ArrowCircleUp,
   },
   {

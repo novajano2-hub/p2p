@@ -1346,6 +1346,9 @@ model PaymentMethod {
   offers OfferPaymentMethod[]
   trades Trade[]
 
+  /// One ACTIVE method of a kind per user - an order names the kind, and its
+  /// buyer is shown the one account behind it - enforced by a partial unique
+  /// index the migration adds by hand, which Prisma's schema cannot express.
   @@index([userId, status])
   @@map("payment_methods")
 }

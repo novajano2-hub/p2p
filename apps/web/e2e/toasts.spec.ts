@@ -36,7 +36,7 @@ const TELEBIRR = {
   createdAt: "2026-09-17T09:00:00.000Z",
 };
 
-/** 100 USDT at 158.50 birr, 10 to 20,000 birr a trade. */
+/** 100 USDT at 158.50 ETB, 10 to 20,000 ETB a trade. */
 const OFFER = {
   id: "o1",
   side: "SELL",
@@ -52,6 +52,7 @@ const OFFER = {
   advertiser: ADVERTISER,
   revision: 1,
   isMine: false,
+  blockedBecause: null,
 };
 
 /** The order page's own reads, for a trade as the stub has it. */
@@ -72,7 +73,7 @@ const notification = (overrides: Record<string, unknown>) => ({
     id: "n1",
     type: "DEPOSIT_CREDITED",
     title: "Deposit credited",
-    body: "25.000000 USDT is in your available balance.",
+    body: "25.00 USDT is in your available balance.",
     link: "/wallet",
     readAt: null,
     createdAt: new Date().toISOString(),
@@ -109,15 +110,24 @@ test.describe("a form that cannot be sent", () => {
     ]);
 
     await page.goto("/trade/ads/new");
-    // The button is at the bottom of a long form, far from the first field.
-    await page.getByRole("button", { name: "Post ad" }).click();
+    // Each step checks its own fields before moving on, and goes to the first problem.
+    await page.getByRole("button", { name: "Next" }).click();
 
-    const said = toastSaying(page, "Enter the price in birr per USDT.");
+    const said = toastSaying(page, "Enter the price in ETB per USDT.");
     await expect(said).toBeVisible();
-    await expect(said).toContainText("4 more fields need a look too.");
-    const price = page.getByLabel("Price, birr per USDT");
+    const price = page.getByLabel("Price, ETB per USDT");
     await expect(price).toBeFocused();
     await expect(price).toBeInViewport();
+
+    await price.fill("158.50");
+    await page.getByRole("button", { name: "Next" }).click();
+    // On to the second step, and on again with nothing in it.
+    await expect(page.getByLabel("Total amount, USDT")).toBeVisible();
+    await page.getByRole("button", { name: "Next" }).click();
+    const next = toastSaying(page, "Enter how much USDT the ad is for.");
+    await expect(next).toBeVisible();
+    await expect(next).toContainText("3 more fields need a look too.");
+    await expect(page.getByLabel("Total amount, USDT")).toBeFocused();
     // Every problem is also on its own field, where it stays.
     await expect(page.getByText("Choose at least one way to be paid.")).toBeVisible();
     await expectNoHorizontalOverflow(page);
@@ -139,7 +149,7 @@ test.describe("a form that cannot be sent", () => {
 
     // As it is typed, against the ad's own limits.
     await amount.fill("5");
-    await expect(page.getByText("The smallest trade on this offer is 10.00 birr.")).toBeVisible();
+    await expect(page.getByText("The smallest trade on this offer is 10.00 ETB.")).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
 });
@@ -163,11 +173,13 @@ test.describe("a refusal", () => {
     ]);
 
     await page.goto("/trade/ads/new");
-    await page.getByLabel("Price, birr per USDT").fill("158.50");
+    await page.getByLabel("Price, ETB per USDT").fill("158.50");
+    await page.getByRole("button", { name: "Next" }).click();
     await page.getByLabel("Total amount, USDT").fill("100");
-    await page.getByLabel("Smallest trade, birr").fill("500");
-    await page.getByLabel("Largest trade, birr").fill("20000");
-    await page.getByText("Telebirr ····5678 · Telebirr").click();
+    await page.getByLabel("Smallest trade, ETB").fill("500");
+    await page.getByLabel("Largest trade, ETB").fill("20000");
+    await page.getByText("Telebirr ····5678").click();
+    await page.getByRole("button", { name: "Next" }).click();
     await page.getByRole("button", { name: "Post ad" }).click();
 
     const sentence = "You can have at most 5 live ads. Take one offline first.";
@@ -214,13 +226,13 @@ test.describe("a refusal", () => {
     await page.goto("/orders/t1");
     await page.getByRole("button", { name: `Release USDT to ${ADVERTISER.username}` }).click();
     // Nothing typed: the form says so before asking the server.
-    await page.getByRole("button", { name: /^Release 6\.309148 USDT/ }).click();
+    await page.getByRole("button", { name: /^Release 6\.31 USDT/ }).click();
     await expect(toastSaying(page, "Enter your password to confirm.")).toBeVisible();
     expect(attempts).toBe(0);
 
     const password = page.getByLabel("Your password");
     await password.fill("not-it");
-    await page.getByRole("button", { name: /^Release 6\.309148 USDT/ }).click();
+    await page.getByRole("button", { name: /^Release 6\.31 USDT/ }).click();
     await expect(
       page.getByRole("alert").filter({ hasText: "That password is not right." }),
     ).toBeVisible();
@@ -290,7 +302,7 @@ test.describe("news from the socket", () => {
 
     const said = toastSaying(page, "Deposit credited");
     await expect(said).toBeVisible();
-    await expect(said).toContainText("25.000000 USDT is in your available balance.");
+    await expect(said).toContainText("25.00 USDT is in your available balance.");
     await expect(page.getByRole("button", { name: "Notifications, 1 unread" })).toBeVisible();
 
     // Inside the screen on a phone: nothing past either edge.
@@ -318,7 +330,7 @@ test.describe("news from the socket", () => {
       notification({
         type: "OFFER_HIDDEN",
         title: "Your ad is hidden from the market",
-        body: "Your sell ad at 158.50 birr is hidden: your available balance of 0.000000 USDT is worth less than its smallest order of 1,000.00 birr. Add USDT within 24 hours or the ad goes offline.",
+        body: "Your sell ad at 158.50 ETB is hidden: your available balance of 0.00 USDT is worth less than its smallest order of 1,000.00 ETB. Add USDT within 24 hours or the ad goes offline.",
         link: "/trade/ads",
       }),
     );
@@ -397,7 +409,7 @@ test.describe("news from the socket", () => {
     const live = await socket.connected;
     await page.getByRole("button", { name: `Release USDT to ${ADVERTISER.username}` }).click();
     await page.getByLabel("Your password").fill("Correct1Horse");
-    await page.getByRole("button", { name: /^Release 6\.309148 USDT/ }).click();
+    await page.getByRole("button", { name: /^Release 6\.31 USDT/ }).click();
     await expect(toastSaying(page, "USDT released")).toBeVisible();
 
     // The server tells this account too, for its other devices.
@@ -406,7 +418,7 @@ test.describe("news from the socket", () => {
         id: "n2",
         type: "TRADE_RELEASED",
         title: "USDT sent",
-        body: `You released 6.309148 USDT to ${ADVERTISER.username}. The trade is complete.`,
+        body: `You released 6.31 USDT to ${ADVERTISER.username}. The trade is complete.`,
         link: "/orders/t1",
       }),
     );

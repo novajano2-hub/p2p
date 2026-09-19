@@ -131,11 +131,11 @@ export function DisputeReview({ disputeId }: { disputeId: string }) {
                 <DetailRow label="USDT">
                   <Amount value={dispute.trade.amount} /> USDT
                 </DetailRow>
-                <DetailRow label="Birr">
-                  <Birr value={dispute.trade.fiatSantim} /> birr
+                <DetailRow label="ETB">
+                  <Birr value={dispute.trade.fiatSantim} /> ETB
                 </DetailRow>
                 <DetailRow label="Price">
-                  <Birr value={dispute.trade.priceSantim} /> birr per USDT
+                  <Birr value={dispute.trade.priceSantim} /> ETB per USDT
                 </DetailRow>
                 <DetailRow label="Fee">
                   <Amount value={dispute.trade.fee} /> USDT
