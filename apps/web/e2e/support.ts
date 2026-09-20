@@ -68,7 +68,7 @@ export const TRADE = {
   closedAt: null,
   closeReason: null,
   dispute: null,
-  chat: { lastSeq: 0, unread: 0 },
+  chat: { lastSeq: 0, unread: 0, closesAt: null },
   actions: {
     canMarkPaid: true,
     canCancel: true,

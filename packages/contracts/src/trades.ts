@@ -196,6 +196,13 @@ export const tradeView = z.object({
   chat: z.object({
     lastSeq: z.number().int().nonnegative(),
     unread: z.number().int().nonnegative(),
+    /**
+     * When the chat closes: a while after the trade does
+     * (TRADE_CHAT_AFTER_CLOSE_HOURS), so the two can still sort out a
+     * receipt or say thanks. Null while the trade is open. Past, once it has
+     * closed - `actions.canChat` is the authority on whether it is open now.
+     */
+    closesAt: z.string().nullable(),
   }),
   actions: tradeActions,
 
@@ -214,12 +221,27 @@ export const tradeEventView = z.object({
 });
 export type TradeEventView = z.infer<typeof tradeEventView>;
 
-export const tradesQuery = z.object({
-  /** Open: anything not settled. Closed: everything that is. */
-  scope: z.enum(["open", "closed"]).default("open"),
-  cursor: z.string().max(200).optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-});
+export const tradesQuery = z
+  .object({
+    /** Open: anything not settled ("Processing"). Closed: everything that is. All: both. */
+    scope: z.enum(["open", "closed", "all"]).default("open"),
+    /** Only the trades the viewer is buying in, or only those they are selling in. */
+    role: tradeRole.optional(),
+    /** Only trades in this state. One outside the scope matches nothing. */
+    status: tradeStatus.optional(),
+    /**
+     * Only trades opened from this moment, and before this one. Moments, not
+     * dates: whose midnight a day starts at is the viewer's to say.
+     */
+    from: z.iso.datetime().optional(),
+    to: z.iso.datetime().optional(),
+    cursor: z.string().max(200).optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+  })
+  .refine((query) => !query.from || !query.to || Date.parse(query.from) < Date.parse(query.to), {
+    path: ["to"],
+    error: "The end of the range must be after its start.",
+  });
 export type TradesQuery = z.infer<typeof tradesQuery>;
 
 export const tradesResponse = z.object({

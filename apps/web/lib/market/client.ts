@@ -228,7 +228,12 @@ const tradeSchema = z.object({
   closedAt: z.string().nullable(),
   closeReason: z.string().nullable(),
   dispute: tradeDisputeSummarySchema.nullable(),
-  chat: z.object({ lastSeq: z.number(), unread: z.number() }),
+  chat: z.object({
+    lastSeq: z.number(),
+    unread: z.number(),
+    /** When the chat closes: a while after the order does. Null while the order is open. */
+    closesAt: z.string().nullable(),
+  }),
   actions: z.object({
     canMarkPaid: z.boolean(),
     canCancel: z.boolean(),
@@ -394,8 +399,17 @@ export const marketClient = {
     post(`/v1/offers/${id}/${action}`, {}, myOfferSchema).then(wrap("offer")),
 
   /* trades */
-  trades: (scope: "open" | "closed", cursor?: string) =>
-    send(`/v1/trades${query({ scope, cursor })}`, tradesSchema, {}).then((result) =>
+  /** Open is "Processing"; all is everything, narrowed by side, state and when it was opened. */
+  trades: (input: {
+    scope: "open" | "closed" | "all";
+    role?: TradeRole | undefined;
+    status?: TradeStatus | undefined;
+    /** Moments, not days: the viewer's own day boundaries, as ISO strings. */
+    from?: string | undefined;
+    to?: string | undefined;
+    cursor?: string | undefined;
+  }) =>
+    send(`/v1/trades${query(input)}`, tradesSchema, {}).then((result) =>
       result.ok ? { ok: true as const, ...result.data } : result,
     ),
   trade: (id: string) => send(`/v1/trades/${id}`, tradeSchema, {}).then(wrap("trade")),

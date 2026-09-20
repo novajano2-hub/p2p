@@ -22,7 +22,7 @@ export function ActiveTrades({ className }: { className?: string | undefined }) 
   const [problem, setProblem] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    void marketClient.trades("open").then((result) => {
+    void marketClient.trades({ scope: "open" }).then((result) => {
       if (result.ok) {
         setTrades(result.trades.slice(0, 4));
         setProblem(null);

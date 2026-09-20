@@ -19,6 +19,8 @@ import { cn } from "@/lib/cn";
 export type TabItem = {
   id: string;
   label: string;
+  /** A count beside the label - orders that want something, say. Part of the tab's name. */
+  badge?: string | undefined;
   content: ReactNode;
 };
 
@@ -104,6 +106,17 @@ export function Tabs({
               )}
             >
               {item.label}
+              {item.badge ? (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className="bg-primary text-primary-foreground ml-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 align-middle text-[11px] leading-none font-bold tabular-nums"
+                  >
+                    {item.badge}
+                  </span>
+                  <span className="sr-only"> ({item.badge})</span>
+                </>
+              ) : null}
             </button>
           );
         })}

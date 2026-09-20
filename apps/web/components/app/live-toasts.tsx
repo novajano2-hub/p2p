@@ -8,6 +8,7 @@ import { useRealtimeEvent } from "@/components/app/realtime-provider";
 import { useSession } from "@/components/app/session-provider";
 import { authClient, type NotificationType } from "@/lib/auth/client";
 import { marketClient } from "@/lib/market/client";
+import { CHAT_BESIDE, chatAsked, chatLink } from "@/lib/market/orders";
 import { toneOf } from "@/lib/notifications";
 import { alreadySaid, notificationKey, toast } from "@/lib/toast";
 
@@ -16,8 +17,9 @@ import { alreadySaid, notificationKey, toast } from "@/lib/toast";
   over the socket the moment it is written - a deposit credited, a buyer saying
   they have paid, USDT released, a dispute decided, verification decided - and
   each becomes a toast with a way to go and look. A message in a trade's chat
-  becomes one too, unless that trade's page is the one open: there the chat
-  shows it itself.
+  becomes one too, unless that chat is on the screen, where it shows the
+  message itself: beside the order on a desk, and on a phone only once it has
+  been opened over the order.
 
   The bell keeps the record; this only announces.
 */
@@ -79,12 +81,15 @@ export function LiveToasts() {
   useRealtimeEvent("message", (frame) => {
     const { tradeId, message } = frame;
     if (message.senderId === user.id) return;
-    const link = `/orders/${tradeId}`;
+    const onScreen = () =>
+      here.current === `/orders/${tradeId}` &&
+      (window.matchMedia(CHAT_BESIDE).matches ||
+        chatAsked(new URLSearchParams(window.location.search)));
 
     // Heard at the moment an order opens with its advertiser's greeting, before
     // the order's page has replaced the offer's: wait, then look again.
     window.setTimeout(() => {
-      if (here.current === link) return;
+      if (onScreen()) return;
       let name = names.current.get(tradeId);
       if (!name) {
         name = marketClient
@@ -93,12 +98,12 @@ export function LiveToasts() {
         names.current.set(tradeId, name);
       }
       void name.then((username) => {
-        if (here.current === link) return;
+        if (onScreen()) return;
         toast.news("note", username ? `New message from ${username}` : "New message on an order", {
           // One per conversation: a second message replaces the first rather than stacking.
           id: `chat:${tradeId}`,
           description: message.kind === "IMAGE" ? "Sent a picture." : preview(message.body ?? ""),
-          action: { label: "Open chat", onClick: () => router.push(link) },
+          action: { label: "Open chat", onClick: () => router.push(chatLink(tradeId)) },
         });
       });
     }, SETTLE_MS);

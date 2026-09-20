@@ -413,6 +413,75 @@ describe("opening a trade", () => {
     const list = await stranger.api.get("/v1/trades?scope=open").expect(200);
     expect(list.body.trades).toEqual([]);
   });
+
+  /*
+    Phase 5, stage 6: the orders list, the Binance way. "Processing" is the
+    open scope it always had; "All orders" is everything, narrowed by which
+    side the viewer was on, the state, and when the trade was opened.
+  */
+  it("lists everything, or one side, one state, or a stretch of time", async () => {
+    const { seller, buyer, offer, trade: first } = await opened(10n);
+    await buyer.api
+      .post(`/v1/trades/${first.id}/cancel`, { reason: "Changed my mind" })
+      .expect(200);
+    const second = (
+      await take(buyer.api, { offerId: offer.id, amount: (5n * USDT).toString() }).expect(201)
+    ).body as TradeView;
+
+    const ids = async (who: Api, query: string): Promise<string[]> => {
+      const response = await who.get(`/v1/trades?${query}`).expect(200);
+      return (response.body.trades as TradeView[]).map((trade) => trade.id);
+    };
+
+    // Everything, newest first; the open scope is still only what is open.
+    expect(await ids(buyer.api, "scope=all")).toEqual([second.id, first.id]);
+    expect(await ids(buyer.api, "scope=open")).toEqual([second.id]);
+
+    // One state - and a state outside the scope is nothing, not an error.
+    expect(await ids(buyer.api, "scope=all&status=CANCELLED")).toEqual([first.id]);
+    expect(await ids(buyer.api, "scope=open&status=CANCELLED")).toEqual([]);
+
+    // One side of the table: the buyer bought in both, and sold in neither.
+    expect(await ids(buyer.api, "scope=all&role=BUYER")).toEqual([second.id, first.id]);
+    expect(await ids(buyer.api, "scope=all&role=SELLER")).toEqual([]);
+    expect(await ids(seller.api, "scope=all&role=SELLER")).toEqual([second.id, first.id]);
+
+    // A stretch of time, by when the trade was opened.
+    const hour = 3_600_000;
+    const at = (offset: number) => encodeURIComponent(new Date(Date.now() + offset).toISOString());
+    expect(await ids(buyer.api, `scope=all&from=${at(-hour)}&to=${at(hour)}`)).toEqual([
+      second.id,
+      first.id,
+    ]);
+    expect(await ids(buyer.api, `scope=all&from=${at(hour)}`)).toEqual([]);
+    expect(await ids(buyer.api, `scope=all&to=${at(-hour)}`)).toEqual([]);
+
+    // What the list does not understand is refused, not ignored.
+    await buyer.api.get("/v1/trades?scope=all&status=NOPE").expect(400);
+    await buyer.api.get("/v1/trades?scope=all&role=BOTH").expect(400);
+    await buyer.api.get("/v1/trades?scope=all&from=yesterday").expect(400);
+    await buyer.api.get(`/v1/trades?scope=all&from=${at(hour)}&to=${at(-hour)}`).expect(400);
+  });
+
+  it("says when the chat closes, once the trade has", async () => {
+    const { buyer, trade } = await opened(10n);
+    // Open: nothing is scheduled, and the chat is open.
+    expect(trade.chat.closesAt).toBeNull();
+    expect(trade.actions.canChat).toBe(true);
+
+    const cancelled = (
+      await buyer.api
+        .post(`/v1/trades/${trade.id}/cancel`, { reason: "Changed my mind" })
+        .expect(200)
+    ).body as TradeView;
+    // Closed: a day of chat left (TRADE_CHAT_AFTER_CLOSE_HOURS), and the order says until when.
+    expect(cancelled.closedAt).not.toBeNull();
+    const hours =
+      (Date.parse(cancelled.chat.closesAt ?? "") - Date.parse(cancelled.closedAt ?? "")) /
+      3_600_000;
+    expect(hours).toBe(24);
+    expect(cancelled.actions.canChat).toBe(true);
+  });
 });
 
 /* ------------------------------------------------------- paid, released */

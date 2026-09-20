@@ -162,9 +162,10 @@ describe("the trade chat", () => {
 
     // Writing counts as reading your own: the buyer is caught up, the seller is one behind.
     const buyerView = await buyer.api.get(`/v1/trades/${trade.id}`).expect(200);
-    expect(buyerView.body.chat).toEqual({ lastSeq: 2, unread: 0 });
+    // Open, so nothing says when the chat closes yet.
+    expect(buyerView.body.chat).toEqual({ lastSeq: 2, unread: 0, closesAt: null });
     const sellerView = await seller.api.get(`/v1/trades/${trade.id}`).expect(200);
-    expect(sellerView.body.chat).toEqual({ lastSeq: 2, unread: 1 });
+    expect(sellerView.body.chat).toEqual({ lastSeq: 2, unread: 1, closesAt: null });
     expect(first.body.myLastReadSeq).toBe(0);
   });
 

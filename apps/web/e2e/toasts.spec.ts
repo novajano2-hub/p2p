@@ -224,7 +224,6 @@ test.describe("a refusal", () => {
     ]);
 
     await page.goto("/orders/t1");
-    await page.getByRole("button", { name: `Release USDT to ${ADVERTISER.username}` }).click();
     // Nothing typed: the form says so before asking the server.
     await page.getByRole("button", { name: /^Release 6\.31 USDT/ }).click();
     await expect(toastSaying(page, "Enter your password to confirm.")).toBeVisible();
@@ -361,10 +360,11 @@ test.describe("news from the socket", () => {
     const said = toastSaying(page, `New message from ${ADVERTISER.username}`);
     await expect(said).toBeVisible();
     await expect(said).toContainText("Sent it. Please check your Telebirr.");
+    // Into the chat itself: below lg it is a screen of its own, which this address opens.
     await said.getByRole("button", { name: "Open chat" }).click();
-    await expect(page).toHaveURL(/\/orders\/t1$/);
+    await expect(page).toHaveURL(/\/orders\/t1\?chat=open$/);
 
-    // On the trade itself the chat says it, and nothing else does.
+    // With the chat on the screen it says the message, and nothing else does.
     await expect(page.getByText("No messages yet.", { exact: false })).toBeVisible();
     live.send(chatMessage("m2", 2, "Did it arrive?"));
     await expect(page.getByText("Did it arrive?")).toBeVisible();
@@ -372,6 +372,37 @@ test.describe("news from the socket", () => {
     // expectation that retries would pass once a wrong toast faded by itself.
     await page.waitForTimeout(2_000);
     expect(await toastSaying(page, "New message").count()).toBe(0);
+  });
+
+  test("a chat message is said on its trade too, while a phone has the chat shut", async ({
+    page,
+    context,
+  }) => {
+    test.skip(
+      (page.viewportSize()?.width ?? 0) >= 1024,
+      "from lg up the chat is always beside the order",
+    );
+    await withSession(context);
+    const socket = await stubSocket(page);
+    await stubApi(page, [...signedIn(), ...orderPage(() => TRADE)]);
+
+    await page.goto("/orders/t1");
+    await expect(page.getByRole("button", { name: "Chat" })).toBeVisible();
+    const live = await socket.connected;
+    live.send(chatMessage("m1", 1, "Sent it. Please check your Telebirr."));
+
+    // The order is open but its chat is not: without this the message would land unseen.
+    const said = toastSaying(page, `New message from ${ADVERTISER.username}`);
+    await expect(said).toBeVisible();
+    await said.getByRole("button", { name: "Open chat" }).click();
+    await expect(page).toHaveURL(/\/orders\/t1\?chat=open$/);
+    const chat = page.getByRole("region", { name: "Chat" });
+    await expect(chat.getByRole("textbox", { name: "Message" })).toBeVisible();
+
+    // The order was under the chat, so the way back to it is Back.
+    await chat.getByRole("button", { name: "Back to the order" }).click();
+    await expect(page).toHaveURL(/\/orders\/t1$/);
+    await expect(chat).toBeHidden();
   });
 
   test("the seller's own release is said once, not twice", async ({ page, context }) => {
@@ -407,7 +438,6 @@ test.describe("news from the socket", () => {
 
     await page.goto("/orders/t1");
     const live = await socket.connected;
-    await page.getByRole("button", { name: `Release USDT to ${ADVERTISER.username}` }).click();
     await page.getByLabel("Your password").fill("Correct1Horse");
     await page.getByRole("button", { name: /^Release 6\.31 USDT/ }).click();
     await expect(toastSaying(page, "USDT released")).toBeVisible();
@@ -448,7 +478,8 @@ test.describe("a picture", () => {
       },
     ]);
 
-    await page.goto("/orders/t1");
+    // By its address, the chat is on the screen at any width.
+    await page.goto("/orders/t1?chat=open");
     await expect(page.getByRole("button", { name: "Send an image" })).toBeVisible();
     await page.locator('input[type="file"]').setInputFiles({
       name: "receipt.pdf",
