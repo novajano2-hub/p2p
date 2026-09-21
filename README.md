@@ -79,6 +79,25 @@ npm run chain -w @abay/database -- reorg <txHash>          # take it back
 Verification codes are not emailed in development: with no `RESEND_API_KEY` the
 message is written to the API log, code and all.
 
+**On Windows, the watched API restarts when nothing of its own has changed** - the app
+says "Reconnecting", and a page opened in those seconds cannot reach the server. The
+cause is outside the repository. Windows records when a file was last read, and tells
+file watchers when that record moves; TypeScript's watcher takes any such word about a
+dependency's `package.json` as a reason to rebuild; and `nest start --watch` restarts the
+app after every rebuild, whether or not anything came of it. So the first time in an hour
+that anything reads those files - Next compiling a page, jest, eslint, an editor - the API
+and the workers restart. (`excludeFiles` in `watchOptions` does not reach them: TypeScript
+registers these watchers under back-slashed paths its own exclude patterns cannot match.)
+The cure is to stop Windows recording reads, once, from an administrator's terminal, and
+restart the dev servers:
+
+```bash
+fsutil behavior set disablelastaccess 1
+```
+
+The app copes either way - a dropped connection comes back by itself, as does a page
+that failed to load - because in production the same seconds happen on every deploy.
+
 Database migrations use the schema-owning role (`DIRECT_DATABASE_URL`); the running API uses
 a role that cannot alter the schema (`DATABASE_URL`). Both are created by
 `packages/database/sql/roles.sql` on first `docker compose up`.

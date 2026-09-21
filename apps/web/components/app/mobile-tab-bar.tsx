@@ -27,6 +27,7 @@ export function MobileTabBar() {
   const pathname = usePathname();
 
   return (
+    // Its height is what `above-tab-bar` (globals.css) clears: change one, change the other.
     <nav
       aria-label="Primary"
       className="border-border/80 bg-background/95 fixed inset-x-0 bottom-0 z-40 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden"

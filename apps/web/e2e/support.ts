@@ -261,7 +261,10 @@ export async function stubSocket(
       ws.connectToServer();
       return;
     }
-    ws.onMessage(() => {});
+    // A live server answers a ping; the client gives up a connection that does not.
+    ws.onMessage((message) => {
+      if (String(message).includes('"ping"')) ws.send(JSON.stringify({ type: "pong" }));
+    });
     ws.send(JSON.stringify({ type: "hello", userId: USER.id, heartbeatSeconds: 30 }));
     resolve({
       send: (frame) => ws.send(JSON.stringify(frame)),

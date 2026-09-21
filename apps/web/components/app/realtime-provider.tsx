@@ -57,6 +57,11 @@ export function useRealtime(): RealtimeClient {
   return client;
 }
 
+/** The socket where there is one: the admin realm, and the screens before a session, have none. */
+export function useOptionalRealtime(): RealtimeClient | null {
+  return useContext(RealtimeContext);
+}
+
 /** What a handler for an event receives: the frame, or nothing for the connection events. */
 type Payload<T extends RealtimeEvent> = T extends ServerFrame["type"] ? FrameOf<T> : undefined;
 

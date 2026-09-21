@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
+import { useAutoRetry } from "@/components/app/use-auto-retry";
 import { AuthCard } from "@/components/auth/auth-card";
 import { FormError } from "@/components/auth/notices";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -130,36 +131,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   if (state.status === "error") {
     return (
-      <Gate>
-        <AuthCard title="Something went wrong">
-          <FormError message={state.message} />
-          <p className="text-muted-foreground text-sm leading-relaxed">
-            We could not check whether you are signed in.
-          </p>
-          <div className="mt-6 flex flex-col gap-3">
-            <Button
-              type="button"
-              size="lg"
-              className="w-full"
-              onClick={() => {
-                setState({ status: "loading" });
-                setAttempt((value) => value + 1);
-              }}
-            >
-              Try again
-            </Button>
-            <ButtonLink
-              href={cta.login.href}
-              variant="secondary"
-              size="lg"
-              className="w-full"
-              arrow={false}
-            >
-              {cta.login.label}
-            </ButtonLink>
-          </div>
-        </AuthCard>
-      </Gate>
+      <CheckFailed
+        message={state.message}
+        onRetry={() => {
+          setState({ status: "loading" });
+          setAttempt((value) => value + 1);
+        }}
+      />
     );
   }
 
@@ -176,6 +154,40 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   };
 
   return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;
+}
+
+/*
+  The session could not be checked, which is nearly always the server being
+  away for a moment: a page opened, or refreshed, in the seconds of a restart
+  or a deploy. This stands in front of the whole app, so it must not wait to
+  be pressed - it asks again by itself, and says so.
+*/
+function CheckFailed({ message, onRetry }: { message: string; onRetry: () => void }) {
+  useAutoRetry(onRetry);
+  return (
+    <Gate>
+      <AuthCard title="Something went wrong">
+        <FormError message={message} />
+        <p className="text-muted-foreground text-sm leading-relaxed">
+          We could not check whether you are signed in. This page tries again by itself.
+        </p>
+        <div className="mt-6 flex flex-col gap-3">
+          <Button type="button" size="lg" className="w-full" onClick={onRetry}>
+            Try again
+          </Button>
+          <ButtonLink
+            href={cta.login.href}
+            variant="secondary"
+            size="lg"
+            className="w-full"
+            arrow={false}
+          >
+            {cta.login.label}
+          </ButtonLink>
+        </div>
+      </AuthCard>
+    </Gate>
+  );
 }
 
 /** The centred card layout the gate states use, before the app shell exists. */

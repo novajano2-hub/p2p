@@ -212,7 +212,7 @@ function PayNow({
       </Field>
 
       {/* In the card on a desk; pinned above the tab bar on a phone. */}
-      <div className="max-lg:border-border max-lg:bg-surface max-lg:fixed max-lg:inset-x-0 max-lg:bottom-[calc(4rem+env(safe-area-inset-bottom))] max-lg:z-30 max-lg:border-t max-lg:px-4 max-lg:py-3">
+      <div className="max-lg:border-border max-lg:bg-surface max-lg:above-tab-bar max-lg:fixed max-lg:inset-x-0 max-lg:z-30 max-lg:border-t max-lg:px-4 max-lg:py-3">
         {asking === "paid" ? (
           <div className="flex flex-col gap-3">
             <p className="text-foreground text-sm font-medium">

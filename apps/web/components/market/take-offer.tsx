@@ -639,7 +639,7 @@ export function TakeOffer({ offerId }: { offerId: string }) {
               and on a phone that place stays on screen, above the tab bar, the
               way Binance keeps its order button in reach.
             */}
-            <div className="max-lg:border-border max-lg:bg-surface mt-6 max-lg:fixed max-lg:inset-x-0 max-lg:bottom-[calc(4rem+env(safe-area-inset-bottom))] max-lg:z-30 max-lg:mt-0 max-lg:border-t max-lg:px-4 max-lg:py-3">
+            <div className="max-lg:border-border max-lg:bg-surface max-lg:above-tab-bar mt-6 max-lg:fixed max-lg:inset-x-0 max-lg:z-30 max-lg:mt-0 max-lg:border-t max-lg:px-4 max-lg:py-3">
               {changes.length > 0 ? (
                 <div
                   role="status"

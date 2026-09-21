@@ -228,6 +228,43 @@ test.describe("an ad you cannot take", () => {
   });
 });
 
+test.describe("taking an ad on a phone", () => {
+  test("the button's bar sits on the tab bar, with no slit between them", async ({
+    page,
+    context,
+  }) => {
+    test.skip(
+      (page.viewportSize()?.width ?? 0) >= 1024,
+      "from lg up the button is in the page, and there is no tab bar",
+    );
+    await withSession(context);
+    await stubApi(page, [
+      ...signedIn(),
+      { method: "GET", path: /^\/v1\/offers\/o1$/, reply: () => ok(offer("o1")) },
+    ]);
+
+    await page.goto("/trade/offers/o1");
+    await expect(page.getByRole("button", { name: "Buy USDT" })).toBeVisible();
+
+    // The page used to show through a few pixels between the two bars, so the button floated.
+    const slit = await page.evaluate(() => {
+      const button = [...document.querySelectorAll("button")].find(
+        (candidate) => candidate.textContent?.trim() === "Buy USDT",
+      );
+      let bar: Element | null = button ?? null;
+      while (bar && getComputedStyle(bar).position !== "fixed") bar = bar.parentElement;
+      const tabs = [...document.querySelectorAll('nav[aria-label="Primary"]')].find(
+        (nav) => nav.getBoundingClientRect().height > 0,
+      );
+      if (!bar || !tabs) return null;
+      return tabs.getBoundingClientRect().top - bar.getBoundingClientRect().bottom;
+    });
+    expect(slit).not.toBeNull();
+    expect(Math.abs(slit ?? 99)).toBeLessThanOrEqual(0.5);
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
 test.describe("my ads", () => {
   test("says what each ad can offer, why one is hidden, and how long before it goes offline", async ({
     page,

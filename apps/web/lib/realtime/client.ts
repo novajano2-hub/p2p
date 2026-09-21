@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { apiOrigin } from "@/lib/api-origin";
+import { onServerAnswered } from "@/lib/reachability";
 
 /*
   The browser's end of the socket (apps/api/src/modules/realtime). One
@@ -15,11 +16,18 @@ import { apiOrigin } from "@/lib/api-origin";
   reconnect (every reconnect announces itself so screens catch up), and a
   frame that arrives twice is ignored by whatever it names.
 
-  Reconnecting is the whole job of this file. The server pings; the
-  browser answers pings itself, so a dead connection surfaces as a close,
-  and a close is answered with a backoff that starts fast and settles at
-  thirty seconds - except for two codes the server uses to mean "do not":
-  4001, the session has ended, and 4002, too many tabs.
+  Reconnecting is the whole job of this file. A close is answered with a
+  backoff that starts fast and settles at thirty seconds - except for two
+  codes the server uses to mean "do not": 4001, the session has ended, and
+  4002, too many tabs.
+
+  A close is not the only way a connection ends. A phone that slept, a
+  changed network or a tunnel leaves a socket that still says OPEN and
+  carries nothing, and the browser may not notice for minutes - minutes in
+  which a seller is not told the buyer has paid, and nothing on screen says
+  so. The server's own pings cannot help: the browser answers them without
+  telling script. So a connection that has been quiet is asked (the "ping"
+  frame), and one that does not answer is given up and replaced.
 */
 
 export const REALTIME_PATH = "/v1/ws";
@@ -76,23 +84,39 @@ export type RealtimeEvent = ServerFrame["type"] | "connected" | "disconnected";
 
 /*
   "closed" is the moment after a drop, and says nothing on screen: most drops
-  are a blip the first reconnect mends. Still down after RECONNECTING_AFTER_MS
-  is "reconnecting", which a screen shows, quietly. "ended" is the session
+  are a blip the first reconnects mend - a deploy, a server restarting, a
+  change of network. Still down after RECONNECTING_AFTER_MS is
+  "reconnecting", which a screen shows, quietly, and which it then IS until
+  the connection is back: the attempts that fail in between are not news,
+  and a line that came and went with each of them read as a new problem
+  every few seconds. "ended" is the session
   gone (4001); "paused" is this tab stood down because the account has too
   many open (4002) - nothing wrong with the session, so nothing to sign in to.
 */
 export type ConnectionState =
   "connecting" | "open" | "closed" | "reconnecting" | "ended" | "paused";
 
-const RECONNECTING_AFTER_MS = 4_000;
+/** Long enough for the first three attempts, and the handshake of the third, to have had their turn. */
+const RECONNECTING_AFTER_MS = 10_000;
+
+/** Nothing heard for this long, and the connection is asked whether it is there. */
+const ASK_AFTER_QUIET_MS = 25_000;
+/** How long it has to answer before it is given up. */
+const ANSWER_WITHIN_MS = 10_000;
 
 type Handler = (frame: ServerFrame | undefined) => void;
 
 /** Close codes the server uses to say "do not come back". */
 const SESSION_ENDED = 4001;
 const TOO_MANY_CONNECTIONS = 4002;
+/** The server going away on purpose - a deploy - which it says to every tab in the same instant. */
+const GOING_AWAY = 1001;
 
 const BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
+/** Over how long the tabs a restart let go spread their return. */
+const RETURN_SPREAD_MS = 4_000;
+/** An answer from the API brings the connection straight back, but not more often than this. */
+const PROMPTED_AT_MOST_EVERY_MS = 3_000;
 
 export class RealtimeClient {
   private socket: WebSocket | null = null;
@@ -104,6 +128,10 @@ export class RealtimeClient {
   private readonly wanted = new Map<string, number>();
   private readonly stateListeners = new Set<() => void>();
   private downTimer: number | null = null;
+  private quietTimer: number | null = null;
+  private answerTimer: number | null = null;
+  private openedAt = 0;
+  private stopHearingAnswers: (() => void) | null = null;
   state: ConnectionState = "closed";
 
   constructor(private readonly url: string) {}
@@ -115,6 +143,7 @@ export class RealtimeClient {
       window.addEventListener("online", this.reconnectNow);
       document.addEventListener("visibilitychange", this.onVisibility);
     }
+    this.stopHearingAnswers = onServerAnswered(this.onServerAnswered);
     this.open();
   }
 
@@ -124,8 +153,11 @@ export class RealtimeClient {
       window.removeEventListener("online", this.reconnectNow);
       document.removeEventListener("visibilitychange", this.onVisibility);
     }
+    this.stopHearingAnswers?.();
+    this.stopHearingAnswers = null;
     this.clearTimer();
     this.clearDownTimer();
+    this.clearLiveness();
     this.socket?.close(1000, "leaving");
     this.socket = null;
     this.setState("closed");
@@ -173,6 +205,7 @@ export class RealtimeClient {
 
   private open(): void {
     if (this.stopped || this.socket) return;
+    this.openedAt = Date.now();
     this.setState("connecting");
     let socket: WebSocket;
     try {
@@ -186,6 +219,7 @@ export class RealtimeClient {
     socket.onopen = () => {
       this.attempt = 0;
       this.setState("open");
+      this.heard();
       // Everything a screen asked for while we were away, asked for again.
       for (const tradeId of this.wanted.keys()) {
         this.send({ type: "subscribe", tradeId });
@@ -193,6 +227,8 @@ export class RealtimeClient {
       this.emit("connected", undefined);
     };
     socket.onmessage = (event: MessageEvent<string>) => {
+      // Anything at all is proof of life.
+      this.heard();
       let parsed: unknown;
       try {
         parsed = JSON.parse(event.data);
@@ -205,6 +241,7 @@ export class RealtimeClient {
     socket.onclose = (event: CloseEvent) => {
       if (this.socket !== socket) return;
       this.socket = null;
+      this.clearLiveness();
       /*
         Why it closed is settled before anyone hears that it did: a listener
         asks the state to tell an ended session (4001) from a blip, and until
@@ -221,20 +258,28 @@ export class RealtimeClient {
       }
       this.emit("disconnected", undefined);
       if (this.stopped || this.state === "ended" || this.state === "paused") return;
-      // 1001 is the server going away for a moment: come back soon rather
-      // than on the first backoff step, which is already short.
-      this.scheduleReconnect();
+      this.scheduleReconnect(event.code);
     };
     socket.onerror = () => {
       // The close that follows carries what is known; nothing to do here.
     };
   }
 
-  private scheduleReconnect(): void {
+  private scheduleReconnect(code?: number): void {
     if (this.stopped || this.timer !== null) return;
     const base = BACKOFF_MS[Math.min(this.attempt, BACKOFF_MS.length - 1)] ?? 30_000;
-    // Jitter, so a fleet of tabs let go by a restart does not return as one.
-    const delay = base + Math.floor(Math.random() * base * 0.3);
+    /*
+      Never the same moment for two tabs: half the step, plus up to the whole
+      of it again. A server that said it was going away said so to every tab
+      at once, and a fleet that returned within the same second would each
+      cost the fresh server a session lookup in it - so that first return is
+      spread over a few seconds, which nobody notices (it is well inside
+      RECONNECTING_AFTER_MS) and the database does.
+    */
+    const delay =
+      code === GOING_AWAY && this.attempt === 0
+        ? 1_000 + Math.floor(Math.random() * RETURN_SPREAD_MS)
+        : Math.floor(base / 2 + Math.random() * base);
     this.attempt += 1;
     this.timer = window.setTimeout(() => {
       this.timer = null;
@@ -253,6 +298,18 @@ export class RealtimeClient {
     if (document.visibilityState === "visible") this.reconnectNow();
   };
 
+  /*
+    A request just got an answer, so the server is there: no reason to sit out
+    the rest of a backoff. Only while down and wanting to be up - a tab stood
+    down for being one too many stays down - and not in a burst, for the case
+    where requests get through and sockets do not.
+  */
+  private readonly onServerAnswered = (): void => {
+    if (this.state !== "closed" && this.state !== "reconnecting") return;
+    if (Date.now() - this.openedAt < PROMPTED_AT_MOST_EVERY_MS) return;
+    this.reconnectNow();
+  };
+
   private clearTimer(): void {
     if (this.timer !== null) {
       window.clearTimeout(this.timer);
@@ -266,12 +323,56 @@ export class RealtimeClient {
     }
   }
 
+  /** Something arrived, or the connection has just opened: it is alive, and the asking starts over. */
+  private heard(): void {
+    this.clearLiveness();
+    this.quietTimer = window.setTimeout(() => {
+      this.quietTimer = null;
+      // The wait is set before the question is put, so no answer can come too soon to count.
+      this.answerTimer = window.setTimeout(() => {
+        this.answerTimer = null;
+        this.giveUp();
+      }, ANSWER_WITHIN_MS);
+      this.send({ type: "ping" });
+    }, ASK_AFTER_QUIET_MS);
+  }
+
+  /*
+    The connection did not answer: it is dead, whatever it says. It is let go
+    here rather than by waiting for its close event, which for a connection
+    like this one can be minutes away - and whatever it says later is ignored,
+    because it is no longer this client's socket.
+  */
+  private giveUp(): void {
+    const socket = this.socket;
+    if (!socket || this.stopped) return;
+    this.socket = null;
+    try {
+      socket.close(1000, "no answer");
+    } catch {
+      // Already closing, or never open: either way it is gone.
+    }
+    this.setState("closed");
+    this.emit("disconnected", undefined);
+    // The path was the problem, not the server: no reason to wait on a backoff earned earlier.
+    this.attempt = 0;
+    this.scheduleReconnect();
+  }
+
+  private clearLiveness(): void {
+    if (this.quietTimer !== null) window.clearTimeout(this.quietTimer);
+    if (this.answerTimer !== null) window.clearTimeout(this.answerTimer);
+    this.quietTimer = null;
+    this.answerTimer = null;
+  }
+
   private setState(state: ConnectionState): void {
     if (state === "open" || state === "ended" || state === "paused") this.clearDownTimer();
     // Down, and not by choice: say so only if it lasts.
     if (
       (state === "closed" || state === "connecting") &&
       !this.stopped &&
+      this.state !== "reconnecting" &&
       this.downTimer === null
     ) {
       this.downTimer = window.setTimeout(() => {
@@ -279,8 +380,14 @@ export class RealtimeClient {
         if (this.state === "closed" || this.state === "connecting") this.setState("reconnecting");
       }, RECONNECTING_AFTER_MS);
     }
-    // A reconnect attempt while already "reconnecting" stays "reconnecting" on screen.
-    const shown = this.state === "reconnecting" && state === "connecting" ? "reconnecting" : state;
+    // Once "reconnecting", that is what it is until it is back: neither an attempt
+    // nor its failure is a change anyone should see. Leaving (close()) is the exception.
+    const shown =
+      this.state === "reconnecting" &&
+      !this.stopped &&
+      (state === "connecting" || state === "closed")
+        ? "reconnecting"
+        : state;
     if (shown === this.state) return;
     this.state = shown;
     for (const listener of this.stateListeners) listener();
