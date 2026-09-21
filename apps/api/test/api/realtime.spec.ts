@@ -499,26 +499,55 @@ describe("presence", () => {
     await gateway.beat();
     expect((await seenBy(buyer.api, trade.id, offer.id)).online).toBe(true);
 
-    // The tab closes: the moment is kept, and they stay online for the window.
+    // The last tab closes: that is a person leaving. The moment is kept, and they are
+    // not online - not five minutes later, now.
     const beaten = await redis.get(key);
     await tab.close();
     for (let tries = 0; tries < 100 && (await redis.get(key)) === beaten; tries++) {
       await sleep(20);
     }
-    const left = Number(await redis.get(key));
+    const left = Math.abs(Number(await redis.get(key)));
     expect(Date.now() - left).toBeLessThan(5_000);
     expect(await seenBy(buyer.api, trade.id, offer.id)).toMatchObject({
-      online: true,
+      online: false,
       lastSeenAt: toMinute(left),
     });
 
-    // Six minutes on, they are not.
+    // Back with a tab, they are online again.
+    const again = await open(seller.cookie);
+    expect((await seenBy(buyer.api, trade.id, offer.id)).online).toBe(true);
+    await again.close();
+    for (let tries = 0; tries < 100 && Number(await redis.get(key)) > 0; tries++) await sleep(20);
+    // Opening that tab used the session, which would answer for them below.
+    await quietSession(seller.userId);
+
+    // A connection that simply stopped being heard from - no close, as when a server is
+    // killed - is given the window, and no longer.
+    await redis.set(key, String(Date.now() - 4 * 60_000));
+    expect((await seenBy(buyer.api, trade.id, offer.id)).online).toBe(true);
     const sixMinutesAgo = Date.now() - 6 * 60_000;
     await redis.set(key, String(sixMinutesAgo));
     expect(await seenBy(buyer.api, trade.id, offer.id)).toMatchObject({
       online: false,
       lastSeenAt: toMinute(sixMinutesAgo),
     });
+  });
+
+  it("does not take a tab closing here as leaving when another replica has heard from them since", async () => {
+    const { seller, buyer, trade, offer } = await opened();
+    const redis = app.get(RedisService).client;
+    const key = `presence:${seller.userId}`;
+    await quietSession(seller.userId);
+
+    const tab = await open(seller.cookie);
+    // Another replica holds a tab of theirs too, and its heartbeat wrote after ours did.
+    const elsewhere = Date.now() + 1_000;
+    await redis.set(key, String(elsewhere));
+    await tab.close();
+    await sleep(300);
+
+    expect(Number(await redis.get(key))).toBe(elsewhere);
+    expect((await seenBy(buyer.api, trade.id, offer.id)).online).toBe(true);
   });
 
   it("answers from the session alone when Redis cannot say", async () => {

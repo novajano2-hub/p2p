@@ -148,6 +148,57 @@ test.describe("the market", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test("keeps saying who is around without being asked, and moves nothing to do it", async ({
+    page,
+    context,
+  }) => {
+    await withSession(context);
+    await page.clock.install();
+    const asked: string[] = [];
+    await stubApi(page, [
+      ...signedIn(),
+      {
+        method: "GET",
+        path: /^\/v1\/offers$/,
+        reply: (route, calls) => {
+          asked.push(new URL(route.request().url()).search);
+          const selam = { ...ADVERTISER, username: "selam_usdt", avgReleaseSeconds: 240 };
+          // Later, selam has closed the browser, and a cheaper ad has been posted.
+          return ok({
+            offers:
+              calls === 1
+                ? [offer("o1", { advertiser: { ...selam, online: true } }), offer("o2")]
+                : [
+                    offer("o9", { priceSantim: "15700" }),
+                    offer("o1", {
+                      available: "40000000",
+                      advertiser: { ...selam, online: false, lastSeenAt: new Date().toISOString() },
+                    }),
+                  ],
+            nextCursor: null,
+          });
+        },
+      },
+    ]);
+
+    await page.goto("/trade");
+    const selam = itemWith(page, "selam_usdt");
+    await expect(selam).toContainText("Online");
+    // How fast someone releases is on their ad's own page, not on every row of the list.
+    await expect(selam).not.toContainText("releases in");
+    const rows = page.getByRole("region", { name: "Ads" }).getByRole("listitem");
+    const before = await rows.count();
+
+    // Half a minute on, with nothing pressed.
+    await page.clock.fastForward(31_000);
+    await expect(selam).toContainText("Last online");
+    await expect(selam).toContainText("40.00");
+    expect(asked.at(-1)).toContain("limit=2");
+    // The ad that was not there before waits for a refresh: nothing moves under a finger.
+    expect(await rows.count()).toBe(before);
+    await expect(page.getByRole("region", { name: "Ads" })).not.toContainText("157.00");
+  });
+
   test("filters by time to pay and by what you can take, and sells in red", async ({
     page,
     context,
@@ -224,6 +275,43 @@ test.describe("an ad you cannot take", () => {
     const advertiser = page.getByRole("region", { name: "Advertiser" });
     await expect(advertiser).toContainText("Online");
     await expect(advertiser).toContainText("Average release");
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("taking an ad on a phone", () => {
+  test("the button's bar sits on the tab bar, with no slit between them", async ({
+    page,
+    context,
+  }) => {
+    test.skip(
+      (page.viewportSize()?.width ?? 0) >= 1024,
+      "from lg up the button is in the page, and there is no tab bar",
+    );
+    await withSession(context);
+    await stubApi(page, [
+      ...signedIn(),
+      { method: "GET", path: /^\/v1\/offers\/o1$/, reply: () => ok(offer("o1")) },
+    ]);
+
+    await page.goto("/trade/offers/o1");
+    await expect(page.getByRole("button", { name: "Buy USDT" })).toBeVisible();
+
+    // The page used to show through a few pixels between the two bars, so the button floated.
+    const slit = await page.evaluate(() => {
+      const button = [...document.querySelectorAll("button")].find(
+        (candidate) => candidate.textContent?.trim() === "Buy USDT",
+      );
+      let bar: Element | null = button ?? null;
+      while (bar && getComputedStyle(bar).position !== "fixed") bar = bar.parentElement;
+      const tabs = [...document.querySelectorAll('nav[aria-label="Primary"]')].find(
+        (nav) => nav.getBoundingClientRect().height > 0,
+      );
+      if (!bar || !tabs) return null;
+      return tabs.getBoundingClientRect().top - bar.getBoundingClientRect().bottom;
+    });
+    expect(slit).not.toBeNull();
+    expect(Math.abs(slit ?? 99)).toBeLessThanOrEqual(0.5);
     await expectNoHorizontalOverflow(page);
   });
 });

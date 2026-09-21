@@ -831,7 +831,7 @@ export function AdForm({ offerId }: { offerId?: string | undefined }) {
                   The way on, and any refusal, sit together; on a phone they stay
                   on screen above the tab bar, the way the order button does.
                 */}
-                <div className="max-lg:border-border max-lg:bg-surface flex flex-col gap-3 max-lg:fixed max-lg:inset-x-0 max-lg:bottom-[calc(4rem+env(safe-area-inset-bottom))] max-lg:z-30 max-lg:border-t max-lg:px-4 max-lg:py-3">
+                <div className="max-lg:border-border max-lg:bg-surface max-lg:above-tab-bar flex flex-col gap-3 max-lg:fixed max-lg:inset-x-0 max-lg:z-30 max-lg:border-t max-lg:px-4 max-lg:py-3">
                   <FormError message={error} />
                   <div className="grid grid-cols-[1fr_2fr] gap-3 sm:flex sm:justify-between">
                     {step === 0 ? (

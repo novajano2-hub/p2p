@@ -775,10 +775,30 @@ export class TradeService {
   /* ---------------------------------------------------------------- read */
 
   async listForUser(userId: string, query: TradesQuery): Promise<TradesResponse> {
+    // The scope's states, narrowed to one when asked; one outside the scope is nothing at all.
+    const scoped = query.scope === "open" ? OPEN : query.scope === "closed" ? SETTLED : null;
+    const statuses = query.status
+      ? scoped && !scoped.includes(query.status)
+        ? []
+        : [query.status]
+      : scoped;
     const rows = await this.prisma.client.trade.findMany({
       where: {
-        OR: [{ buyerId: userId }, { sellerId: userId }],
-        status: { in: query.scope === "open" ? [...OPEN] : [...SETTLED] },
+        // Always the viewer's own, whichever side of them is asked for.
+        ...(query.role === "BUYER"
+          ? { buyerId: userId }
+          : query.role === "SELLER"
+            ? { sellerId: userId }
+            : { OR: [{ buyerId: userId }, { sellerId: userId }] }),
+        ...(statuses ? { status: { in: [...statuses] } } : {}),
+        ...(query.from || query.to
+          ? {
+              createdAt: {
+                ...(query.from ? { gte: new Date(query.from) } : {}),
+                ...(query.to ? { lt: new Date(query.to) } : {}),
+              },
+            }
+          : {}),
         ...(query.cursor ? { id: { lt: query.cursor } } : {}),
       },
       include: WITH,
@@ -1210,6 +1230,11 @@ export class TradeService {
           0,
           row.chatSeq - (row.reads.find((read) => read.userId === viewerId)?.lastReadSeq ?? 0),
         ),
+        closesAt: row.closedAt
+          ? new Date(
+              row.closedAt.getTime() + this.env.TRADE_CHAT_AFTER_CLOSE_HOURS * HOUR_MS,
+            ).toISOString()
+          : null,
       },
       actions: {
         canMarkPaid: role === "BUYER" && row.status === "AWAITING_FIAT_PAYMENT",

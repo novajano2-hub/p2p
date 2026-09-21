@@ -44,8 +44,9 @@ import { REALTIME_CHANNEL, type RealtimeEnvelope } from "@/modules/realtime/real
   decides anything - it only says "something changed, go and look".
 
   It is also how the platform knows who is around (PresenceService): an
-  account with a tab open is seen when the tab connects, on every heartbeat
-  it answers, and when its last tab here closes.
+  account with a tab open is seen when the tab connects and on every heartbeat
+  it answers, and has left when its last tab here closes - unless it is this
+  server that is going away, which says nothing about the person.
 */
 
 /** Tabs per account. A person has a few; a script has hundreds. */
@@ -91,6 +92,8 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
   private readonly clients = new Set<Client>();
   private readonly byUser = new Map<string, Set<Client>>();
   private readonly byTrade = new Map<string, Set<Client>>();
+  /** When this replica last told PresenceService it had heard from each account it holds. */
+  private readonly heardHere = new Map<string, number>();
 
   constructor(
     private readonly adapterHost: HttpAdapterHost,
@@ -256,7 +259,8 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     };
     this.clients.add(client);
     index(this.byUser, client.userId, client);
-    void this.presence.seen([client.userId]);
+    this.heardHere.set(client.userId, client.openedAt);
+    void this.presence.seen([client.userId], client.openedAt);
 
     socket.on("pong", () => {
       client.alive = true;
@@ -284,8 +288,19 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     unindex(this.byUser, client.userId, client);
     for (const tradeId of client.subscriptions) unindex(this.byTrade, tradeId, client);
     client.subscriptions.clear();
-    // Their last tab here has gone: the moment they were last seen, to the second.
-    if (!this.byUser.has(client.userId)) void this.presence.seen([client.userId]);
+    if (this.byUser.has(client.userId)) return;
+    /*
+      Their last tab here has gone. A person closing the browser has left, and
+      is not online for another five minutes (PresenceService.left says what
+      happens if another replica still holds a tab of theirs). A server that
+      is going away has not been left by anybody: its tabs return elsewhere
+      within seconds, and until they do the window covers them.
+    */
+    const heardAt = this.heardHere.get(client.userId) ?? client.openedAt;
+    this.heardHere.delete(client.userId);
+    const now = Date.now();
+    if (this.closing) void this.presence.seen([client.userId], now);
+    else void this.presence.left(client.userId, now, heardAt);
   }
 
   /* --------------------------------------------------------------- frames */
@@ -458,7 +473,9 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
       client.alive = false;
       client.socket.ping();
     }
-    return this.presence.seen(here);
+    const now = Date.now();
+    for (const userId of here) this.heardHere.set(userId, now);
+    return this.presence.seen(here, now);
   }
 
   /**

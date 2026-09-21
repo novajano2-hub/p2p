@@ -260,6 +260,16 @@
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
+/*
+  Sits a phone's action bar directly on top of its tab bar, which is 56px of
+  tabs, a 1px top border and the home-indicator inset (mobile-tab-bar.tsx).
+  One definition for every such bar: a guess a few pixels out leaves a slit
+  between the two with the page showing through it.
+*/
+@utility above-tab-bar {
+  bottom: calc(3.5rem + 1px + env(safe-area-inset-bottom));
+}
+
 @layer base {
   * {
     border-color: var(--color-border);

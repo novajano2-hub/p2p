@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiOrigin } from "@/lib/api-origin";
 import { endsSession } from "@/lib/auth/session-paths";
 import { IMAGE_LIMITS } from "@/lib/image";
+import { serverAnswered } from "@/lib/reachability";
 
 /*
   The auth client the sign-up, log-in, recovery and account screens talk to.
@@ -399,6 +400,8 @@ export async function send<T>(
   }
 
   rememberCsrfToken(response.headers);
+  // Whatever it said, it is there: the live connection need not wait out its backoff.
+  serverAnswered();
 
   const text = await response.text();
   if (!response.ok) {

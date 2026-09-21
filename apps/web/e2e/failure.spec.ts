@@ -219,6 +219,54 @@ test.describe("a load that failed", () => {
     await expect(page.getByText(ADVERTISER.username).first()).toBeVisible();
     await expect(failed).toBeHidden();
   });
+
+  test("mends by itself once what was wrong has passed", async ({ page, context }) => {
+    await withSession(context);
+    await stubApi(page, [
+      ...signedIn(),
+      {
+        method: "GET",
+        path: /^\/v1\/offers$/,
+        // A server restarting, a deploy, a phone between networks: away for a moment.
+        reply: (_route, calls) =>
+          calls === 1 ? unreachable() : ok({ offers: [OFFER], nextCursor: null }),
+      },
+    ]);
+
+    await page.goto("/trade");
+    const failed = page.getByRole("alert").filter({ hasText: "We could not reach the server." });
+    await expect(failed).toBeVisible();
+    await expect(failed).toContainText("tries again by itself");
+    await expectNoHorizontalOverflow(page);
+
+    // Nobody presses anything.
+    await expect(page.getByText(ADVERTISER.username).first()).toBeVisible({ timeout: 10_000 });
+    await expect(failed).toBeHidden();
+  });
+
+  test("the whole app comes back by itself when the session could not be checked", async ({
+    page,
+    context,
+  }) => {
+    await withSession(context);
+    await stubApi(page, [
+      {
+        method: "GET",
+        path: /^\/v1\/auth\/me$/,
+        reply: (_route, calls) => (calls === 1 ? unreachable() : ok({ user: USER })),
+      },
+      ...signedIn(),
+    ]);
+
+    // Opened, or refreshed, in the seconds a server was away.
+    await page.goto("/settings");
+    await expect(page.getByText("We could not check whether you are signed in.")).toBeVisible();
+    await expect(page.getByText("This page tries again by itself.")).toBeVisible();
+
+    await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible({
+      timeout: 10_000,
+    });
+  });
 });
 
 test.describe("the connection", () => {
@@ -266,12 +314,15 @@ test.describe("the connection", () => {
     socket.refuse(true);
     await live.close(1001, "going away");
 
+    // Not at once: a drop the first attempts mend says nothing. After ten seconds, it does.
     const reconnecting = page.getByRole("status").filter({ hasText: "Reconnecting." });
-    await expect(reconnecting).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(4_000);
+    expect(await reconnecting.count()).toBe(0);
+    await expect(reconnecting).toBeVisible({ timeout: 15_000 });
     await expectNoHorizontalOverflow(page);
 
     socket.refuse(false);
-    await expect(reconnecting).toBeHidden({ timeout: 15_000 });
+    await expect(reconnecting).toBeHidden({ timeout: 30_000 });
   });
 
   test("a tab stood down for being one too many says so, and offers a reload", async ({

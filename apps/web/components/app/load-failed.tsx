@@ -1,8 +1,9 @@
 "use client";
 
 import { ArrowsClockwise, WarningCircle } from "@phosphor-icons/react";
-import { useEffect, type ReactNode } from "react";
+import { type ReactNode } from "react";
 
+import { useAutoRetry } from "@/components/app/use-auto-retry";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 
@@ -12,8 +13,10 @@ import { cn } from "@/lib/cn";
   loads anything uses this one, so none of them is a dead end - before it, a
   failed load left a sentence and nothing to press.
 
-  Coming back online is a retry nobody has to press: the browser says when
-  the connection returns, and the screen asks again by itself.
+  Nobody has to press it. Most failed loads mend without anybody - a server
+  restarting, a deploy, a phone between networks - so the screen asks again by
+  itself (use-auto-retry.ts says when), and says that it does, so the button
+  is not pressed over and over while the server is on its way back.
 */
 export function LoadFailed({
   message,
@@ -24,10 +27,7 @@ export function LoadFailed({
   onRetry: () => void;
   className?: string | undefined;
 }) {
-  useEffect(() => {
-    window.addEventListener("online", onRetry);
-    return () => window.removeEventListener("online", onRetry);
-  }, [onRetry]);
+  useAutoRetry(onRetry);
 
   return (
     <div
@@ -45,6 +45,7 @@ export function LoadFailed({
         <ArrowsClockwise size={15} weight="bold" aria-hidden="true" />
         Try again
       </Button>
+      <p className="text-muted-foreground text-[12px]">It also tries again by itself.</p>
     </div>
   );
 }

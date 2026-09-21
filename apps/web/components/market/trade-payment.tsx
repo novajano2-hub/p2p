@@ -4,31 +4,37 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 
-import { CopyButton } from "@/components/app/copy-button";
+import { CopyButton, CopyTextButton } from "@/components/app/copy-button";
 import { Panel } from "@/components/app/panel";
 import { FormError } from "@/components/auth/notices";
-import { ConfirmButton, birr, dateTime, usdt } from "@/components/market/bits";
+import { birr, dateTime, usdt } from "@/components/market/bits";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Note, SummaryRow } from "@/components/wallet/shared";
+import { cn } from "@/lib/cn";
 import { marketClient, type PaymentInstructions, type Trade } from "@/lib/market/client";
 import { releaseForm, type ReleaseForm } from "@/lib/market/forms";
 import { ASSET, FIAT, PAYMENT_KINDS } from "@/lib/market/labels";
 import { formatSantim } from "@/lib/market/money";
+import { figureLabels } from "@/lib/market/orders";
 import { placeOnField, revealProblems } from "@/lib/reveal-problems";
 import { notificationKey, toast, toastFailure, type Refusal } from "@/lib/toast";
 
 /*
-  The one panel that changes with who is looking and where the trade is.
-  A buyer waiting to pay sees where to pay and the button that says they
-  have; a seller waiting sees the buyer's word and the button that lets the
-  USDT go, behind their password. Everything else is a sentence about what
-  is being waited for. The buttons come from the server's `actions`, never
-  from a status the browser worked out.
+  The part of an order that changes with who is looking and where it stands.
+  A buyer waiting to pay sees where to pay - every detail with its own Copy
+  button, the amount included - and the button that says they have; a seller
+  who has been told sees the rule for releasing and the button that lets the
+  USDT go, behind their password. The buttons come from the server's
+  `actions`, never from a status the browser worked out.
 
   Each button says what it did, as a toast. A refusal is said as a toast and
-  kept at the top of the panel; a wrong password is said on the password.
+  kept at the top of the card; a wrong password is said on the password.
+
+  On a phone the buyer's two buttons are pinned above the tab bar, so "I have
+  paid" is there after the scroll down to the account number and back up to
+  the bank app.
 */
 
 export function PaymentPanel({
@@ -56,91 +62,54 @@ export function PaymentPanel({
     },
     [onConflict],
   );
-  const buying = trade.role === "BUYER";
-  const other = trade.counterparty.username;
+
+  const paying = trade.role === "BUYER" && trade.actions.canMarkPaid && trade.payment.instructions;
+  if (!paying && !trade.actions.canRelease) return error ? <FormError message={error} /> : null;
 
   return (
-    <Panel title={buying ? "Payment" : "Release"}>
-      <FormError message={error} />
-
-      {trade.message ? (
-        <p className="text-foreground mb-4 text-sm leading-relaxed">{trade.message}</p>
-      ) : null}
-
-      {buying && trade.actions.canMarkPaid && trade.payment.instructions ? (
-        <PayNow trade={trade} expired={expired} onUpdated={onUpdated} onError={setError} />
-      ) : null}
-
-      {trade.actions.canRelease ? (
-        <ReleaseNow trade={trade} onUpdated={onUpdated} onError={setError} />
-      ) : null}
-
-      {!buying && trade.status === "AWAITING_FIAT_PAYMENT" ? (
-        <Note>
-          {other} has been shown your {PAYMENT_KINDS[trade.payment.kind].label} details (
-          {trade.payment.label}) and has until the timer runs out to send {birr(trade.fiatSantim)}.
-          Nothing to do until they say they have paid.
-        </Note>
-      ) : null}
-
-      <dl className="divide-border mt-5 divide-y">
-        <SummaryRow label={buying ? "You receive" : "You give"}>
-          {usdt(buying ? trade.buyerReceives : trade.amount)}
-        </SummaryRow>
-        {trade.fee !== "0" ? <SummaryRow label="Fee">{usdt(trade.fee)}</SummaryRow> : null}
-        <SummaryRow label={buying ? "You pay" : "You receive"} strong>
-          {birr(trade.fiatSantim)}
-        </SummaryRow>
-        <SummaryRow label="Price">
-          {formatSantim(trade.priceSantim)} {FIAT} per {ASSET}
-        </SummaryRow>
-        <SummaryRow label="Payment method">{trade.payment.label}</SummaryRow>
-        {trade.payment.reference ? (
-          <SummaryRow label="Transfer reference">{trade.payment.reference}</SummaryRow>
-        ) : null}
-        {trade.paidAt ? (
-          <SummaryRow label="Marked paid">{dateTime(trade.paidAt)}</SummaryRow>
-        ) : null}
-        {trade.closedAt ? <SummaryRow label="Closed">{dateTime(trade.closedAt)}</SummaryRow> : null}
-        {trade.closeReason ? <SummaryRow label="Reason">{trade.closeReason}</SummaryRow> : null}
-        <SummaryRow label="Trade">
-          <span className="inline-flex items-center gap-1">
-            <span className="font-mono text-[12px]">
-              {trade.id.slice(0, 8)}…{trade.id.slice(-4)}
-            </span>
-            <CopyButton value={trade.id} label="Copy trade id" />
-          </span>
-        </SummaryRow>
-      </dl>
-
-      {trade.actions.canCancel ? (
-        <div className="mt-5">
-          <CancelTrade trade={trade} onUpdated={onUpdated} onError={setError} />
-        </div>
-      ) : null}
-    </Panel>
+    <>
+      {paying ? (
+        <PayNow
+          trade={trade}
+          expired={expired}
+          error={error}
+          onUpdated={onUpdated}
+          onError={setError}
+        />
+      ) : (
+        <ReleaseNow trade={trade} error={error} onUpdated={onUpdated} onError={setError} />
+      )}
+    </>
   );
 }
 
 /* --------------------------------------------------------------- buyer */
 
+/** The amount to send, as a bank app wants it typed: "1000", "1000.50" - no grouping, no zeros for show. */
+function plainAmount(santim: string): string {
+  const value = BigInt(santim);
+  const cents = value % 100n;
+  return (value / 100n).toString() + (cents === 0n ? "" : `.${cents.toString().padStart(2, "0")}`);
+}
+
 function PayNow({
   trade,
   expired,
+  error,
   onUpdated,
   onError,
 }: {
   trade: Trade;
   expired: boolean;
+  error: string | null;
   onUpdated: (trade: Trade) => void;
   onError: (refusal: Refusal | null) => void;
 }) {
   const [reference, setReference] = useState("");
-  const [confirming, setConfirming] = useState(false);
+  const [asking, setAsking] = useState<"paid" | "cancel" | null>(null);
   const [busy, setBusy] = useState(false);
   const instructions = trade.payment.instructions as PaymentInstructions;
-
-  const rows = detailRows(instructions);
+  const kind = PAYMENT_KINDS[instructions.kind];
 
   const paid = async () => {
     onError(null);
@@ -149,7 +118,7 @@ function PayNow({
     setBusy(false);
     if (!result.ok) {
       onError(result);
-      setConfirming(false);
+      setAsking(null);
       return;
     }
     toast.success("Marked as paid", {
@@ -158,41 +127,63 @@ function PayNow({
     onUpdated(result.trade);
   };
 
+  const cancel = async () => {
+    onError(null);
+    setBusy(true);
+    const result = await marketClient.cancelTrade(trade.id, "");
+    setBusy(false);
+    if (!result.ok) {
+      onError(result);
+      setAsking(null);
+      return;
+    }
+    toast.success("Order cancelled", {
+      description: "The seller's USDT went back to them. Do not send any money now.",
+    });
+    onUpdated(result.trade);
+  };
+
   return (
-    <div className="flex flex-col gap-4">
-      <div className="border-border rounded-surface border">
-        <div className="border-border flex items-baseline justify-between gap-4 border-b px-4 py-3">
-          <span className="text-muted-foreground text-[13px]">Send exactly</span>
-          <span className="inline-flex items-center gap-1">
-            <span className="text-foreground font-sans text-2xl font-bold tracking-tight tabular-nums">
-              {formatSantim(trade.fiatSantim)}
-            </span>
-            <span className="text-muted-foreground text-sm font-medium">{FIAT}</span>
-            <CopyButton
-              value={
-                (BigInt(trade.fiatSantim) / 100n).toString() +
-                (BigInt(trade.fiatSantim) % 100n === 0n
-                  ? ""
-                  : `.${(BigInt(trade.fiatSantim) % 100n).toString().padStart(2, "0")}`)
-              }
-              label="Copy the amount"
-            />
-          </span>
-        </div>
-        <dl className="divide-border divide-y px-4">
-          {rows.map((row) => (
-            <div key={row.label} className="flex items-center justify-between gap-4 py-2.5">
-              <dt className="text-muted-foreground shrink-0 text-[13px]">{row.label}</dt>
-              <dd className="text-foreground flex min-w-0 items-center gap-1 text-right text-[15px] font-medium">
-                <span className={row.mono ? "font-mono tabular-nums" : ""}>{row.value}</span>
-                {row.copy ? (
-                  <CopyButton value={row.value} label={`Copy ${row.label.toLowerCase()}`} />
-                ) : null}
-              </dd>
-            </div>
-          ))}
-        </dl>
+    <section
+      aria-label="Payment"
+      className="rounded-surface border-border bg-surface shadow-panel flex min-w-0 flex-col gap-4 border px-5 py-5 sm:px-6"
+    >
+      <FormError message={error} />
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-display text-foreground text-base font-semibold">Pay with</h2>
+        <span className="text-foreground flex items-center gap-2 text-sm font-semibold">
+          <span aria-hidden="true" className={cn("h-3.5 w-[3px] rounded-full", kind.bar)} />
+          {kind.label}
+        </span>
       </div>
+
+      <div className="bg-muted rounded-surface flex items-center justify-between gap-3 px-4 py-3.5">
+        <div className="min-w-0">
+          <p className="text-muted-foreground text-[12px] font-medium">Send exactly</p>
+          <p>
+            <span className="text-foreground font-mono text-[1.625rem] leading-tight font-medium tabular-nums">
+              {formatSantim(trade.fiatSantim)}
+            </span>{" "}
+            <span className="text-muted-foreground text-[13px]">{FIAT}</span>
+          </p>
+        </div>
+        <CopyTextButton
+          value={plainAmount(trade.fiatSantim)}
+          label="Copy the amount"
+          className="bg-surface"
+        />
+      </div>
+
+      <dl className="divide-border divide-y">
+        {kind.institution === "bank" ? (
+          <div className="py-3">
+            <dt className="text-muted-foreground text-[12px] font-medium">Bank</dt>
+            <dd className="text-foreground text-[15px] font-semibold">{kind.fullName}</dd>
+          </div>
+        ) : null}
+        <DetailRow label="Name on the account" value={instructions.accountHolder} />
+        <DetailRow label={kind.numberLabel} value={instructions.accountNumber} mono />
+      </dl>
 
       <Note>
         Pay from an account in your own name, and write nothing about crypto in the transfer note.
@@ -220,81 +211,86 @@ function PayNow({
         )}
       </Field>
 
-      {confirming ? (
-        <div className="bg-muted rounded-control flex flex-col gap-3 px-4 py-3">
-          <p className="text-foreground text-sm font-medium">
-            Has {birr(trade.fiatSantim)} left your account? Only press this once it has; the seller
-            is told at once.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" size="md" loading={busy} onClick={paid}>
-              Yes, I have paid
-            </Button>
-            <Button type="button" variant="ghost" size="md" onClick={() => setConfirming(false)}>
-              Not yet
+      {/* In the card on a desk; pinned above the tab bar on a phone. */}
+      <div className="max-lg:border-border max-lg:bg-surface max-lg:above-tab-bar max-lg:fixed max-lg:inset-x-0 max-lg:z-30 max-lg:border-t max-lg:px-4 max-lg:py-3">
+        {asking === "paid" ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-foreground text-sm font-medium">
+              Has {birr(trade.fiatSantim)} left your account? Only press this once it has; the
+              seller is told at once.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="md" loading={busy} onClick={paid}>
+                Yes, I have paid
+              </Button>
+              <Button type="button" variant="ghost" size="md" onClick={() => setAsking(null)}>
+                Not yet
+              </Button>
+            </div>
+          </div>
+        ) : asking === "cancel" ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-foreground text-sm font-medium">
+              Cancel this order? The seller&apos;s {ASSET} goes back to them. Do not cancel if you
+              have already paid.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="destructive" size="md" loading={busy} onClick={cancel}>
+                Cancel the order
+              </Button>
+              <Button type="button" variant="ghost" size="md" onClick={() => setAsking(null)}>
+                Keep it
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 lg:flex-row-reverse lg:gap-3">
+            {trade.actions.canCancel ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                className="lg:text-muted-foreground lg:border-transparent lg:bg-transparent lg:shadow-none"
+                onClick={() => setAsking("cancel")}
+              >
+                Cancel order
+              </Button>
+            ) : null}
+            <Button type="button" size="lg" className="flex-1" onClick={() => setAsking("paid")}>
+              I have paid
             </Button>
           </div>
-        </div>
-      ) : (
-        <Button type="button" size="lg" className="w-full" onClick={() => setConfirming(true)}>
-          I have paid
-        </Button>
-      )}
-    </div>
+        )}
+      </div>
+    </section>
   );
 }
 
-function detailRows(
-  instructions: PaymentInstructions,
-): { label: string; value: string; copy: boolean; mono: boolean }[] {
-  const kind = PAYMENT_KINDS[instructions.kind];
-  const rows = [
-    {
-      label: kind.institution === "bank" ? "Bank" : "Pay through",
-      value: kind.fullName,
-      copy: false,
-      mono: false,
-    },
-  ];
-  rows.push({ label: kind.numberLabel, value: instructions.accountNumber, copy: true, mono: true });
-  rows.push({
-    label: "Name on the account",
-    value: instructions.accountHolder,
-    copy: true,
-    mono: false,
-  });
-  return rows;
-}
-
-function CancelTrade({
-  trade,
-  onUpdated,
-  onError,
+/** One thing to carry into the bank app: what it is, the value, and its own Copy button. */
+function DetailRow({
+  label,
+  value,
+  mono = false,
 }: {
-  trade: Trade;
-  onUpdated: (trade: Trade) => void;
-  onError: (refusal: Refusal | null) => void;
+  label: string;
+  value: string;
+  mono?: boolean;
 }) {
   return (
-    <ConfirmButton
-      question="Cancel this trade? The seller's USDT goes back to them."
-      confirmLabel="Cancel the trade"
-      variant="ghost"
-      onConfirm={async () => {
-        onError(null);
-        const result = await marketClient.cancelTrade(trade.id, "");
-        if (!result.ok) {
-          onError(result);
-          return;
-        }
-        toast.success("Order cancelled", {
-          description: "The seller's USDT went back to them. Do not send any money now.",
-        });
-        onUpdated(result.trade);
-      }}
-    >
-      Cancel trade
-    </ConfirmButton>
+    <div className="flex items-center justify-between gap-3 py-3">
+      <div className="min-w-0">
+        <dt className="text-muted-foreground text-[12px] font-medium">{label}</dt>
+        <dd
+          className={cn(
+            "text-foreground text-[15px] font-semibold [overflow-wrap:anywhere]",
+            mono && "font-mono tabular-nums",
+          )}
+        >
+          {value}
+        </dd>
+      </div>
+      <CopyTextButton value={value} label={`Copy the ${label.toLowerCase()}`} />
+    </div>
   );
 }
 
@@ -302,14 +298,15 @@ function CancelTrade({
 
 function ReleaseNow({
   trade,
+  error,
   onUpdated,
   onError,
 }: {
   trade: Trade;
+  error: string | null;
   onUpdated: (trade: Trade) => void;
   onError: (refusal: Refusal | null) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
   const {
     register,
@@ -340,45 +337,82 @@ function ReleaseNow({
         covers: notificationKey("TRADE_RELEASED", `/orders/${trade.id}`),
       });
       reset();
-      setOpen(false);
       onUpdated(result.trade);
     },
     () => revealProblems(formElement),
   );
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="bg-status-pending text-status-pending-fg rounded-control px-4 py-3 text-[13px] leading-relaxed">
-        <strong className="font-semibold">Check your {trade.payment.label} first.</strong> Release
-        only when {birr(trade.fiatSantim)} is actually in your account, from a payer named{" "}
-        {trade.counterparty.username} or as agreed in the chat. A screenshot is not a payment.
-        Releasing cannot be undone.
-      </div>
-      {open ? (
-        <form ref={setFormElement} noValidate onSubmit={release} className="flex flex-col gap-3">
-          <Field
-            label="Your password"
-            hint="Asked every time you release: this is the moment the USDT leaves you."
-            error={errors.password?.message}
-          >
-            {(a11y) => (
-              <PasswordInput {...a11y} {...register("password")} autoComplete="current-password" />
-            )}
-          </Field>
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="md" loading={isSubmitting}>
-              Release {usdt(trade.buyerReceives)}
-            </Button>
-            <Button type="button" variant="ghost" size="md" onClick={() => setOpen(false)}>
-              Not yet
-            </Button>
-          </div>
-        </form>
-      ) : (
-        <Button type="button" size="lg" className="w-full" onClick={() => setOpen(true)}>
-          Release {ASSET} to {trade.counterparty.username}
+    <section
+      aria-label="Release"
+      className="rounded-surface border-border bg-surface shadow-panel flex min-w-0 flex-col gap-4 border px-5 py-5 sm:px-6"
+    >
+      <FormError message={error} />
+      <h2 className="font-display text-foreground text-base font-semibold">Release</h2>
+      <p className="text-foreground text-sm leading-relaxed">
+        Release only when <strong className="font-semibold">{birr(trade.fiatSantim)}</strong> is
+        actually in your {trade.payment.label}, from a payer named{" "}
+        <strong className="font-semibold">{trade.counterparty.username}</strong> or as agreed in the
+        chat. A screenshot is not a payment. Releasing cannot be undone.
+      </p>
+      <form ref={setFormElement} noValidate onSubmit={release} className="flex flex-col gap-4">
+        <Field
+          label="Your password"
+          hint="Asked every time you release: this is the moment the USDT leaves you."
+          error={errors.password?.message}
+        >
+          {(a11y) => (
+            <PasswordInput {...a11y} {...register("password")} autoComplete="current-password" />
+          )}
+        </Field>
+        <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
+          Release {usdt(trade.buyerReceives)}
         </Button>
-      )}
-    </div>
+      </form>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------- details */
+
+/** The order in figures and dates: the record, under the part that asks for something. */
+export function OrderDetails({ trade }: { trade: Trade }) {
+  const buying = trade.role === "BUYER";
+  const labels = figureLabels(trade);
+  return (
+    <Panel title="Order details">
+      <dl className="divide-border -my-1 divide-y">
+        <SummaryRow label={labels.usdt}>
+          {usdt(buying ? trade.buyerReceives : trade.amount)}
+        </SummaryRow>
+        {trade.fee !== "0" ? <SummaryRow label="Fee">{usdt(trade.fee)}</SummaryRow> : null}
+        <SummaryRow label={labels.fiat} strong>
+          {birr(trade.fiatSantim)}
+        </SummaryRow>
+        <SummaryRow label="Price">
+          {formatSantim(trade.priceSantim)} {FIAT} per {ASSET}
+        </SummaryRow>
+        <SummaryRow label="Payment method">{trade.payment.label}</SummaryRow>
+        {trade.payment.reference ? (
+          <SummaryRow label="Transfer reference">
+            <span className="font-mono tabular-nums">{trade.payment.reference}</span>
+          </SummaryRow>
+        ) : null}
+        <SummaryRow label="Opened">{dateTime(trade.createdAt)}</SummaryRow>
+        {trade.paidAt ? (
+          <SummaryRow label="Marked paid">{dateTime(trade.paidAt)}</SummaryRow>
+        ) : null}
+        {trade.closedAt ? <SummaryRow label="Closed">{dateTime(trade.closedAt)}</SummaryRow> : null}
+        {trade.closeReason ? <SummaryRow label="Reason">{trade.closeReason}</SummaryRow> : null}
+        <SummaryRow label="Order">
+          <span className="inline-flex items-center gap-1">
+            <span className="font-mono text-[12px]">
+              {trade.id.slice(0, 8)}…{trade.id.slice(-4)}
+            </span>
+            <CopyButton value={trade.id} label="Copy the order number" />
+          </span>
+        </SummaryRow>
+      </dl>
+    </Panel>
   );
 }

@@ -1,5 +1,5 @@
 import { createPrismaClient, type Prisma, type PrismaClient } from "@abay/database";
-import { Inject, Injectable, type OnModuleDestroy } from "@nestjs/common";
+import { Inject, Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { PinoLogger } from "nestjs-pino";
 
 import { withTransactionScope } from "@/common/io/transaction-scope";
@@ -7,16 +7,16 @@ import { ENV } from "@/config/config.module";
 import { type Env } from "@/config/env";
 
 /*
-  Owns the one PrismaClient for the process. It connects lazily on first use
-  and disconnects when the application closes, so a graceful shutdown lets
-  in-flight queries finish before the pool goes away.
+  Owns the one PrismaClient for the process. It connects before the server
+  listens (see onModuleInit) and disconnects when the application closes, so
+  a graceful shutdown lets in-flight queries finish before the pool goes away.
 
   The client is exposed as a property rather than by inheritance so that the
   ledger module can later wrap it (interactive transactions, row locks)
   without fighting Prisma's own method surface.
 */
 @Injectable()
-export class PrismaService implements OnModuleDestroy {
+export class PrismaService implements OnModuleInit, OnModuleDestroy {
   readonly client: PrismaClient;
 
   constructor(
@@ -28,6 +28,29 @@ export class PrismaService implements OnModuleDestroy {
       env.DATABASE_URL,
       env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
     );
+  }
+
+  /*
+    Connected before the server listens, not by the first request. Left to
+    itself Prisma connects lazily, and the first query pays for starting the
+    engine and opening the pool: about four seconds, measured on a restart.
+    After a deploy that first query belongs to whoever arrives first, which is
+    every tab the restart let go, all coming back for their socket - and each
+    of them waited those seconds with "Reconnecting" on the screen.
+
+    A database that is not there yet is no reason to refuse to start: the
+    readiness probe says so, and the first query connects as it always did.
+  */
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.client.$connect();
+      await this.client.$queryRaw`SELECT 1`;
+    } catch (error) {
+      this.logger.warn(
+        { event: "prisma.warmup_failed", err: error },
+        "could not reach the database at startup; the first query will try again",
+      );
+    }
   }
 
   /*

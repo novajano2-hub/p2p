@@ -68,7 +68,7 @@ export const TRADE = {
   closedAt: null,
   closeReason: null,
   dispute: null,
-  chat: { lastSeq: 0, unread: 0 },
+  chat: { lastSeq: 0, unread: 0, closesAt: null },
   actions: {
     canMarkPaid: true,
     canCancel: true,
@@ -261,7 +261,10 @@ export async function stubSocket(
       ws.connectToServer();
       return;
     }
-    ws.onMessage(() => {});
+    // A live server answers a ping; the client gives up a connection that does not.
+    ws.onMessage((message) => {
+      if (String(message).includes('"ping"')) ws.send(JSON.stringify({ type: "pong" }));
+    });
     ws.send(JSON.stringify({ type: "hello", userId: USER.id, heartbeatSeconds: 30 }));
     resolve({
       send: (frame) => ws.send(JSON.stringify(frame)),

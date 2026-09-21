@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { LoadFailed } from "@/components/app/load-failed";
+import { useQuietRefresh } from "@/components/app/use-quiet-refresh";
 import { EmptyState, PageHeader } from "@/components/app/panel";
 import { AdvertiserLine, ListNotice, PaymentKindChips, birr, usdt } from "@/components/market/bits";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -60,6 +61,9 @@ const grouped = new Intl.NumberFormat("en-GB");
 type Filters = { window: number | null; takeable: boolean };
 const NO_FILTERS: Filters = { window: null, takeable: false };
 
+/** As many ads as one quiet refresh asks for: the API's largest page. */
+const FRESHEN_AT_MOST = 50;
+
 type State =
   | { status: "loading" }
   | { status: "error"; message: string }
@@ -101,7 +105,7 @@ export function Marketplace() {
     amount !== "" && amountSantim === undefined ? "Enter an amount in ETB." : null;
 
   const load = useCallback(
-    async (cursor?: string) => {
+    async (cursor?: string, limit?: number) => {
       const result = await marketClient.marketplace({
         want,
         amountSantim,
@@ -109,6 +113,7 @@ export function Marketplace() {
         paymentWindowMinutes: filters.window ?? undefined,
         takeable: filters.takeable,
         cursor,
+        limit,
       });
       return result;
     },
@@ -148,6 +153,34 @@ export function Marketplace() {
       nextCursor: result.nextCursor,
     });
   };
+
+  /*
+    The list is as old as its last load, and nothing says when a stranger
+    closes their browser - so it went on calling them "Online" for as long as
+    it stayed open. Every half minute the ads on the screen are asked for
+    again and brought up to date where they stand: who is around, the price,
+    what is left. Nothing is added, removed or moved under a finger about to
+    press Buy; the refresh button and the filters still do that.
+  */
+  const shown = state.status === "ready" ? state.offers.length : 0;
+  const latestLoad = useRef(load);
+  useEffect(() => {
+    latestLoad.current = load;
+  }, [load]);
+  useQuietRefresh(() => {
+    if (shown === 0) return;
+    const asked = load;
+    void asked(undefined, Math.min(FRESHEN_AT_MOST, shown)).then((result) => {
+      // The filters moved on while this was away: it answers a list that is gone.
+      if (!result.ok || latestLoad.current !== asked) return;
+      const fresh = new Map(result.offers.map((offer) => [offer.id, offer]));
+      setState((current) =>
+        current.status === "ready"
+          ? { ...current, offers: current.offers.map((offer) => fresh.get(offer.id) ?? offer) }
+          : current,
+      );
+    });
+  });
 
   const narrowed = amount !== "" || kind !== "" || filters.window !== null || filters.takeable;
   const refresh = () => {

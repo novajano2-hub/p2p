@@ -10,6 +10,21 @@ import { cn } from "@/lib/cn";
   things a person hands to someone else: their account number, later a
   deposit address.
 */
+function useCopy(value: string): [copied: boolean, copy: () => Promise<void>] {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // No clipboard access (insecure context, permission denied): the
+      // value is on screen to select by hand, so nothing else to do.
+    }
+  };
+  return [copied, copy];
+}
+
 export function CopyButton({
   value,
   label,
@@ -19,23 +34,14 @@ export function CopyButton({
   label: string;
   className?: string | undefined;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, copy] = useCopy(value);
 
   return (
     <button
       type="button"
       aria-label={copied ? "Copied" : label}
       title={copied ? "Copied" : label}
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1500);
-        } catch {
-          // No clipboard access (insecure context, permission denied): the
-          // value is on screen to select by hand, so nothing else to do.
-        }
-      }}
+      onClick={copy}
       className={cn(
         "rounded-control text-muted-foreground hover:text-foreground hover:bg-muted inline-flex size-7 items-center justify-center transition-colors duration-150",
         className,
@@ -46,6 +52,42 @@ export function CopyButton({
       ) : (
         <Copy size={15} aria-hidden="true" />
       )}
+    </button>
+  );
+}
+
+/**
+ * The same, with the word on it: for the details a buyer carries into their
+ * bank app one at a time, where an icon alone is too easy to miss. Taller on
+ * a phone, where it is pressed with a thumb.
+ */
+export function CopyTextButton({
+  value,
+  label,
+  className,
+}: {
+  value: string;
+  label: string;
+  className?: string | undefined;
+}) {
+  const [copied, copy] = useCopy(value);
+
+  return (
+    <button
+      type="button"
+      aria-label={copied ? "Copied" : label}
+      onClick={copy}
+      className={cn(
+        "rounded-control border-border text-primary hover:border-primary/40 inline-flex h-10 shrink-0 items-center gap-1.5 border px-2.5 text-[12.5px] font-semibold transition-colors duration-150 lg:h-8",
+        className,
+      )}
+    >
+      {copied ? (
+        <Check size={15} weight="bold" aria-hidden="true" className="text-status-complete-fg" />
+      ) : (
+        <Copy size={15} aria-hidden="true" />
+      )}
+      {copied ? "Copied" : "Copy"}
     </button>
   );
 }
