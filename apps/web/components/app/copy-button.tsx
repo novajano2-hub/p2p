@@ -64,10 +64,13 @@ export function CopyButton({
 export function CopyTextButton({
   value,
   label,
+  text = "Copy",
   className,
 }: {
   value: string;
   label: string;
+  /** The word on it, where "Copy" alone would not say what: "Copy address". */
+  text?: string | undefined;
   className?: string | undefined;
 }) {
   const [copied, copy] = useCopy(value);
@@ -87,7 +90,7 @@ export function CopyTextButton({
       ) : (
         <Copy size={15} aria-hidden="true" />
       )}
-      {copied ? "Copied" : "Copy"}
+      {copied ? "Copied" : text}
     </button>
   );
 }

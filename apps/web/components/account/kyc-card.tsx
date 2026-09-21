@@ -15,6 +15,7 @@ import { useSession } from "@/components/app/session-provider";
 import { AppLink } from "@/components/ui/app-link";
 import { ButtonLink } from "@/components/ui/button";
 import { authClient, type KycState, type KycStatus } from "@/lib/auth/client";
+import { cn } from "@/lib/cn";
 import { dismissKycStatus, readDismissedKycStatus } from "@/lib/kyc-notice";
 import { UNLOCKS } from "@/lib/kyc";
 
@@ -112,7 +113,7 @@ export function KycCard({ className }: { className?: string | undefined }) {
 
   // NOT_STARTED: the one card on this page that asks for something.
   return (
-    <Panel className={className}>
+    <Panel className={cn("border-primary/40", className)}>
       <div className="flex items-start gap-2">
         <div className="flex flex-1 flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3.5">
@@ -128,7 +129,7 @@ export function KycCard({ className }: { className?: string | undefined }) {
               </p>
             </div>
           </div>
-          <ButtonLink href="/verify" className="shrink-0 sm:mt-0.5" arrow={false}>
+          <ButtonLink href="/verify" className="shrink-0 max-sm:w-full sm:mt-0.5" arrow={false}>
             Verify now
             <ArrowRight size={16} weight="bold" aria-hidden="true" />
           </ButtonLink>
@@ -136,7 +137,7 @@ export function KycCard({ className }: { className?: string | undefined }) {
         <DismissButton onDismiss={dismiss} />
       </div>
 
-      <ul className="border-border mt-5 grid gap-3 border-t pt-5 sm:grid-cols-3">
+      <ul className="border-border mt-5 hidden gap-3 border-t pt-5 sm:grid sm:grid-cols-3">
         {UNLOCKS.map((unlock) => (
           <li key={unlock.title} className="flex items-start gap-2.5">
             <CheckCircle

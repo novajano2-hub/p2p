@@ -3,6 +3,7 @@
 import { ArrowCircleDown, ArrowCircleUp, Megaphone } from "@phosphor-icons/react";
 
 import { AppLink } from "@/components/ui/app-link";
+import { ButtonLink } from "@/components/ui/button";
 
 /*
   The three things a customer comes here to do. Big targets, one line each:
@@ -20,24 +21,49 @@ const actions = [
     title: "Buy USDT",
     description: "Pay ETB to a seller; the USDT is held for you until it arrives.",
     Icon: ArrowCircleDown,
+    variant: "primary",
   },
   {
     href: "/trade?want=SELL",
     title: "Sell USDT",
     description: "Lock USDT in escrow, get paid in ETB, then release it.",
     Icon: ArrowCircleUp,
+    variant: "sell",
   },
   {
     href: "/trade/ads/new",
-    title: "Post an offer",
+    title: "Post an ad",
     description: "Set your own price and limits and let buyers come to you.",
     Icon: Megaphone,
+    variant: "secondary",
   },
 ] as const;
 
 export function QuickActions() {
   return (
-    <ul className="grid gap-3 sm:grid-cols-3" aria-label="Quick actions">
+    <>
+      {/* A phone has no room for three sentences: there they are three buttons, Buy green and Sell red as in the market. */}
+      <div className="flex gap-2 sm:hidden" role="group" aria-label="Quick actions">
+        {actions.map(({ href, title, variant }) => (
+          <ButtonLink
+            key={href}
+            href={href}
+            variant={variant}
+            arrow={false}
+            className="h-11 flex-1 px-2 text-sm"
+          >
+            {title}
+          </ButtonLink>
+        ))}
+      </div>
+      <Cards />
+    </>
+  );
+}
+
+function Cards() {
+  return (
+    <ul className="hidden gap-3 sm:grid sm:grid-cols-3" aria-label="Quick actions">
       {actions.map(({ href, title, description, Icon }) => (
         <li key={href}>
           <AppLink

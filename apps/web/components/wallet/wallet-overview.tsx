@@ -1,277 +1,163 @@
 "use client";
 
-import {
-  ArrowCircleDown,
-  ArrowCircleUp,
-  ArrowsLeftRight,
-  ClockCounterClockwise,
-  Eye,
-  EyeSlash,
-} from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { ClockCounterClockwise, Info } from "@phosphor-icons/react";
+import { useCallback, useEffect, useState } from "react";
 
 import { LoadFailed } from "@/components/app/load-failed";
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
-import {
-  ActivityList,
-  fromDeposit,
-  fromWithdrawal,
-  type Activity,
-} from "@/components/wallet/activity";
-import { Amount, useBalanceHidden } from "@/components/wallet/shared";
-import { AppLink } from "@/components/ui/app-link";
-import { ButtonLink } from "@/components/ui/button";
-import { MASKED_AMOUNT, setBalanceHidden } from "@/lib/balance-visibility";
-import { walletRoutes } from "@/lib/app-nav";
-import { formatMicro } from "@/lib/money";
+import { ActivityList, mergeActivity, type Activity } from "@/components/wallet/activity";
+import { BalanceCard } from "@/components/wallet/balance-card";
+import { Tabs } from "@/components/ui/tabs";
 import { ASSET } from "@/lib/wallet";
-import { walletClient, type WalletBalance } from "@/lib/wallet/client";
-import { cn } from "@/lib/cn";
+import {
+  walletClient,
+  type Deposit,
+  type WalletBalance,
+  type Withdrawal,
+} from "@/lib/wallet/client";
+import { useInFlight } from "@/lib/wallet/use-in-flight";
 
 /*
   The wallet, in the order somebody actually asks the questions: how much do
-  I have, what can I do with it, where is the rest of it, and what happened
-  recently.
+  I have and what can I do with it, then what happened recently and where
+  each of those has got to.
 
-  Three figures rather than one, because "how much do I have" has three
-  answers and a person acting on the wrong one is a person surprised. All
-  three come from the ledger on every load: there is no cached balance column
-  anywhere in this system, on purpose, so there is nothing here that can drift
-  from the entries that made it.
+  The balance card is the one Home uses, with Transfer beside the other two
+  and a line under each figure saying what it means. Under it, everything
+  that came in or went out, as one table that can be narrowed to either.
 
-  No estimated birr value. There is no price feed yet, and a figure beside
-  somebody's balance that is quietly wrong is worse than no figure at all.
+  It watches while anything is still moving - a deposit the network is
+  counting, a withdrawal being checked or sent - so the bar fills and the
+  word changes without a press (use-in-flight.ts), and asks nothing while
+  nothing is.
 */
 
-const ACTIONS = [
-  {
-    href: walletRoutes.deposit,
-    title: "Deposit",
-    description: `Receive ${ASSET.symbol} from another wallet or exchange.`,
-    Icon: ArrowCircleDown,
-  },
-  {
-    href: walletRoutes.withdraw,
-    title: "Withdraw",
-    description: "Send to an address on a supported network.",
-    Icon: ArrowCircleUp,
-  },
-  {
-    href: walletRoutes.transfer,
-    title: "Transfer",
-    description: "Send to another BIRQ account by its ID. Instant, no fee.",
-    Icon: ArrowsLeftRight,
-  },
-] as const;
+/** How many movements each tab lists. The pages for depositing and withdrawing keep their own. */
+const SHOWN = 10;
 
-/*
-  A balance that did not load is shown as a dash and a way to ask again,
-  never as a zero: a figure beside somebody's money is a statement about it,
-  and a wrong one - "you have nothing" - is worse than none.
-*/
 type Loaded<T> =
   { status: "loading" } | { status: "error"; message: string } | { status: "ready"; value: T };
 
-export function WalletOverview() {
-  const hidden = useBalanceHidden();
-  const [held, setHeld] = useState<Loaded<WalletBalance>>({ status: "loading" });
-  const [activity, setActivity] = useState<Loaded<Activity[]>>({ status: "loading" });
-  const [attempt, setAttempt] = useState(0);
+interface Movements {
+  deposits: Deposit[];
+  withdrawals: Withdrawal[];
+}
 
-  useEffect(() => {
-    let live = true;
-    void (async () => {
-      const [balance, deposits, withdrawals] = await Promise.all([
-        walletClient.balance(),
-        walletClient.deposits(),
-        walletClient.withdrawals(),
-      ]);
-      if (!live) return;
-      setHeld(
+export function WalletOverview() {
+  const [held, setHeld] = useState<Loaded<WalletBalance>>({ status: "loading" });
+  const [moved, setMoved] = useState<Loaded<Movements>>({ status: "loading" });
+
+  const load = useCallback(() => {
+    void Promise.all([
+      walletClient.balance(),
+      walletClient.deposits(),
+      walletClient.withdrawals(),
+    ]).then(([balance, deposits, withdrawals]) => {
+      // A reload that fails leaves what was on the screen where it is.
+      setHeld((current) =>
         balance.ok
           ? { status: "ready", value: balance.balance }
-          : { status: "error", message: balance.message },
+          : current.status === "ready"
+            ? current
+            : { status: "error", message: balance.message },
       );
-      if (!deposits.ok || !withdrawals.ok) {
+      setMoved((current) => {
+        if (deposits.ok && withdrawals.ok) {
+          return {
+            status: "ready",
+            value: { deposits: deposits.deposits, withdrawals: withdrawals.withdrawals },
+          };
+        }
+        if (current.status === "ready") return current;
         const failed = !deposits.ok ? deposits : withdrawals;
-        setActivity({ status: "error", message: failed.ok ? "" : failed.message });
-        return;
-      }
-      const rows: Activity[] = [
-        ...deposits.deposits.map((d) => fromDeposit(d)),
-        ...withdrawals.withdrawals.map((w) => fromWithdrawal(w)),
-      ];
-      rows.sort((a, b) => b.at.localeCompare(a.at));
-      setActivity({ status: "ready", value: rows.slice(0, 10) });
-    })();
-    return () => {
-      live = false;
-    };
-  }, [attempt]);
+        return { status: "error", message: failed.ok ? "" : failed.message };
+      });
+    });
+  }, []);
+  useEffect(load, [load]);
 
   const retry = () => {
-    setHeld({ status: "loading" });
-    setActivity({ status: "loading" });
-    setAttempt((value) => value + 1);
+    setHeld((current) => (current.status === "ready" ? current : { status: "loading" }));
+    setMoved((current) => (current.status === "ready" ? current : { status: "loading" }));
+    load();
   };
-  const balance = held.status === "ready" ? held.value : null;
-  /** A figure, masked when asked, a dash while there is none. */
-  const shown = (value: string | undefined) =>
-    value === undefined ? "—" : <Amount value={value} />;
+
+  const movements = moved.status === "ready" ? moved.value : null;
+  useInFlight(
+    movements !== null &&
+      (movements.deposits.some((d) => d.status === "DETECTED" || d.status === "CONFIRMING") ||
+        movements.withdrawals.some(
+          (w) => w.stage === "PENDING" || w.stage === "HELD" || w.stage === "SENDING",
+        )),
+    load,
+  );
+
+  const list = (rows: Activity[], nothing: string) =>
+    rows.length === 0 ? (
+      <EmptyState icon={ClockCounterClockwise} title="Nothing yet" description={nothing} />
+    ) : (
+      <ActivityList items={rows.slice(0, SHOWN)} />
+    );
 
   return (
     <>
       <PageHeader
         title="Wallet"
-        description={`Your ${ASSET.symbol}: what you can trade with, what is locked, and how to move it.`}
+        description={`Your ${ASSET.symbol}: what you can trade with, what is held, and how to move it.`}
       />
 
-      <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
-        <Panel className="lg:col-span-3">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-muted-foreground text-[13px] font-medium">Total balance</p>
-                <button
-                  type="button"
-                  onClick={() => setBalanceHidden(!hidden)}
-                  aria-label={hidden ? "Show balance" : "Hide balance"}
-                  aria-pressed={hidden}
-                  className="rounded-control text-muted-foreground hover:text-foreground -m-1 flex size-6 items-center justify-center transition-colors duration-150"
-                >
-                  {hidden ? <EyeSlash size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-              <p className="mt-1 flex items-baseline gap-2">
-                <span
-                  className={cn(
-                    "text-foreground font-sans text-4xl leading-none font-bold tracking-tight tabular-nums",
-                    hidden && "tracking-widest",
-                  )}
-                >
-                  {hidden ? MASKED_AMOUNT : balance ? formatMicro(balance.total) : "—"}
-                </span>
-                <span className="text-muted-foreground text-base font-medium">{ASSET.symbol}</span>
-              </p>
-              <p className="text-muted-foreground mt-1.5 text-[13px]">
-                Everything BIRQ holds for you, wherever it currently is.
-              </p>
-            </div>
+      <div className="flex flex-col gap-4 lg:gap-5">
+        <BalanceCard
+          full
+          balance={held.status === "ready" ? held.value : null}
+          problem={held.status === "error" ? held.message : null}
+          onRetry={retry}
+        />
 
-            <div className="flex flex-wrap gap-2">
-              <ButtonLink href={walletRoutes.deposit} arrow={false}>
-                Deposit
-              </ButtonLink>
-              <ButtonLink href={walletRoutes.withdraw} variant="secondary" arrow={false}>
-                Withdraw
-              </ButtonLink>
-              <ButtonLink href={walletRoutes.transfer} variant="secondary" arrow={false}>
-                Transfer
-              </ButtonLink>
-            </div>
-          </div>
-
-          <dl className="border-border mt-6 grid grid-cols-2 gap-4 border-t pt-5 sm:grid-cols-3">
-            <div>
-              <dt className="text-muted-foreground text-[12px]">Available</dt>
-              <dd className="text-foreground mt-1 font-sans text-lg font-bold">
-                {shown(balance?.available)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground text-[12px]">In escrow</dt>
-              <dd className="text-foreground mt-1 font-sans text-lg font-bold">
-                {shown(balance?.escrowed)}
-              </dd>
-            </div>
-            <div className="col-span-2 sm:col-span-1">
-              <dt className="text-muted-foreground text-[12px]">Withdrawing</dt>
-              <dd className="text-foreground mt-1 font-sans text-lg font-bold">
-                {shown(balance?.pendingWithdrawal)}
-              </dd>
-            </div>
-          </dl>
-
-          <p className="text-muted-foreground mt-4 text-[12px] leading-relaxed">
-            Escrow holds what is committed to trades in progress. Withdrawing holds what is on its
-            way out. Both are yours, and both come back to available if the thing they are held for
-            does not happen.
-          </p>
-          {held.status === "error" ? (
-            <LoadFailed message={held.message} onRetry={retry} className="py-5" />
-          ) : null}
-        </Panel>
-
-        <div className="lg:col-span-3">
-          <ul className="grid gap-3 sm:grid-cols-3" aria-label="Move funds">
-            {ACTIONS.map(({ href, title, description, Icon }) => (
-              <li key={href}>
-                <AppLink
-                  href={href}
-                  className="group rounded-surface border-border bg-surface shadow-raised-soft hover:border-primary/30 hover:shadow-raised-soft-hover flex h-full items-start gap-3.5 border px-4 py-4 transition-[border-color,box-shadow,translate] duration-150 ease-out hover:-translate-y-px motion-reduce:hover:translate-y-0"
-                >
-                  <span className="bg-primary-soft text-primary-soft-foreground flex size-10 shrink-0 items-center justify-center rounded-full">
-                    <Icon size={22} weight="duotone" aria-hidden="true" />
-                  </span>
-                  <span>
-                    <span className="text-foreground group-hover:text-primary block text-[15px] font-medium transition-colors duration-150">
-                      {title}
-                    </span>
-                    <span className="text-muted-foreground mt-0.5 block text-[13px] leading-relaxed">
-                      {description}
-                    </span>
-                  </span>
-                </AppLink>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <Panel title="Assets" className="lg:col-span-3">
-          <ul>
-            <li className="flex items-center justify-between gap-4 py-1">
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="bg-primary-soft text-primary-soft-foreground flex size-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold">
-                  ₮
-                </span>
-                <div className="min-w-0">
-                  <p className="text-foreground text-[15px] font-medium">{ASSET.symbol}</p>
-                  <p className="text-muted-foreground text-[12px]">{ASSET.name}</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-foreground font-sans text-[15px] font-bold">
-                  {balance ? <Amount value={balance.total} unit={null} /> : "—"}
-                </p>
-                <p className="text-muted-foreground text-[12px]">
-                  {hidden
-                    ? MASKED_AMOUNT
-                    : balance
-                      ? `${formatMicro(balance.available)} available`
-                      : "—"}
-                </p>
-              </div>
-            </li>
-          </ul>
-          <p className="text-muted-foreground border-border mt-4 border-t pt-4 text-[12px] leading-relaxed">
+        <p className="text-muted-foreground flex items-start gap-2 px-1 text-[12.5px] leading-relaxed">
+          <Info size={15} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
+          <span>
             {ASSET.symbol} is the only asset BIRQ holds. ETB never sits here: it moves directly
-            between you and the person you trade with.
-          </p>
-        </Panel>
+            between you and the person you trade with. What is in escrow or being withdrawn is still
+            yours, and comes back to available if the thing it is held for does not happen.
+          </span>
+        </p>
 
-        <Panel title="Recent activity" className="lg:col-span-3">
-          {activity.status === "loading" ? (
+        <Panel title="Activity">
+          {moved.status === "loading" ? (
             <p className="text-muted-foreground px-4 py-8 text-center text-[13px]">Loading…</p>
-          ) : activity.status === "error" ? (
-            <LoadFailed message={activity.message} onRetry={retry} />
-          ) : activity.value.length === 0 ? (
-            <EmptyState
-              icon={ClockCounterClockwise}
-              title="Nothing yet"
-              description="Deposits and withdrawals are listed here, newest first, with where each one has got to."
-            />
+          ) : moved.status === "error" ? (
+            <LoadFailed message={moved.message} onRetry={retry} />
           ) : (
-            <ActivityList items={activity.value} />
+            <Tabs
+              label="Activity"
+              items={[
+                {
+                  id: "all",
+                  label: "All",
+                  content: list(
+                    mergeActivity(moved.value.deposits, moved.value.withdrawals, load),
+                    "Deposits and withdrawals are listed here, newest first, with where each one has got to.",
+                  ),
+                },
+                {
+                  id: "deposits",
+                  label: "Deposits",
+                  content: list(
+                    mergeActivity(moved.value.deposits, [], load),
+                    "Deposits appear here as soon as we see them on the chain, before they are credited.",
+                  ),
+                },
+                {
+                  id: "withdrawals",
+                  label: "Withdrawals",
+                  content: list(
+                    mergeActivity([], moved.value.withdrawals, load),
+                    "Withdrawals appear here from the moment you request one, with where each has got to.",
+                  ),
+                },
+              ]}
+            />
           )}
         </Panel>
       </div>

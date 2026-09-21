@@ -38,10 +38,10 @@ export function MarketSnapshot({ className }: { className?: string | undefined }
   }, []);
 
   const sides = [
-    { label: "Buy USDT", hint: "lowest ask", href: "/trade?want=BUY", price: best?.buy ?? null },
+    { label: "Buy USDT", hint: "lowest price", href: "/trade?want=BUY", price: best?.buy ?? null },
     {
       label: "Sell USDT",
-      hint: "highest bid",
+      hint: "highest price",
       href: "/trade?want=SELL",
       price: best?.sell ?? null,
     },
@@ -50,13 +50,13 @@ export function MarketSnapshot({ className }: { className?: string | undefined }
   return (
     <Panel
       title="Market"
-      description={`Best offers right now, in ${FIAT} per USDT.`}
+      description={`Best prices right now, in ${FIAT} per USDT.`}
       action={
         <AppLink
           href="/trade"
           className="text-primary hover:text-primary-hover font-medium underline-offset-4 hover:underline"
         >
-          All offers
+          All ads
         </AppLink>
       }
       className={className}
@@ -78,7 +78,7 @@ export function MarketSnapshot({ className }: { className?: string | undefined }
                 {side.price ? formatSantim(side.price) : "—"}
               </span>
               <span className="text-muted-foreground block text-[12px]">
-                {best === null ? "Loading…" : side.price ? FIAT : "No offers yet"}
+                {best === null ? "Loading…" : side.price ? FIAT : "No ads yet"}
               </span>
             </dd>
           </div>
