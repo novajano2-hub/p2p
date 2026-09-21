@@ -21,6 +21,15 @@ import { RedisService } from "@/infra/redis/redis.service";
   two, to the minute - enough to answer "is anybody there", and no more,
   because strangers read it.
 
+  With one exception, which is the case people check: closing the last tab is
+  leaving. The window exists for a connection that stopped being heard from
+  without saying why - a server killed, a phone in a tunnel - where the person
+  may well still be there. Someone who closed the browser is not, and an
+  advertiser shown as online for five more minutes is an order opened with
+  nobody to answer it. So the live connection's word is either a time it heard
+  from them, or - written negative - the time they left: offline from that
+  moment, unless a session has been used since.
+
   Redis is no more the truth here than anywhere else (see RedisService). If it
   is away, or has lost the key, the session's time answers alone, a little
   staler; nothing is ever refused for want of it.
@@ -66,24 +75,47 @@ export class PresenceService {
     }
   }
 
+  /**
+   * Their last tab on this replica has closed: they have left, and this is
+   * when. Unless somebody has heard from them since this replica last did -
+   * a tab of theirs on another replica - whose word stands. One step in
+   * Redis, so that a heartbeat landing in between is not written over. Best
+   * effort, like seen(): failing leaves them online for the window, as before.
+   */
+  async left(userId: string, at: number, heardHereAt: number): Promise<void> {
+    try {
+      await this.redis.client.eval(
+        LEAVE,
+        1,
+        keyOf(userId),
+        String(-at),
+        String(heardHereAt),
+        String(REMEMBER_SECONDS),
+      );
+    } catch (error) {
+      this.logger.debug({ err: error }, "could not record a departure");
+    }
+  }
+
   /** Each account's presence, from one read of each witness however many are asked about. */
   async of(userIds: Iterable<string>, now = Date.now()): Promise<Map<string, Presence>> {
     const ids = [...new Set(userIds)];
     if (ids.length === 0) return new Map();
     const [heard, used] = await Promise.all([this.heard(ids), this.used(ids)]);
-    return new Map(
-      ids.map((id) => [id, presenceAt(Math.max(heard.get(id) ?? 0, used.get(id) ?? 0), now)]),
-    );
+    return new Map(ids.map((id) => [id, presenceFrom(heard.get(id) ?? 0, used.get(id) ?? 0, now)]));
   }
 
-  /** When the live connection last heard from each; empty when Redis cannot say. */
+  /**
+   * What the live connection last said of each: a time it heard from them,
+   * or, negative, the time they left. Empty when Redis cannot say.
+   */
   private async heard(ids: string[]): Promise<Map<string, number>> {
     try {
       const values = await this.redis.client.mget(ids.map(keyOf));
       const heard = new Map<string, number>();
       ids.forEach((id, index) => {
         const at = Number(values[index] ?? "");
-        if (Number.isFinite(at) && at > 0) heard.set(id, at);
+        if (Number.isFinite(at) && at !== 0) heard.set(id, at);
       });
       return heard;
     } catch (error) {
@@ -121,6 +153,30 @@ export function presenceAt(lastMs: number, now: number): Presence {
     lastSeenAt: new Date(Math.floor(last / MINUTE_MS) * MINUTE_MS).toISOString(),
   };
 }
+
+/**
+ * The two witnesses together. `heard` is the live connection's word: a time
+ * it heard from them, or, negative, the time their last tab closed. `used` is
+ * when a session of theirs was last used. Someone who left is offline from
+ * that moment - unless a session has been used since, which is them back.
+ */
+export function presenceFrom(heard: number, used: number, now: number): Presence {
+  const heardAt = Math.abs(heard);
+  const presence = presenceAt(Math.max(heardAt, used), now);
+  const gone = heard < 0 && used <= heardAt;
+  return gone ? { ...presence, online: false } : presence;
+}
+
+/*
+  KEYS[1] the presence key; ARGV[1] what to write (the departure, negative);
+  ARGV[2] when this replica last heard from them; ARGV[3] seconds to keep it.
+  A value whose time is later than ARGV[2] was written by somebody else, since.
+*/
+const LEAVE = `
+local current = tonumber(redis.call('GET', KEYS[1]))
+if current and math.abs(current) > tonumber(ARGV[2]) then return 0 end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[3]))
+return 1`;
 
 /** For a name nobody could look up. */
 export const UNSEEN: Presence = { online: false, lastSeenAt: null };

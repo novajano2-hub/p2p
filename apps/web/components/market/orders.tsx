@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { LoadFailed } from "@/components/app/load-failed";
+import { useQuietRefresh } from "@/components/app/use-quiet-refresh";
 import { EmptyState, PageHeader } from "@/components/app/panel";
 import { useRealtimeEvent } from "@/components/app/realtime-provider";
 import {
@@ -95,11 +96,14 @@ function useOrders(
 ) {
   const [state, setState] = useState<ListState>({ status: "loading" });
   const [growing, setGrowing] = useState(false);
+  // Whether "Show more" has added to the list since it was last loaded from the top.
+  const grown = useRef(false);
 
   const load = useCallback(() => {
     void marketClient
       .trades({ scope, role: role || undefined, status: status || undefined, from, to })
       .then((result) => {
+        if (result.ok) grown.current = false;
         setState((current) => {
           if (result.ok) {
             return { status: "ready", trades: result.trades, nextCursor: result.nextCursor };
@@ -115,6 +119,11 @@ function useOrders(
   useRealtimeEvent("trade", load);
   useRealtimeEvent("message", load);
   useRealtimeEvent("connected", load);
+  // Who is around changes without a word being sent. Not once more has been shown: a
+  // load starts from the first page again, which would take the rest away every half minute.
+  useQuietRefresh(() => {
+    if (!grown.current) load();
+  });
 
   const more = async () => {
     if (state.status !== "ready" || !state.nextCursor || growing) return;
@@ -132,6 +141,7 @@ function useOrders(
       toastFailure(result);
       return;
     }
+    grown.current = true;
     setState({
       status: "ready",
       trades: [...state.trades, ...result.trades],

@@ -1,4 +1,4 @@
-import { averageMinutes, releaseHint, traderRecord, untilLabel } from "./labels";
+import { averageMinutes, traderRecord, untilLabel } from "./labels";
 
 /* The words the market puts beside a name and under an ad. */
 
@@ -13,11 +13,10 @@ describe("traderRecord", () => {
   });
 });
 
-describe("releaseHint and averageMinutes", () => {
-  it("round to the minute, never below one, and say nothing before there is an average", () => {
-    expect(releaseHint({ avgReleaseSeconds: 240 })).toBe("releases in ~4 min");
-    expect(releaseHint({ avgReleaseSeconds: 10 })).toBe("releases in ~1 min");
-    expect(releaseHint({ avgReleaseSeconds: null })).toBeNull();
+describe("averageMinutes", () => {
+  it("rounds to the minute, never below one, and is a dash before there is an average", () => {
+    expect(averageMinutes(240)).toBe("~4 min");
+    expect(averageMinutes(10)).toBe("~1 min");
     expect(averageMinutes(600)).toBe("~10 min");
     expect(averageMinutes(null)).toBe("—");
   });

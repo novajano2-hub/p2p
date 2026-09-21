@@ -8,6 +8,7 @@ import { LoadFailed } from "@/components/app/load-failed";
 import { PageHeader, Panel } from "@/components/app/panel";
 import { useRealtimeEvent, useTradeSubscription } from "@/components/app/realtime-provider";
 import { useSession } from "@/components/app/session-provider";
+import { useQuietRefresh } from "@/components/app/use-quiet-refresh";
 import { BackTo, ListNotice, birr, useCountdown, usdt } from "@/components/market/bits";
 import { ChatPanel } from "@/components/market/trade-chat";
 import { DisputePanel } from "@/components/market/trade-dispute";
@@ -105,6 +106,8 @@ export function TradeView({ tradeId }: { tradeId: string }) {
     if (frame.tradeId === tradeId) void refresh();
   });
   useRealtimeEvent("connected", () => void refresh());
+  // Whether the other side is around changes without anything being sent about it.
+  useQuietRefresh(() => void refresh());
 
   const trade = state.status === "ready" ? state.trade : null;
   const waiting = trade?.status === "AWAITING_FIAT_PAYMENT";

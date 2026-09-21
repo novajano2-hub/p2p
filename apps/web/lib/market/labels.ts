@@ -183,13 +183,6 @@ export function traderRecord(stats: {
   return parts.join(" · ");
 }
 
-/** "releases in ~4 min", or null before there is anything to average. */
-export function releaseHint(stats: { avgReleaseSeconds: number | null }): string | null {
-  return stats.avgReleaseSeconds === null
-    ? null
-    : `releases in ~${minutes(stats.avgReleaseSeconds)}`;
-}
-
 /** "~6 min", or a dash before there is anything to average. */
 export function averageMinutes(seconds: number | null): string {
   return seconds === null ? "—" : `~${minutes(seconds)}`;

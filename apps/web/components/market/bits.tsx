@@ -7,14 +7,7 @@ import { AppLink } from "@/components/ui/app-link";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { cn } from "@/lib/cn";
-import {
-  ASSET,
-  FIAT,
-  PAYMENT_KINDS,
-  releaseHint,
-  tradeStatusPill,
-  traderRecord,
-} from "@/lib/market/labels";
+import { ASSET, FIAT, PAYMENT_KINDS, tradeStatusPill, traderRecord } from "@/lib/market/labels";
 import type { Advertiser, PaymentMethodKind, Trade } from "@/lib/market/client";
 import { formatSantim } from "@/lib/market/money";
 import { presenceLabel } from "@/lib/market/presence";
@@ -81,7 +74,7 @@ export function Avatar({
   );
 }
 
-/** Whether they are around, and how fast they release, in one quiet line. */
+/** Whether they are around, in one quiet line. */
 export function PresenceLine({
   advertiser,
   className,
@@ -90,17 +83,16 @@ export function PresenceLine({
   className?: string | undefined;
 }) {
   const presence = presenceLabel(advertiser);
-  const release = releaseHint(advertiser);
-  if (!presence && !release) return null;
+  if (!presence) return null;
   return (
-    <span className={cn("block text-[12px]", className)}>
-      {presence ? (
-        <span className={advertiser.online ? "text-online font-medium" : "text-muted-foreground"}>
-          {presence}
-        </span>
-      ) : null}
-      {presence && release ? <span className="text-muted-foreground"> · </span> : null}
-      {release ? <span className="text-muted-foreground">{release}</span> : null}
+    <span
+      className={cn(
+        "block text-[12px]",
+        advertiser.online ? "text-online font-medium" : "text-muted-foreground",
+        className,
+      )}
+    >
+      {presence}
     </span>
   );
 }
