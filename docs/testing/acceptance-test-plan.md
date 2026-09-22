@@ -104,6 +104,18 @@ differently from a genuine 404.
 _This test is table-driven and a new resource without an entry fails CI_ — otherwise it
 decays the moment someone adds an endpoint.
 
+_Built (Phase 5, stage 8)_ in `apps/api/test/api/access.spec.ts`: one table over every route
+that names an object - ads, trades, the chat, disputes and their evidence, payment methods,
+deposits, withdrawals, verification photographs, notifications - tried as the owner, the
+other party to the trade, a stranger with a session of their own, and nobody, with every id
+also tried missing. A stranger's answer must be the missing id's answer, status and body
+alike; the other party's refusal is a 403 that says why. The table is checked against the
+routes Fastify actually registered: a route with an object and no row fails the run, and so
+does a row naming a route that is gone. Every session-scoped list is read as a stranger and
+must not carry the owner's rows, every admin route is tried with a customer's cookie, and
+every route there is with none. The socket's half - a stranger subscribing to a trade is
+told nothing - is in `realtime.spec.ts`.
+
 ### AT-7 — A cancelled or expired unpaid trade returns the full escrow exactly once
 
 **Phase 4 · Integration**
@@ -187,6 +199,22 @@ representative flows including deliberate failures and unhandled exceptions. Cap
 complete log stream, the error-reporter payloads, and any trace attributes. Assert that no
 sentinel appears anywhere. A new sensitive field without a sentinel fails a companion
 completeness check.
+
+_Built (Phase 5, stage 8)_ in `apps/api/test/api/redaction.spec.ts`, over the registry in
+`apps/api/src/common/logging/sensitive-fields.ts`, which is the classification document as
+code and the list the logger redacts by. The spec plants a value it will recognise in every
+registered field, or captures the one the server mints, and drives the flows that carry
+them - sign-up, sign-in, recovery, payment methods, an ad, a trade with its chat and its
+dispute, a withdrawal, identity verification, the admin realm with MFA enrollment and the
+customer search, the custody webhook refused and accepted, Google's callback, and the
+failures on the way including a service that throws mid-request - with the log level at
+trace and every line going into a buffer. No line may carry a sentinel, except the
+development mailer's own, which write the mail to the log by design and cannot exist in
+production. The sentinel table is typed from the registry, so an entry without a sentinel
+does not compile; every entry must have had a value; and a request field whose name looks
+sensitive and is neither registered nor on a short, explained list of look-alikes fails the
+same file. There is no error reporter or tracer yet; the exception filter's line is the
+error report, and it is in the buffer.
 
 ---
 

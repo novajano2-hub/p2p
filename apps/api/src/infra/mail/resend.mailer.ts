@@ -17,6 +17,25 @@ import { assertNoOpenTransaction } from "@/common/io/transaction-scope";
 const ENDPOINT = "https://api.resend.com/emails";
 const TIMEOUT_MS = 10_000;
 
+/*
+  Domains that never receive mail, reserved for documentation and testing
+  (RFC 2606 and RFC 6761): example.com, .net and .org, and the .test,
+  .example, .invalid and .localhost top-level domains. Every fixture in the
+  API test suite signs up under example.com. Handing those to the provider
+  spends the daily quota on addresses that do not exist and tells it about
+  each of them; it is refused here, where every real send passes, rather than
+  in the tests, which are not the only source of such an address.
+*/
+const RESERVED_DOMAIN =
+  /(?:^|\.)example\.(?:com|net|org)$|(?:^|\.)(?:test|example|invalid|localhost)$/i;
+
+/** True for an address on a domain nothing can deliver to. */
+export function isReservedAddress(address: string): boolean {
+  const at = address.lastIndexOf("@");
+  if (at < 0) return false;
+  return RESERVED_DOMAIN.test(address.slice(at + 1).trim());
+}
+
 export class ResendMailer implements Mailer {
   constructor(
     private readonly apiKey: string,
@@ -28,6 +47,14 @@ export class ResendMailer implements Mailer {
 
   async send(mail: Mail): Promise<void> {
     assertNoOpenTransaction("sending email");
+    if (isReservedAddress(mail.to)) {
+      // Not the address: it is somebody's, even when it is nobody's.
+      this.logger.info(
+        { event: "mail.skipped", provider: "resend", reason: "reserved domain" },
+        "email not sent: the address is on a domain that never receives mail",
+      );
+      return;
+    }
     let response: Response;
     try {
       response = await fetch(ENDPOINT, {

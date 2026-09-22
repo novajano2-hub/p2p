@@ -25,6 +25,7 @@
 | **ETB payment instructions** (bank name, account number, account holder, mobile-money number) | **RESTRICTED** | PostgreSQL, field-encrypted | The highest-value user data here. Visible to a counterparty only for the duration of an active trade, snapshotted onto that trade                                                                                                           |
 | **Dispute evidence** (screenshots, statements)                                                | **RESTRICTED** | Object storage, private     | May contain third-party personal data. Built: private objects the API alone reads, bytes proxied per request under the caller's session rather than by signed URL, authorised against the dispute each time. **Not** malware-scanned (B5.1) |
 | **Identity-verification documents** (ID front and back, selfie)                               | **RESTRICTED** | Object storage, private     | Private bucket the API alone writes; the database holds keys, never URLs; an administrator reads the bytes through the API on their own session, not through a signed address                                                               |
+| **Identity details** (legal name, date of birth, document number)                             | **RESTRICTED** | PostgreSQL                  | Typed by the customer beside the photographs. Shown whole to the reviewer, never to anyone they trade with, never logged (Phase 5, stage 8)                                                                                                 |
 | Risk scores and rules                                                                         | RESTRICTED     | PostgreSQL                  | Disclosure teaches an attacker the thresholds                                                                                                                                                                                               |
 | Password hashes (Argon2id)                                                                    | RESTRICTED     | PostgreSQL                  | Never logged, never returned by any endpoint, never in a shared type                                                                                                                                                                        |
 | MFA seeds / passkey credentials                                                               | **SECRET**     | PostgreSQL, encrypted       | Treated as key material                                                                                                                                                                                                                     |
@@ -93,24 +94,35 @@ Every secret the system needs, where it lives, and what an attacker gains by hav
 
 ## 4. Log redaction
 
-Pino is configured with an **allowlist** for request/response bodies and a redaction path
-list. Allowlist rather than denylist, because a denylist silently fails the moment someone
-adds a field.
+Two layers, and a test that holds both to account (Phase 5, stage 8).
 
-Always redacted, everywhere, including error reports and traces:
+The first is an **allowlist**. What a request contributes to a log line is its id, its
+method, its path and the caller's address - never its headers, never its query string,
+never its body - and what a response contributes is its status. That is the request
+serializer in `apps/api/src/common/logging/logging.module.ts`, and it is the reason a
+password, a code or a search term can travel through the API without ever reaching a line
+to be redacted from. Allowlist rather than denylist, because a denylist silently fails the
+moment someone adds a field.
 
-```
-authorization, cookie, set-cookie, x-csrf-token, *.password, *.passwordHash,
-*.mfaSecret, *.recoveryCode, *.privateKey, *.seed, *.mnemonic, *.signature,
-*.signedTransaction, *.apiKey, *.secret, *.token,
-*.accountNumber, *.bankAccount, *.paymentInstructions, *.phone, *.email,
-custodyPayload, webhookBody
-```
+The second is **redaction by name**, for the objects application code chooses to log. The
+names come from one typed registry, `apps/api/src/common/logging/sensitive-fields.ts`,
+which is this document's classification as code: every field the API carries that is
+CONFIDENTIAL, RESTRICTED or SECRET, with what carries it, and whether it is censored by
+name. Names shared with harmless fields - `code`, which is also every error's; `reason`,
+which is also the ledger's; `q` - are deliberately not censored, because they are what an
+incident is investigated with; those rely on the first layer alone, and the test below
+proves that they can.
 
-Money amounts, account IDs, trade IDs, correlation IDs and state names **are** logged —
+Money amounts, account IDs, trade IDs, correlation IDs and state names **are** logged -
 they are what makes an incident investigable, and none of them are secret.
 
-AT-13 asserts this: it drives representative flows with sentinel values planted in every
-sensitive field, then greps the entire captured log and error stream for those sentinels.
-Any hit fails the build. This is a test rather than a convention because redaction
+AT-13, `apps/api/test/api/redaction.spec.ts`, asserts all of it. It plants a value it will
+recognise in every entry of the registry, or captures the one the server mints, drives the
+flows that carry them - including the failures, and a service that throws mid-request -
+with the log level at trace and every line going into a buffer, then reads the buffer back:
+any sentinel on any line fails, except on the development mailer's own lines, which write
+the mail to the log by design and cannot exist in production. The sentinel table is typed
+from the registry, so an entry without a sentinel does not compile, and a request field
+whose name looks sensitive and is in neither the registry nor its short list of explained
+look-alikes fails the same file. This is a test rather than a convention because redaction
 regresses silently.
