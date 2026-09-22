@@ -8,7 +8,7 @@ import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Logger } from "nestjs-pino";
 
-import { AppModule } from "@/app.module";
+import { AppModule, type AppOptions } from "@/app.module";
 import { AppExceptionFilter } from "@/common/errors/app-exception.filter";
 import { RateLimitGuard } from "@/common/rate-limit/rate-limit.guard";
 import { requestIdFrom } from "@/common/request-id";
@@ -24,7 +24,10 @@ const BODY_LIMIT_BYTES = 1_048_576;
   tests boot exactly the same server. Everything that shapes a request's
   security posture is set here, in one place, in this order.
 */
-export async function createApp(env: Env): Promise<NestFastifyApplication> {
+export async function createApp(
+  env: Env,
+  options: AppOptions = {},
+): Promise<NestFastifyApplication> {
   const adapter = new FastifyAdapter({
     logger: false,
     trustProxy: env.TRUST_PROXY,
@@ -34,12 +37,16 @@ export async function createApp(env: Env): Promise<NestFastifyApplication> {
     genReqId: (request: IncomingMessage) => requestIdFrom(request.headers["x-request-id"]),
   });
 
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule.forRoot(env), adapter, {
-    bufferLogs: true,
-    // Keeps the bytes of a JSON body as request.rawBody: a webhook signature
-    // is over what was sent, not over what a parser made of it.
-    rawBody: true,
-  });
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule.forRoot(env, options),
+    adapter,
+    {
+      bufferLogs: true,
+      // Keeps the bytes of a JSON body as request.rawBody: a webhook signature
+      // is over what was sent, not over what a parser made of it.
+      rawBody: true,
+    },
+  );
   app.useLogger(app.get(Logger));
   app.setGlobalPrefix("v1", { exclude: ["health", "ready"] });
   app.useGlobalFilters(app.get(AppExceptionFilter));

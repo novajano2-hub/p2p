@@ -1,4 +1,5 @@
 import { Module, type DynamicModule } from "@nestjs/common";
+import { type DestinationStream } from "pino";
 
 import { AppExceptionFilter } from "@/common/errors/app-exception.filter";
 import { IdempotencyModule } from "@/common/idempotency/idempotency.module";
@@ -37,14 +38,20 @@ import { WithdrawalsModule } from "@/modules/withdrawals/withdrawals.module";
   are added here as the phases land; the worker entrypoint composes its own
   subset of the same modules without the HTTP layer.
 */
+
+export interface AppOptions {
+  /** Where log lines go instead of stdout. The redaction test (AT-13) reads them back. */
+  logDestination?: DestinationStream;
+}
+
 @Module({})
 export class AppModule {
-  static forRoot(env: Env): DynamicModule {
+  static forRoot(env: Env, options: AppOptions = {}): DynamicModule {
     return {
       module: AppModule,
       imports: [
         ConfigModule.forRoot(env),
-        loggingModule(env),
+        loggingModule(env, options.logDestination),
         PrismaModule,
         RedisModule,
         HealthModule,

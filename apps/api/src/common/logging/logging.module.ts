@@ -2,8 +2,9 @@ import { type IncomingMessage, type ServerResponse } from "node:http";
 
 import { type DynamicModule } from "@nestjs/common";
 import { LoggerModule, type Params } from "nestjs-pino";
-import pino from "pino";
+import pino, { type DestinationStream } from "pino";
 
+import { REDACTED_KEYS } from "@/common/logging/sensitive-fields";
 import { type Env } from "@/config/env";
 
 /*
@@ -11,37 +12,40 @@ import { type Env } from "@/config/env";
   line written during that request (nestjs-pino carries it through async
   context, so a service three calls deep logs the same id as the request).
 
-  Redaction is by path, applied before anything is serialised. The request
-  serializer also drops headers and query strings wholesale: a bearer token in
-  a query string is a classic leak and there is no legitimate reason for this
-  API to log either.
+  Two layers keep secrets out. The request serializer below is an allowlist:
+  a request contributes its id, its method, its path and the caller's
+  address, and a response its status - never headers, never a query string,
+  never a body. Then redaction by name, for the objects application code
+  chooses to log: the names come from sensitive-fields.ts, the classification
+  document as code, and are censored before anything is serialised. AT-13
+  (test/api/redaction.spec.ts) plants a sentinel in every one of those fields
+  and reads the whole stream back, which is what makes both layers a fact
+  rather than a convention.
 */
 
-/** Keys that must never reach a log, at the depths they realistically appear. */
-const SENSITIVE_KEYS = [
-  "password",
-  "newPassword",
-  "currentPassword",
-  "passwordHash",
-  "token",
-  "refreshToken",
-  "sessionToken",
-  "secret",
-  "apiKey",
-  "otp",
-  "verificationCode",
-  "paymentInstructions",
-  "accountNumber",
-];
-
+/*
+  Every key the registry censors, at every depth a log line realistically
+  has. The registry is the list; this only spells out the depths, because
+  pino's `*` matches one level and not any number of them.
+*/
 export const REDACT_PATHS = [
   "req.headers",
   "res.headers",
-  ...SENSITIVE_KEYS.flatMap((key) => [key, `*.${key}`, `*.*.${key}`, `*.*.*.${key}`]),
+  ...REDACTED_KEYS.flatMap((key) => [key, `*.${key}`, `*.*.${key}`, `*.*.*.${key}`]),
 ];
 
-export function loggingModule(env: Env): DynamicModule {
-  const pinoHttp: Params["pinoHttp"] = {
+/** pino-http's options, as nestjs-pino types them, without the stream forms. */
+type PinoHttpOptions = Exclude<
+  NonNullable<Params["pinoHttp"]>,
+  DestinationStream | readonly unknown[]
+>;
+
+/**
+ * @param destination where the lines go instead of stdout. The redaction test
+ * hands one in and reads every line back; nothing else should.
+ */
+export function loggingModule(env: Env, destination?: DestinationStream): DynamicModule {
+  const pinoHttp: PinoHttpOptions = {
     level: env.LOG_LEVEL,
     messageKey: "message",
     timestamp: pino.stdTimeFunctions.isoTime,
@@ -66,7 +70,8 @@ export function loggingModule(env: Env): DynamicModule {
       },
       err: pino.stdSerializers.err,
     },
-    ...(env.NODE_ENV === "development"
+    // A stream and a transport are two answers to where the lines go.
+    ...(env.NODE_ENV === "development" && !destination
       ? {
           transport: {
             target: "pino-pretty",
@@ -76,5 +81,5 @@ export function loggingModule(env: Env): DynamicModule {
       : {}),
   };
 
-  return LoggerModule.forRoot({ pinoHttp });
+  return LoggerModule.forRoot({ pinoHttp: destination ? [pinoHttp, destination] : pinoHttp });
 }

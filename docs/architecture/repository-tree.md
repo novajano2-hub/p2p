@@ -77,6 +77,7 @@ p2p/
 │       │   │   ├── rate-limit/      # the policy decorators and the guard
 │       │   │   ├── security/        # CSRF, origin checks, cookies
 │       │   │   ├── state-machine/   # TransitionTable, assertTransition, terminalStates
+│       │   │   ├── logging/         # pino, and the sensitive-fields registry AT-13 is built from
 │       │   │   └── validation/      # ZodValidationPipe
 │       │   ├── infra/               # prisma, redis, mail, object storage
 │       │   └── modules/
@@ -95,7 +96,8 @@ p2p/
 │       └── test/
 │           ├── ledger-invariants.ts # AT-10 and AT-14, after every test in the project
 │           ├── setup-env.ts  setup-timeout.ts  global-teardown.js
-│           └── api/                 # Supertest against a real database and Redis
+│           └── api/                 # Supertest against a real database and Redis;
+│                                    # access.spec.ts is AT-6, redaction.spec.ts AT-13
 │                                    # (unit tests live beside the code as *.spec.ts)
 │
 ├── packages/
