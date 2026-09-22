@@ -33,6 +33,8 @@ export function PageHeader({ title, description, children }: PageHeaderProps) {
 
 type PanelProps = {
   title?: string | undefined;
+  /** A count beside the title: how many orders want something, say. */
+  badge?: string | undefined;
   description?: string | undefined;
   /** A link or button that belongs with the title, e.g. "See all". */
   action?: ReactNode;
@@ -47,7 +49,7 @@ type PanelProps = {
  * shrink below their content unless told they may: one row with a part that
  * refuses to shrink would otherwise widen the whole page on a phone.
  */
-export function Panel({ title, description, action, className, children }: PanelProps) {
+export function Panel({ title, badge, description, action, className, children }: PanelProps) {
   return (
     <section
       aria-label={title}
@@ -59,7 +61,14 @@ export function Panel({ title, description, action, className, children }: Panel
       {title ? (
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-foreground text-[15px] font-semibold">{title}</h2>
+            <h2 className="text-foreground flex items-center gap-2 text-[15px] font-semibold">
+              {title}
+              {badge ? (
+                <span className="bg-primary text-primary-foreground flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[11px] leading-none font-bold tabular-nums">
+                  {badge}
+                </span>
+              ) : null}
+            </h2>
             {description ? (
               <p className="text-muted-foreground mt-0.5 text-[13px]">{description}</p>
             ) : null}

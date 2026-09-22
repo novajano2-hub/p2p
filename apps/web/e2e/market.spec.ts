@@ -430,9 +430,14 @@ test.describe("a new page starts at the top", () => {
       },
     ]);
 
+    // A short phone: the first step is longer than its screen, so there is somewhere to scroll to.
+    await page.setViewportSize({ width: 360, height: 600 });
     await page.goto("/verify");
-    const steps = page.getByRole("list").filter({ hasText: "1. Document" });
-    await expect(steps).toBeVisible();
+    // What is needed and what it is for come first; the steps start when asked to.
+    await page.getByRole("button", { name: "Start" }).click();
+    // On a phone, where you are is one line and a bar, not five names.
+    const where = page.locator('[aria-current="step"]').filter({ visible: true });
+    await expect(where).toHaveText("Step 1 of 5 · Document");
     await expectNoHorizontalOverflow(page);
 
     // The radio's real input is sr-only under its label; a person taps the words.
@@ -444,10 +449,10 @@ test.describe("a new page starts at the top", () => {
 
     await page.getByRole("button", { name: "Continue" }).click();
 
-    await expect(steps).toContainText("2. Your details");
-    // Scrolled back up to the list, with the header's height to spare.
-    await expect.poll(async () => (await steps.boundingBox())?.y ?? -1).toBeLessThan(160);
-    await expect.poll(async () => (await steps.boundingBox())?.y ?? -1).toBeGreaterThanOrEqual(0);
+    await expect(where).toHaveText("Step 2 of 5 · Your details");
+    // Scrolled back up to where it says so, with the header's height to spare.
+    await expect.poll(async () => (await where.boundingBox())?.y ?? -1).toBeLessThan(160);
+    await expect.poll(async () => (await where.boundingBox())?.y ?? -1).toBeGreaterThanOrEqual(0);
     // And announced: focus is on the step's name.
     expect(await page.evaluate(() => document.activeElement?.textContent)).toContain(
       "Your details",

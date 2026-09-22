@@ -4,11 +4,12 @@ import { ArrowsClockwise, CaretDown, Tray, Warning } from "@phosphor-icons/react
 import QRCode from "qrcode";
 import { useCallback, useEffect, useState } from "react";
 
-import { CopyButton } from "@/components/app/copy-button";
+import { CopyTextButton } from "@/components/app/copy-button";
 import { LoadFailed } from "@/components/app/load-failed";
 import { EmptyState, PageHeader, Panel } from "@/components/app/panel";
 import { ActivityList, fromDeposit } from "@/components/wallet/activity";
-import { BackLink, NetworkPicker, Note, SummaryRow } from "@/components/wallet/shared";
+import { BackLink, CoinField, NetworkSelect, SummaryRow } from "@/components/wallet/shared";
+import { Step, Steps } from "@/components/wallet/steps";
 import { formatMicro } from "@/lib/money";
 import { ASSET, DEFAULT_NETWORK, networkById, networkLabel, type NetworkId } from "@/lib/wallet";
 import { walletClient, type Deposit, type DepositAddress } from "@/lib/wallet/client";
@@ -17,17 +18,21 @@ import { useInFlight } from "@/lib/wallet/use-in-flight";
 /*
   Receiving USDT.
 
-  Modelled on the deposit screen every exchange this audience already uses,
-  and for one reason above the rest: the network and the address belong to
-  each other. An address is only valid on the chain it was issued for, and
-  USDT sent on a different one is gone with nobody to appeal to. So the
-  network is chosen first, the pair is shown together, and the warning is on
-  the screen rather than behind a link.
+  The deposit screen every exchange this audience already uses: coin, network,
+  address, down one line. And for one reason above the rest - the network and
+  the address belong to each other. An address is only valid on the chain it
+  was issued for, and USDT sent on a different one is gone with nobody to
+  appeal to. So the network is settled before the address is shown, and the
+  warning is on the screen rather than behind a link: beside the steps on a
+  desk, above them on a phone, where it is read before the address is copied.
 
-  The address is real now, and every figure beside it - the minimum, the
-  confirmations - is the server's own, read from the same configuration that
-  enforces them. The address is the customer's alone and does not change, so
-  it is theirs to save and reuse.
+  BIRQ has one coin and one live network today, so the first two steps arrive
+  answered and the address is on screen at once. The networks that are coming
+  stay in the list, visibly refused rather than quietly missing.
+
+  Every figure beside the address - the minimum, the confirmations - is the
+  server's own, read from the configuration that enforces them. The address is
+  the customer's alone and does not change, so it is theirs to save and reuse.
 */
 
 type State =
@@ -77,9 +82,6 @@ export function DepositView() {
   );
 
   const address = state.status === "ready" ? state.address : null;
-  const detail = address
-    ? `Minimum ${formatMicro(address.minimumDeposit)} ${ASSET.symbol}, credited after ${address.confirmationsRequired} confirmations.`
-    : "Loading…";
 
   return (
     <>
@@ -89,151 +91,164 @@ export function DepositView() {
         description="Send from another wallet or exchange to your BIRQ address."
       />
 
-      <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
-        <div className="flex flex-col gap-4 lg:col-span-2 lg:gap-6">
-          <Panel>
-            <NetworkPicker value={networkId} onChange={setNetworkId} detail={detail} />
-          </Panel>
-
-          <Panel title="Your deposit address">
-            {state.status === "error" ? (
-              <LoadFailed
-                message={state.message}
-                onRetry={() => {
-                  setState({ status: "loading" });
-                  setAttempt((value) => value + 1);
-                }}
-                className="py-4"
-              />
-            ) : null}
-
-            <div className="flex flex-col items-center gap-5 py-2 sm:flex-row sm:items-start sm:gap-6">
-              <div className="rounded-surface border-border bg-surface flex size-40 shrink-0 items-center justify-center overflow-hidden border p-2">
-                {state.status === "ready" ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- a data: URI made in the browser; there is nothing for the optimiser to fetch
-                  <img
-                    src={state.qr}
-                    alt={`QR code for your ${networkLabel(network)} deposit address`}
-                    className="size-full object-contain"
-                  />
-                ) : (
-                  <span className="text-muted-foreground text-[12px]">Loading&hellip;</span>
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="text-muted-foreground text-[12px] font-medium">Network</p>
-                <p className="text-foreground mt-0.5 text-[15px] font-medium">
-                  {networkLabel(network)}
-                </p>
-
-                <p className="text-muted-foreground mt-4 text-[12px] font-medium">Address</p>
-                <div className="rounded-control border-border bg-muted mt-1.5 flex items-start gap-2 border px-3.5 py-3">
-                  <span className="text-foreground min-w-0 flex-1 font-mono text-[13px] break-all">
-                    {address ? address.address : "…"}
-                  </span>
-                  {address ? (
-                    <CopyButton
-                      value={address.address}
-                      label="Copy deposit address"
-                      className="-my-1 shrink-0"
-                    />
-                  ) : null}
-                </div>
-
-                <p className="text-muted-foreground mt-3 text-[12px] leading-relaxed">
-                  This address is yours alone and will not change, so you can save it and reuse it
-                  for every deposit on this network.
-                </p>
-              </div>
-            </div>
-          </Panel>
-
-          <Panel
-            title="Your deposits"
-            action={
-              <button
-                type="button"
-                onClick={loadDeposits}
-                className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 font-medium transition-colors duration-150"
-              >
-                <ArrowsClockwise size={14} weight="bold" aria-hidden="true" />
-                Refresh
-              </button>
-            }
+      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-5 lg:grid-rows-[auto_1fr] lg:items-start lg:gap-6">
+        {/* Read before the address is copied: first on a phone, beside the steps on a desk. */}
+        <Panel title="Before you send" className="lg:col-span-2 lg:col-start-4 lg:row-start-1">
+          <div
+            role="note"
+            className="rounded-control border-destructive/30 bg-status-attention text-status-attention-fg flex items-start gap-2.5 border px-3.5 py-3 text-[13px] leading-relaxed"
           >
-            {deposits.length === 0 ? (
-              <EmptyState
-                icon={Tray}
-                title="Nothing yet"
-                description="Deposits appear here as soon as we see them on the chain, before they are credited."
-              />
-            ) : (
-              <ActivityList items={deposits.map((deposit) => fromDeposit(deposit))} />
-            )}
-          </Panel>
-        </div>
+            <Warning size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
+            <p>
+              <strong className="font-semibold">
+                Send only {ASSET.symbol} on {networkLabel(network)}.
+              </strong>{" "}
+              Anything else, or the right asset on the wrong network, cannot be recovered by us or
+              by anyone.
+            </p>
+          </div>
+          <p className="text-muted-foreground mt-3 text-[13px] leading-relaxed max-lg:hidden">
+            A deposit lands in your available balance. It is not committed to anything until you
+            open or accept an order, and it can be withdrawn again at any time.
+          </p>
+        </Panel>
 
-        <div className="flex flex-col gap-4 lg:gap-6">
-          <Panel title="Before you send">
-            <div
-              role="note"
-              className="rounded-control border-destructive/30 bg-status-attention text-status-attention-fg flex items-start gap-2.5 border px-3.5 py-3 text-[13px] leading-relaxed"
-            >
-              <Warning size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
+        <Panel className="lg:col-span-3 lg:col-start-1 lg:row-span-2 lg:row-start-1">
+          <Steps label="How to deposit">
+            <Step n={1} title="Coin" done>
+              <CoinField />
+            </Step>
+
+            <Step n={2} title="Network" done>
+              <NetworkSelect value={networkId} onChange={setNetworkId} />
+              <p className="text-muted-foreground mt-2 text-[13px] leading-relaxed">
+                Must match the wallet at the other end.
+              </p>
+            </Step>
+
+            <Step n={3} title="Deposit address" last>
+              {state.status === "error" ? (
+                <LoadFailed
+                  message={state.message}
+                  onRetry={() => {
+                    setState({ status: "loading" });
+                    setAttempt((value) => value + 1);
+                  }}
+                  className="py-4"
+                />
+              ) : (
+                <>
+                  <div className="rounded-control bg-muted flex flex-col items-center gap-4 p-4 sm:flex-row sm:gap-5">
+                    <div className="rounded-control border-border flex size-36 shrink-0 items-center justify-center overflow-hidden border bg-white p-1.5">
+                      {state.status === "ready" ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- a data: URI made in the browser; there is nothing for the optimiser to fetch
+                        <img
+                          src={state.qr}
+                          alt={`QR code for your ${networkLabel(network)} deposit address`}
+                          className="size-full object-contain"
+                        />
+                      ) : (
+                        <span className="text-[12px] text-neutral-500">Loading&hellip;</span>
+                      )}
+                    </div>
+                    <div className="flex min-w-0 flex-1 flex-col gap-3 max-sm:w-full">
+                      <div>
+                        <p className="text-muted-foreground text-[12px]">
+                          Your {network.standard} address
+                        </p>
+                        <p className="text-foreground mt-0.5 font-mono text-[13.5px] leading-relaxed break-all">
+                          {address ? address.address : "…"}
+                        </p>
+                      </div>
+                      {address ? (
+                        <CopyTextButton
+                          value={address.address}
+                          label="Copy deposit address"
+                          text="Copy address"
+                          className="bg-surface max-sm:h-11 max-sm:w-full max-sm:justify-center max-sm:text-sm sm:self-start"
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className="text-muted-foreground mt-3 text-[13px] leading-relaxed">
+                    This address is yours alone and will not change, so you can save it and reuse
+                    it.
+                  </p>
+                  <dl className="divide-border border-border mt-3 divide-y border-t">
+                    <SummaryRow label="Minimum deposit">
+                      {address ? `${formatMicro(address.minimumDeposit)} ${ASSET.symbol}` : "—"}
+                    </SummaryRow>
+                    <SummaryRow label="Credited after">
+                      {address ? `${address.confirmationsRequired} confirmations` : "—"}
+                    </SummaryRow>
+                    <SummaryRow label="Usually arrives in">{network.arrival}</SummaryRow>
+                  </dl>
+                </>
+              )}
+            </Step>
+          </Steps>
+        </Panel>
+
+        <Panel className="lg:col-span-2 lg:col-start-4 lg:row-start-2">
+          <p className="text-muted-foreground text-[13px] leading-relaxed lg:hidden">
+            A deposit lands in your available balance. It is not committed to anything until you
+            open or accept an order, and it can be withdrawn again at any time.
+          </p>
+          <details className="faq-item max-lg:border-border max-lg:mt-4 max-lg:border-t max-lg:pt-4">
+            <summary className="text-foreground flex items-center justify-between gap-2 text-sm font-semibold">
+              What if something goes wrong?
+              <CaretDown
+                size={14}
+                weight="bold"
+                aria-hidden="true"
+                className="faq-chevron text-muted-foreground"
+              />
+            </summary>
+            <div className="text-muted-foreground mt-3 flex flex-col gap-2 text-[13px] leading-relaxed">
               <p>
-                Send only {ASSET.symbol} on {networkLabel(network)}. Anything else, or the right
-                asset on the wrong network, cannot be recovered by us or by anyone.
+                A deposit under the minimum is not credited automatically. It is held and a person
+                releases it by hand, so contact support with the transaction hash.
+              </p>
+              <p>
+                A deposit on an unsupported network cannot be recovered. This is true of every
+                exchange, and it is why the network comes before the address on this screen.
+              </p>
+              <p>
+                A large deposit may be held for a check before it is credited. Nothing is wrong; it
+                is usually a matter of hours and the full amount is credited.
               </p>
             </div>
-
-            <dl className="divide-border mt-4 divide-y">
-              <SummaryRow label="Asset">{address?.asset ?? ASSET.symbol}</SummaryRow>
-              <SummaryRow label="Network">{networkLabel(network)}</SummaryRow>
-              <SummaryRow label="Minimum deposit">
-                {address ? `${formatMicro(address.minimumDeposit)} ${ASSET.symbol}` : "—"}
-              </SummaryRow>
-              <SummaryRow label="Credited after">
-                {address ? `${address.confirmationsRequired} confirmations` : "—"}
-              </SummaryRow>
-              <SummaryRow label="Usually arrives in">{network.arrival}</SummaryRow>
-            </dl>
-
-            <details className="faq-item border-border mt-4 border-t pt-4">
-              <summary className="text-foreground flex items-center justify-between gap-2 text-[13px] font-medium">
-                What if something goes wrong?
-                <CaretDown
-                  size={14}
-                  weight="bold"
-                  aria-hidden="true"
-                  className="faq-chevron text-muted-foreground"
-                />
-              </summary>
-              <div className="text-muted-foreground mt-3 flex flex-col gap-2 text-[12px] leading-relaxed">
-                <p>
-                  A deposit under the minimum is not credited automatically. It is held and a person
-                  releases it by hand, so contact support with the transaction hash.
-                </p>
-                <p>
-                  A deposit on an unsupported network cannot be recovered. This is true of every
-                  exchange, and it is why the network is the first thing on this screen.
-                </p>
-                <p>
-                  A large deposit may be held for a check before it is credited. Nothing is wrong;
-                  it is usually a matter of hours and the full amount is credited.
-                </p>
-              </div>
-            </details>
-          </Panel>
-
-          <Panel title="Where it goes">
-            <Note>
-              A deposit lands in your available balance. It is not committed to anything until you
-              open or accept a trade, and it can be withdrawn again at any time.
-            </Note>
-          </Panel>
-        </div>
+          </details>
+        </Panel>
       </div>
+
+      <Panel
+        title="Recent deposits"
+        className="mt-4 lg:mt-6"
+        action={
+          <button
+            type="button"
+            onClick={loadDeposits}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 font-medium transition-colors duration-150"
+          >
+            <ArrowsClockwise size={14} weight="bold" aria-hidden="true" />
+            Refresh
+          </button>
+        }
+      >
+        {deposits.length === 0 ? (
+          <EmptyState
+            icon={Tray}
+            title="Nothing yet"
+            description="Deposits appear here as soon as we see them on the chain, before they are credited."
+          />
+        ) : (
+          <ActivityList
+            label="Recent deposits"
+            items={deposits.map((deposit) => fromDeposit(deposit))}
+          />
+        )}
+      </Panel>
     </>
   );
 }

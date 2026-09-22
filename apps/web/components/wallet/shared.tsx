@@ -4,8 +4,8 @@ import { ArrowLeft, Info, Lock } from "@phosphor-icons/react";
 import { useSyncExternalStore, type ReactNode } from "react";
 
 import { AppLink } from "@/components/ui/app-link";
-import { Input } from "@/components/ui/field";
-import { Radio, RadioGroup } from "@/components/ui/radio";
+import { Field, Input } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import {
   getServerBalanceHidden,
   MASKED_AMOUNT,
@@ -26,9 +26,9 @@ export function useBalanceHidden(): boolean {
 /**
  * An amount, masked or not, in one place so no screen forgets.
  *
- * `value` is an integer string of millionths, exactly as the API sent it.
- * Six decimal places always, because the ledger keeps six and a wallet that
- * rounds to two is a wallet that hides money from the person who owns it.
+ * `value` is an integer string of millionths, exactly as the API sent it,
+ * shown to two places like every USDT figure a person reads here (lib/money.ts);
+ * the ledger keeps all six.
  */
 export function Amount({
   value,
@@ -120,51 +120,59 @@ export function SummaryRow({
 }
 
 /*
-  The network, chosen the way every exchange this audience uses presents it:
-  the chain and its token standard together, the arrival time beside it, and
-  the ones we do not accept visibly refused rather than quietly missing.
-
-  `detail` is the live sentence for the one network we accept - the minimum,
-  the confirmations, the fee - passed in by the screen that fetched it, so no
-  figure on this control is a copy of one the server keeps.
+  The coin, as the first step of moving it. There is one, so this is a
+  statement and not a choice: drawn like the field a choice would be, so the
+  steps read the way they do on every exchange, and not pretending to open.
 */
-export function NetworkPicker({
+export function CoinField() {
+  return (
+    <div className="rounded-control border-border bg-surface flex h-12 items-center gap-2.5 border px-3.5">
+      <span
+        aria-hidden="true"
+        className="bg-status-complete text-status-complete-fg flex size-7 shrink-0 items-center justify-center rounded-full text-[13px] font-bold"
+      >
+        ₮
+      </span>
+      <span className="text-foreground text-[15px] font-semibold">{ASSET.symbol}</span>
+      <span className="text-muted-foreground text-[13px]">{ASSET.name}</span>
+    </div>
+  );
+}
+
+/*
+  The network, chosen the way every exchange this audience uses presents it:
+  the chain and its token standard together, how long it takes beside it, and
+  the ones we do not accept yet visibly refused rather than quietly missing.
+  It is the app's one select, so on a phone it is the shared sheet.
+*/
+const NETWORK_OPTIONS = NETWORKS.map((network) => ({
+  value: network.id,
+  label: networkLabel(network),
+  description: network.supported ? network.arrival : "Not supported yet",
+  disabled: !network.supported,
+}));
+
+export function NetworkSelect({
   value,
   onChange,
-  detail,
+  label,
 }: {
   value: NetworkId;
   onChange: (id: NetworkId) => void;
-  detail: string;
+  /** A label of its own, where the step's title is not already it. */
+  label?: string | undefined;
 }) {
-  return (
-    <RadioGroup
-      legend="Network"
-      hint="Must match the wallet at the other end. USDT sent on any other network cannot be recovered."
-    >
-      {NETWORKS.map((network) => (
-        <Radio
-          key={network.id}
-          name="network"
-          value={network.id}
-          checked={value === network.id}
-          disabled={!network.supported}
-          onChange={() => onChange(network.id)}
-          label={networkLabel(network)}
-          description={network.supported ? detail : "Not supported yet."}
-          meta={
-            network.supported ? (
-              network.arrival
-            ) : (
-              <span className="bg-status-neutral text-status-neutral-fg rounded-full px-2 py-0.5 text-[12px] font-medium">
-                Soon
-              </span>
-            )
-          }
-        />
-      ))}
-    </RadioGroup>
+  const select = (a11y: { id?: string; "aria-describedby"?: string | undefined }) => (
+    <Select
+      {...a11y}
+      {...(label ? {} : { "aria-label": "Network" })}
+      title="Network"
+      value={value}
+      onChange={(id) => onChange(id as NetworkId)}
+      options={NETWORK_OPTIONS}
+    />
   );
+  return label ? <Field label={label}>{select}</Field> : select({});
 }
 
 /*
